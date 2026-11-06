@@ -1,16 +1,20 @@
-import type { BattleResult, Fighter, Rng } from './battle';
+import type { Rng } from './battle';
 
-/** Modos contínuos da Arena. Ambos são 6x6, automáticos e terminam por derrota ou desistência. */
+/** Só a vida máxima de cada um e, no fim da luta, quem venceu e quanto de vida sobrou. */
+type EndlessMon = { maxHp: number };
+type EndlessResult = { winningTeam?: number | null; hpLeft: readonly number[] };
+
+/** Modos contínuos da Arena. Ambos são 6x6 e terminam por derrota ou desistência. */
 export type EndlessArenaMode = 'formatacao' | 'restauracao';
 
 export const ENDLESS_ARENA_LABELS: Record<EndlessArenaMode, { title: string; tutorial: string }> = {
   formatacao: {
     title: 'Formatação digital',
-    tutorial: 'Sobreviva a batalhas automáticas 6×6. Seus Pokémon não se curam entre uma batalha e outra; desista quando quiser guardar o placar.',
+    tutorial: 'Sobreviva a lutas 6×6 em sequência. Seus Pokémon não se curam entre uma luta e outra; saia quando quiser guardar o placar.',
   },
   restauracao: {
     title: 'Restauração digital',
-    tutorial: 'Enfrente batalhas automáticas 6×6 sem fim. Ao vencer, sua equipe é restaurada antes do próximo treinador.',
+    tutorial: 'Enfrente lutas 6×6 sem fim. Ao vencer, sua equipe é restaurada antes do próximo treinador.',
   },
 };
 
@@ -40,7 +44,7 @@ export interface EndlessArenaRun {
   stopped: boolean;
 }
 
-export function startEndlessArena(mode: EndlessArenaMode, team: readonly Fighter[]): EndlessArenaRun | null {
+export function startEndlessArena(mode: EndlessArenaMode, team: readonly EndlessMon[]): EndlessArenaRun | null {
   if (team.length !== 6) return null;
   return { mode, battles: 0, wins: 0, streak: 0, score: 0, hp: team.map((f) => f.maxHp), stopped: false };
 }
@@ -56,7 +60,7 @@ export function nextEndlessOpponent(rng: Rng): EndlessOpponent {
   return { trainer: TRAINERS[Math.floor(rng() * TRAINERS.length)]!, dexIds: dexIds as EndlessOpponent['dexIds'] };
 }
 
-export function resolveEndlessBattle(run: EndlessArenaRun, team: readonly Fighter[], result: BattleResult): EndlessArenaRun {
+export function resolveEndlessBattle(run: EndlessArenaRun, team: readonly EndlessMon[], result: EndlessResult): EndlessArenaRun {
   if (run.stopped || team.length !== 6) return run;
   const won = result.winningTeam === 0;
   const currentHp = result.hpLeft.slice(0, 6).map((hp, i) => Math.max(0, Math.min(team[i]!.maxHp, hp)));

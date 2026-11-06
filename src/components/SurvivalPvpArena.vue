@@ -1,22 +1,23 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, reactive, ref, shallowRef } from 'vue';
 import { pokemonSpriteUrl } from '../ar/sprite-url';
-import { TYPE_COLORS } from '../core/pokemon-data';
+import { TYPE_COLORS, TYPE_LABELS_PT } from '../core/pokemon-data';
 import {
-  aliveCount, guardBlockReason, SV_ARENA_H, SV_ARENA_W, SV_GUARD_COOLDOWN_MS, SV_MON_RADIUS, SV_SUDDEN_DEATH_MS, SV_SWITCH_COOLDOWN_MS, switchBlockReason,
+  aliveCount, attackSwapBlockReason, guardBlockReason, SV_ARENA_H, SV_ARENA_W, SV_ATTACK_SWAP_CD_MS, SV_GUARD_COOLDOWN_MS, SV_MON_RADIUS, SV_SWITCH_COOLDOWN_MS, switchBlockReason,
 } from '../core/survivor-pvp';
 import { SURVIVOR_CONE_HALF_ANGLE, survivorOrbiterHitRadius, survivorOrbiters } from '../core/survivor-shapes';
-import type { ArenaEvent, ArenaSide, ArenaState, ArenaTeamState } from '../core/survivor-pvp';
+import type { ArenaEvent, ArenaSide, ArenaState, ArenaTeamState, ArenaWinner } from '../core/survivor-pvp';
 import { SurvivalGuestLink, SurvivalHostLink } from '../pvp/survival-link';
 import type { ArenaView } from '../pvp/survival-link';
 
 /**
- * A arena do PvP do Survival. Cada celular vê o próprio Pokémon embaixo (o convidado vê o mundo girado 180°). O anfitrião
- * roda a luta e o convidado desenha o que recebe; as duas telas usam os mesmos controles: arrastar para andar e tocar num
- * dos três Pokémon de baixo para trocar. Os avisos são curtos, ficam por cima da arena e nunca bloqueiam o toque.
+ * A arena em tempo real: o fim do PvP do Survivor (3x3) e a luta 6x6 do menu da Arena, contra um amigo ou um rival do jogo.
+ * Cada celular vê o próprio Pokémon embaixo (o convidado vê o mundo girado 180°). O anfitrião roda a luta e o convidado
+ * desenha o que recebe; as duas telas usam os mesmos controles: arrastar para andar e tocar num dos Pokémon de baixo para
+ * trocar. Quem tem dois ataques ganha o botão de troca. Os avisos são curtos, ficam por cima da arena e nunca bloqueiam o toque.
  */
-const props = defineProps<{ link: SurvivalHostLink | SurvivalGuestLink; friendName: string; friendLeft: boolean }>();
-const emit = defineEmits<{ leave: [] }>();
+const props = withDefaults(defineProps<{ link: SurvivalHostLink | SurvivalGuestLink; friendName: string; friendLeft: boolean; leaveLabel?: string }>(), { leaveLabel: 'Sair do PvP' });
+const emit = defineEmits<{ leave: []; finished: [winner: ArenaWinner, hpLeft: number[]] }>();
 
 const hostLink = props.link instanceof SurvivalHostLink ? props.link : null;
 const guestLink = props.link instanceof SurvivalGuestLink ? props.link : null;
@@ -95,6 +96,8 @@ interface Hud {
   guardPct: number;
   guardSec: number;
   guardOn: boolean;
+  /** Botão de trocar de ataque; nulo quando quem está em campo só tem um. */
+  attack: { now: string; next: string; color: string; pct: number; sec: number; alt: boolean } | null;
 }
 
 const rowsOf = (team: ArenaTeamState): Row[] => team.mons.map((m, index) => ({
@@ -104,7 +107,7 @@ const rowsOf = (team: ArenaTeamState): Row[] => team.mons.map((m, index) => ({
 
 const clock = (ms: number): string => `${Math.floor(ms / 60000)}:${String(Math.floor(ms / 1000) % 60).padStart(2, '0')}`;
 
-const hud = shallowRef<Hud>({ mine: [], foe: [], summary: '', hint: '', count: 0, switchPct: 0, switchSec: 0, guardPct: 0, guardSec: 0, guardOn: false });
+const hud = shallowRef<Hud>({ mine: [], foe: [], summary: '', hint: '', count: 0, switchPct: 0, switchSec: 0, guardPct: 0, guardSec: 0, guardOn: false, attack: null });
 const units = shallowRef<Unit[]>([]);
 const orbs = shallowRef<Orb[]>([]);
 const trailDots = shallowRef<Orb[]>([]);
@@ -126,6 +129,7 @@ let joyVy = 0;
 const keys = { up: false, down: false, left: false, right: false };
 let queuedSwitch = -1;
 let queuedGuard = false;
+let queuedAttack = false;
 let fxId = 0;
 let raf = 0;
 let last = 0;
@@ -166,6 +170,15 @@ function requestGuard(): void {
   queuedGuard = true;
 }
 
+function requestAttackSwap(): void {
+  const reason = attackSwapBlockReason(state, mySide);
+  if (reason) {
+    toast(reason, 'info', 1800, `attack:${reason}`);
+    return;
+  }
+  queuedAttack = true;
+}
+
 /** Efeito curto na arena (corte do cone, pulso da aura, rastro do teleporte): some sozinho. */
 function addFx(kind: Fx['kind'], mine: boolean, color: string, style: Record<string, string>, ms = 380): void {
   const id = ++fxId;
@@ -200,6 +213,11 @@ function handleEvents(events: ArenaEvent[]): void {
       const name = mons[e.index]?.name ?? 'Pokémon';
       if (e.side === mySide) toast(e.forced ? `Entrou ${name}` : `Você trocou para ${name}`, 'info', 1800, `sw:${name}`);
       else toast(`${props.friendName} trocou para ${name}`, 'info', 1800, `fsw:${name}`);
+    } else if (e.k === 'attack') {
+      if (e.side === mySide) {
+        const mon = mons[e.index];
+        if (mon) toast(`Ataque: ${TYPE_LABELS_PT[mon.attackType]}${mon.moveName ? ` · ${mon.moveName}` : ''}`, 'info', 1500, `atk:${mon.attackType}:${mon.moveCategory}`);
+      } else toast(`${props.friendName} trocou de ataque`, 'info', 1500, 'foe-attack');
     } else if (e.k === 'guard') {
       toast(e.side === mySide ? 'Escudo ativo!' : `${props.friendName} ativou o escudo`, e.side === mySide ? 'good' : 'info', 1600, `guard:${e.side}`);
     } else if (e.k === 'block') {
@@ -300,11 +318,13 @@ function buildScene(now: number): void {
 function buildHud(): void {
   const mine = state.sides[mySide];
   const foe = state.sides[foeSide];
-  const sudden = state.timeMs > SV_SUDDEN_DEATH_MS;
+  const sudden = state.timeMs > state.suddenDeathMs;
+  const current = mine.mons[mine.active];
   let hint = '';
   if (state.winner !== null) hint = '';
   else if (state.countdownMs > 0) hint = 'Arraste na arena para desviar dos golpes. Toque num dos seus Pokémon, embaixo, para trocar.';
   else if (sudden) hint = 'Morte súbita: quem está em campo perde vida sozinho.';
+  else if (current?.moveCategory === 'trilha') hint = mine.trailMs > 0 ? 'Trilha ativa: passe por cima do rival.' : `Ande para encher a Trilha (${Math.floor(mine.trailCharge * 100)}%).`;
   else if (state.timeMs < 9000) hint = 'Desvie dos golpes: o seu Pokémon ataca sozinho. Troque quando precisar.';
   const cd = mine.switchCdMs;
   hud.value = {
@@ -313,11 +333,20 @@ function buildHud(): void {
     hint, count: Math.ceil(state.countdownMs / 1000),
     switchPct: cd > 0 ? Math.round((100 * cd) / SV_SWITCH_COOLDOWN_MS) : 0, switchSec: Math.ceil(cd / 1000),
     guardPct: mine.guardCdMs > 0 ? Math.round((100 * mine.guardCdMs) / SV_GUARD_COOLDOWN_MS) : 0, guardSec: Math.ceil(mine.guardCdMs / 1000), guardOn: mine.guardMs > 0,
+    attack: current?.alt
+      ? {
+        now: `${TYPE_LABELS_PT[current.attackType]}${current.moveName ? ` · ${current.moveName}` : ''}`,
+        next: `${TYPE_LABELS_PT[current.alt.attackType]} · ${current.alt.moveName}`,
+        color: TYPE_COLORS[current.attackType], alt: current.altOn === true,
+        pct: mine.attackSwapCdMs > 0 ? Math.round((100 * mine.attackSwapCdMs) / SV_ATTACK_SWAP_CD_MS) : 0, sec: Math.ceil(mine.attackSwapCdMs / 1000),
+      }
+      : null,
   };
 }
 
 function finish(): void {
   if (result.value || resultTimer) return;
+  if (state.winner !== null) emit('finished', state.winner, state.sides[mySide].mons.map((m) => Math.max(0, m.hp)));
   resultTimer = setTimeout(() => {
     const mine = aliveCount(state.sides[mySide]);
     const foe = aliveCount(state.sides[foeSide]);
@@ -326,7 +355,7 @@ function finish(): void {
       ? { title: 'Empate', detail: 'As duas equipes caíram ao mesmo tempo.' }
       : w === mySide
         ? { title: 'Você venceu!', detail: `${props.friendName} ficou sem Pokémon de pé. Sobraram ${mine} na sua equipe.` }
-        : { title: `${props.friendName} venceu`, detail: `A sua equipe ficou sem Pokémon de pé. Sobraram ${foe} na equipe dele.` };
+        : { title: `${props.friendName} venceu`, detail: `A sua equipe ficou sem Pokémon de pé. Sobraram ${foe} na equipe rival.` };
   }, 700);
 }
 
@@ -338,12 +367,14 @@ function frame(ts: number): void {
   const world = flip ? { dx: -v.dx, dy: -v.dy } : v;
   const switchTo = queuedSwitch;
   const shield = queuedGuard;
+  const swapAttack = queuedAttack;
   queuedSwitch = -1;
   queuedGuard = false;
+  queuedAttack = false;
   let events: ArenaEvent[] = [];
-  if (hostLink) events = hostLink.step(dt, { dx: world.dx, dy: world.dy, switchTo, shield });
+  if (hostLink) events = hostLink.step(dt, { dx: world.dx, dy: world.dy, switchTo, shield, swapAttack });
   else if (guestLink) {
-    guestLink.sendInput({ dx: world.dx, dy: world.dy, switchTo, shield }, ts);
+    guestLink.sendInput({ dx: world.dx, dy: world.dy, switchTo, shield, swapAttack }, ts);
     events = guestLink.events.splice(0);
     stale.value = state.winner === null && guestLink.received > 0 && ts - guestLink.lastAt > 2500;
   }
@@ -406,7 +437,8 @@ function onKey(e: KeyboardEvent): void {
     e.preventDefault();
     return;
   }
-  if (down && !e.repeat && e.key >= '1' && e.key <= '3') requestSwitch(Number(e.key) - 1);
+  if (down && !e.repeat && e.key >= '1' && e.key <= '6') requestSwitch(Number(e.key) - 1);
+  if (down && !e.repeat && (e.key === 'q' || e.key === 'Q')) requestAttackSwap();
   if (down && !e.repeat && (e.key === ' ' || e.key === 'e' || e.key === 'E')) {
     e.preventDefault();
     requestGuard();
@@ -440,7 +472,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <section class="svp" aria-label="Arena do PvP do Survival">
+  <section class="svp" :class="{ six: hud.mine.length > 3 }" aria-label="Arena da luta">
     <header class="svp-top">
       <ul class="svp-team" :aria-label="`Equipe de ${friendName}`">
         <li v-for="r in hud.foe" :key="r.index" class="svp-pip" :class="{ active: r.active, down: r.fainted }" :aria-label="`${r.name}: ${r.fainted ? 'fora de combate' : r.active ? 'em campo' : 'na reserva'}, ${r.hpPct}% de vida`">
@@ -520,7 +552,7 @@ onBeforeUnmount(() => {
       <ul class="svp-toasts" aria-live="polite">
         <li v-for="t in toasts" :key="t.id" :class="t.tone">{{ t.text }}</li>
       </ul>
-      <p class="svp-legend" aria-hidden="true">Seus golpes: borda branca · do amigo: borda vermelha</p>
+      <p class="svp-legend" aria-hidden="true">Seus golpes: borda branca · do rival: borda vermelha</p>
     </div>
 
     <footer class="svp-bottom">
@@ -535,6 +567,21 @@ onBeforeUnmount(() => {
         <span class="svp-guard-icon" aria-hidden="true">🛡</span>
         <small>{{ hud.guardOn ? 'Ativo' : hud.guardPct > 0 ? `${hud.guardSec} s` : 'Escudo' }}</small>
         <span v-if="hud.guardPct > 0 && !hud.guardOn" class="svp-cd" :style="{ height: `${hud.guardPct}%` }" aria-hidden="true"></span>
+      </button>
+      <button
+        v-if="hud.attack"
+        type="button"
+        class="svp-guard svp-attack"
+        :class="{ alt: hud.attack.alt, wait: hud.attack.pct > 0 }"
+        :style="{ '--attack-color': hud.attack.color }"
+        :aria-label="`Ataque em uso: ${hud.attack.now}. Toque para trocar para ${hud.attack.next}`"
+        @pointerdown.stop
+        @click="requestAttackSwap"
+      >
+        <span class="svp-guard-icon" aria-hidden="true">⇄</span>
+        <small>{{ hud.attack.pct > 0 ? `${hud.attack.sec} s` : hud.attack.alt ? 'Secund.' : 'Principal' }}</small>
+        <small class="svp-attack-now">{{ hud.attack.now }}</small>
+        <span v-if="hud.attack.pct > 0" class="svp-cd" :style="{ height: `${hud.attack.pct}%` }" aria-hidden="true"></span>
       </button>
       <div class="svp-team mine" role="group" aria-label="Sua equipe: toque para trocar de Pokémon">
         <button
@@ -562,7 +609,8 @@ onBeforeUnmount(() => {
       <div class="svp-card">
         <h3>{{ result ? result.title : 'O amigo saiu da partida' }}</h3>
         <p>{{ result ? result.detail : 'A conexão fechou antes do fim da luta. Nenhum vencedor foi registrado.' }}</p>
-        <button type="button" class="primary" @click="emit('leave')">Sair do PvP</button>
+        <slot v-if="result" name="result"></slot>
+        <button type="button" class="primary" @click="emit('leave')">{{ leaveLabel }}</button>
       </div>
     </div>
   </section>
@@ -999,6 +1047,56 @@ onBeforeUnmount(() => {
 .svp-bottom .svp-team {
   flex: 1;
   gap: 8px;
+}
+
+/* Seis de cada lado: a fila do rival vira uma linha só, e a sua, duas linhas de três com botões mais baixos. */
+.svp.six .svp-top .svp-team {
+  grid-template-columns: repeat(6, 1fr);
+}
+
+.svp.six .svp-pip img {
+  height: 22px;
+}
+
+.svp.six .svp-bottom .svp-team {
+  gap: 4px;
+}
+
+.svp.six .svp-swap {
+  align-items: center;
+  gap: 3px;
+  min-height: 44px;
+  padding: 3px 4px;
+}
+
+.svp.six .svp-swap img {
+  height: 26px;
+}
+
+.svp.six .svp-swap .svp-name,
+.svp.six .svp-swap .svp-state {
+  display: none;
+}
+
+.svp.six .svp-swap.active {
+  box-shadow: inset 0 -3px 0 #4f8ce0;
+}
+
+.svp-attack {
+  border-color: var(--attack-color, #fff);
+  max-width: 76px;
+}
+
+.svp-attack.wait {
+  opacity: 0.75;
+}
+
+.svp-attack-now {
+  max-width: 68px;
+  overflow: hidden;
+  font-size: 0.62rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .svp-guard {

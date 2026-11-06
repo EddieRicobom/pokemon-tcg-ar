@@ -2,31 +2,23 @@
 import { computed, nextTick, onMounted, ref, watch } from 'vue';
 import { loadArenaMembers } from '../app/arena-members';
 import type { ArenaMember } from '../app/arena-members';
-import { movesetBook, savedMoves } from '../app/moveset-store';
-import type { DuelOpponentSpec } from '../app/turn-duel-setup';
-import { pendingChallenge } from '../app/league-store';
-import { arenaFlags, routeFlags, routeHref } from '../app/route';
-import type { RouteFlag } from '../app/route';
-import { battleMode, setBattleMode } from '../app/battle-mode-store';
-import { boxPvp } from '../app/box-pvp-store';
-import { visual } from '../app/visual-settings';
+import { league, pendingChallenge } from '../app/league-store';
+import { routeFlags, routeHref } from '../app/route';
 import { loadVillage } from '../app/village-store';
-import TeamPicker from '../components/TeamPicker.vue';
+import ArenaFight from '../components/ArenaFight.vue';
+import type { ArenaFightSetup } from '../components/ArenaFight.vue';
 import LeagueCard from '../components/LeagueCard.vue';
-import ArenaMovesetEditor from '../components/ArenaMovesetEditor.vue';
-import BoxPvpPanel from '../components/BoxPvpPanel.vue';
-import TurnDuel from '../components/TurnDuel.vue';
-import { ARENA_CHOICES, arenaPlan, choiceFromFlags, endlessFromFlags } from '../core/arena-menu';
+import TeamPicker from '../components/TeamPicker.vue';
+import { ARENA_CHOICES, ARENA_TEAM, arenaPlan, choiceFromFlags, endlessFromFlags } from '../core/arena-menu';
 import type { ArenaChoice } from '../core/arena-menu';
-import { BATTLE_MODE_HINTS_PT, BATTLE_MODE_LABELS_PT, BATTLE_MODES, battleModeBlocker, seededRng } from '../core/battle';
-import { ENDLESS_ARENA_LABELS, nextEndlessOpponent } from '../core/endless-arena';
+import { ENDLESS_ARENA_LABELS } from '../core/endless-arena';
 import type { EndlessArenaMode } from '../core/endless-arena';
-import { challengeById } from '../core/league';
+import { challengeById, statusOf } from '../core/league';
 import { BATTLE_REWARDS_PER_DAY, battleRewardsLeft } from '../core/village/life';
 import { dayKey } from '../core/trainer';
 
 /**
- * O menu único da Arena: escolher o que fazer, a equipe e as opções, tudo antes de entrar no palco (`#/caixa`).
+ * O menu único da Arena: escolher o que fazer e a equipe, e aí a luta 6x6 em tempo real abre aqui mesmo (`ArenaFight`).
  * Quem vem da Vila, do Fliperama, do PvP ou da Liga cai aqui já na opção certa (`choiceFromFlags`).
  */
 const ENDLESS_MODES: readonly EndlessArenaMode[] = ['formatacao', 'restauracao'];
@@ -43,31 +35,24 @@ const teamCount = ref<number | null>(null);
 const members = ref<ArenaMember[]>([]);
 const membersError = ref('');
 const selectedChallenge = computed(() => (pendingChallenge.value ? challengeById(pendingChallenge.value) : null));
-const modeBlocker = computed(() => battleModeBlocker(battleMode.value, teamCount.value ?? 0));
-const pvpConnected = computed(() => boxPvp.peer !== null);
+const leaderLocked = computed(() => !!selectedChallenge.value && statusOf(league.value, selectedChallenge.value) === 'locked');
+const fight = ref<ArenaFightSetup | null>(null);
 
-/** Contra quem é o duelo: um treinador sorteado (treino) ou um líder da Liga. */
-const duelRival = ref<'treino' | 'liga'>(pendingChallenge.value ? 'liga' : 'treino');
-
+const noDex = computed(() => members.value.filter((m) => m.dexId === undefined));
 const plan = computed(() => arenaPlan({
   choice: choice.value,
   teamCount: teamCount.value ?? 0,
-  mode: battleMode.value,
+  teamBlocker: membersError.value || (noDex.value.length > 0 ? `Sem número da Pokédex, não dá para lutar: ${noDex.value.map((m) => m.name).join(', ')}.` : null),
   endless: endless.value,
   leader: selectedChallenge.value?.leader ?? null,
-  duelLeague: duelRival.value === 'liga',
-  pvpConnected: pvpConnected.value,
-  friend: boxPvp.friend?.name ?? null,
-  modeBlocker: modeBlocker.value,
+  leaderLocked: leaderLocked.value,
 }));
 const chosen = computed(() => ARENA_CHOICES.find((c) => c.id === choice.value) ?? null);
 const rewardNote = computed(() => {
-  if (!fromFliperama || choice.value !== 'livre') return '';
+  if (!fromFliperama || choice.value !== 'treino') return '';
   const left = battleRewardsLeft(loadVillage(), dayKey(new Date()));
-  return left > 0 ? `Fliperama: +100 moedas por batalha (${left} de ${BATTLE_REWARDS_PER_DAY} hoje).` : 'Fliperama: as moedas de hoje já saíram.';
+  return left > 0 ? `Fliperama: +100 moedas por luta (${left} de ${BATTLE_REWARDS_PER_DAY} hoje).` : 'Fliperama: as moedas de hoje já saíram.';
 });
-/** Nos passos 2 e 3 o PvP primeiro conecta e só depois pede a equipe; nos outros a equipe vem primeiro. */
-const pvpFirst = computed(() => choice.value === 'pvp');
 
 let membersToken = 0;
 async function refreshMembers(ids: string[]): Promise<void> {
@@ -82,25 +67,6 @@ async function refreshMembers(ids: string[]): Promise<void> {
     members.value = [];
     membersError.value = `Não consegui abrir a equipe: ${error instanceof Error ? error.message : String(error)}`;
   }
-}
-
-/** Quem ainda não tem golpes montados: no duelo, entra com os sugeridos. */
-const unarmed = computed(() => {
-  void movesetBook.value;
-  return members.value.filter((m) => savedMoves(m.id, m.dexId).length === 0);
-});
-const duelOpponent = ref<DuelOpponentSpec | null>(null);
-const moreOpen = ref(arrival.has('golpes'));
-
-function startTraining(): void {
-  if (members.value.length === 0) return;
-  const foe = nextEndlessOpponent(seededRng((Math.random() * 2 ** 32) >>> 0));
-  duelOpponent.value = { trainer: foe.trainer, role: 'Treino', dexIds: foe.dexIds.slice(0, Math.min(6, members.value.length)), power: 1 };
-}
-function startLeagueDuel(): void {
-  const ch = selectedChallenge.value;
-  if (!ch || members.value.length === 0) return;
-  duelOpponent.value = { trainer: ch.leader, role: ch.role, dexIds: ch.team, power: ch.power, challengeId: ch.id };
 }
 
 function updateTeam(ids: string[]): void {
@@ -118,28 +84,21 @@ function pick(next: ArenaChoice): void {
   scrollTo('arena-step-2');
 }
 
-/** Entra no palco com tudo já escolhido aqui. PvP não começa sozinho: o anfitrião toca em Batalhar lá dentro. */
+/** Abre a luta com tudo já escolhido aqui. */
 function enter(): void {
   if (!plan.value.ready || !choice.value) return;
-  if (choice.value === 'duelo') {
-    if (duelRival.value === 'liga') startLeagueDuel();
-    else startTraining();
-    return;
-  }
-  const extra: RouteFlag[] = choice.value === 'pvp' ? ['pvp'] : choice.value === 'corridas' ? [endless.value, 'autoiniciar'] : ['autoiniciar'];
-  window.location.hash = routeHref('caixa', undefined, ['arena', ...arenaFlags(extra)]);
+  if (choice.value === 'liga') {
+    if (selectedChallenge.value) fight.value = { kind: 'liga', challenge: selectedChallenge.value };
+  } else if (choice.value === 'corridas') fight.value = { kind: 'corrida', mode: endless.value };
+  else if (choice.value === 'pvp') fight.value = { kind: 'pvp' };
+  else fight.value = { kind: 'treino' };
 }
 
-// Quem já está conectado e vê o anfitrião começar na hora vai para o palco, onde a luta é encenada.
-watch(() => boxPvp.pending, (pending) => {
-  if (pending && boxPvp.peer && choice.value === 'pvp') window.location.hash = routeHref('caixa', undefined, ['arena', ...arenaFlags(['pvp'])]);
-});
 // Escolher um líder na Liga marca o desafio: leva para o passo seguinte.
-watch(() => pendingChallenge.value, (id) => { if (id && (choice.value === 'liga' || choice.value === 'duelo')) scrollTo('arena-step-4'); });
+watch(() => pendingChallenge.value, (id) => { if (id && choice.value === 'liga') scrollTo('arena-step-4'); });
 
 onMounted(() => {
-  if (arrival.has('golpes')) scrollTo('arena-moves');
-  else if (choice.value) scrollTo('arena-step-2');
+  if (choice.value) scrollTo(choice.value === 'liga' && selectedChallenge.value ? 'arena-step-4' : 'arena-step-2');
 });
 </script>
 
@@ -149,12 +108,12 @@ onMounted(() => {
       <h2 id="arena-title">Arena</h2>
       <a v-if="fromVila" class="button" :href="routeHref('vila')">Voltar à Vila</a>
     </header>
-    <p class="note">Prepare tudo aqui, em quatro passos, e só então entre no Coliseu. Sem câmera e sem sensores: dentro da luta é só tocar em Batalhar.</p>
+    <p class="note">Luta 6×6 em tempo real, a mesma do fim do PvP do Survivor: você anda e desvia, o Pokémon ataca sozinho, e dá para trocar de Pokémon e de ataque com um toque.</p>
 
     <ol class="arena-steps" aria-label="Passos da Arena">
       <li :class="{ done: choice !== null, now: plan.step === 1 }"><b>{{ choice ? '✓' : '1' }}</b>O que fazer</li>
-      <li :class="{ done: plan.step > 2, now: plan.step === 2 }"><b>{{ plan.step > 2 ? '✓' : '2' }}</b>{{ pvpFirst ? 'Amigo' : 'Equipe' }}</li>
-      <li :class="{ done: plan.step > 3, now: plan.step === 3 }"><b>{{ plan.step > 3 ? '✓' : '3' }}</b>{{ pvpFirst ? 'Equipe' : choice === 'liga' ? 'Líder' : 'Opções' }}</li>
+      <li :class="{ done: plan.step > 2, now: plan.step === 2 }"><b>{{ plan.step > 2 ? '✓' : '2' }}</b>Equipe</li>
+      <li :class="{ done: plan.step > 3, now: plan.step === 3 }"><b>{{ plan.step > 3 ? '✓' : '3' }}</b>{{ choice === 'liga' ? 'Líder' : 'Opções' }}</li>
       <li :class="{ now: plan.step === 4 }"><b>4</b>Entrar</li>
     </ol>
     <p class="arena-guide" :class="{ ready: plan.ready }" role="status" aria-live="polite">
@@ -182,23 +141,11 @@ onMounted(() => {
     </section>
 
     <template v-if="choice">
-      <!-- PvP: conecta com o amigo (o lobby novo, com o passo a passo) antes de pedir a equipe. -->
-      <section v-if="pvpFirst" id="arena-step-2" class="arena-section" aria-labelledby="arena-step-2-title">
-        <h3 id="arena-step-2-title">2 · Conecte com o amigo</h3>
-        <p class="note">Um de vocês cria a sala e o outro entra com o código. Conectados, o anfitrião escolhe o modo (1x1, 3x3 ou 6x6).</p>
-        <BoxPvpPanel />
-      </section>
-
-      <section :id="pvpFirst ? 'arena-step-team' : 'arena-step-2'" class="arena-section" :aria-labelledby="pvpFirst ? 'arena-step-3-title' : 'arena-step-2-title'" :data-step="pvpFirst ? 3 : 2">
-        <h3 :id="pvpFirst ? 'arena-step-3-title' : 'arena-step-2-title'">{{ pvpFirst ? '3' : '2' }} · Sua equipe</h3>
-        <p class="note">
-          <template v-if="choice === 'corridas'">A corrida pede exatamente 6 Pokémon.</template>
-          <template v-else-if="choice === 'liga'">Use até 6 Pokémon; qualquer seleção disponível participa do desafio.</template>
-          <template v-else-if="choice === 'pvp'">Até 6 Pokémon; no modo 1x1 só o primeiro de cada equipe entra.</template>
-          <template v-else>Escolha de 2 a 6 Pokémon. Quem sobrar fica de fora da luta.</template>
-          Equipe atual: <strong>{{ teamCount ?? '…' }}/6</strong>.
-        </p>
+      <section id="arena-step-2" class="arena-section" aria-labelledby="arena-step-2-title">
+        <h3 id="arena-step-2-title">2 · Sua equipe</h3>
+        <p class="note">A luta pede exatamente {{ ARENA_TEAM }} Pokémon. Equipe atual: <strong>{{ teamCount ?? '…' }}/{{ ARENA_TEAM }}</strong>.</p>
         <TeamPicker :max="6" group-label="time de batalha" hint="Toque num Pokémon para colocar ou tirar da equipe. Tirar daqui não apaga o Pokémon da coleção." @ready="updateTeam" @change="updateTeam" />
+        <p v-if="membersError" class="hint" role="alert">{{ membersError }}</p>
         <div v-if="teamCount === 0" class="arena-first-run" role="status">
           <strong>Você ainda não tem Pokémon para formar uma equipe.</strong>
           <p>Escaneie cartas, abra Minhas cartas para carregar um Pokémon salvo ou entre na Vila para receber um companheiro digital.</p>
@@ -210,46 +157,7 @@ onMounted(() => {
         </div>
       </section>
 
-      <!-- Passo 3 (opções) conforme a escolha. -->
-      <section v-if="choice === 'livre'" id="arena-step-3" class="arena-section" aria-labelledby="arena-step-3-title">
-        <h3 id="arena-step-3-title">3 · Como será a luta</h3>
-        <div class="arena-modes" role="group" aria-label="Formato da batalha">
-          <button
-            v-for="m in BATTLE_MODES"
-            :key="m"
-            type="button"
-            class="arena-mode"
-            :class="{ on: battleMode === m }"
-            :aria-pressed="battleMode === m"
-            @click="setBattleMode(m)"
-          >
-            <strong>{{ BATTLE_MODE_LABELS_PT[m] }}</strong>
-            <small>{{ BATTLE_MODE_HINTS_PT[m] }}</small>
-          </button>
-        </div>
-        <p v-if="modeBlocker" class="hint" role="status">{{ modeBlocker }}</p>
-        <p class="hint">Dentro da Arena ainda dá para escalar quem fica no lado Vermelho ou Azul.</p>
-      </section>
-
-      <section v-else-if="choice === 'duelo'" id="arena-step-3" class="arena-section arena-league" aria-labelledby="arena-step-3-title">
-        <h3 id="arena-step-3-title">3 · Contra quem</h3>
-        <div class="arena-modes" role="group" aria-label="Rival do duelo">
-          <button type="button" class="arena-mode" :class="{ on: duelRival === 'treino' }" :aria-pressed="duelRival === 'treino'" @click="duelRival = 'treino'">
-            <strong>Treinador sorteado</strong>
-            <small>Treino: não muda a Liga.</small>
-          </button>
-          <button type="button" class="arena-mode" :class="{ on: duelRival === 'liga' }" :aria-pressed="duelRival === 'liga'" @click="duelRival = 'liga'">
-            <strong>Líder da Liga</strong>
-            <small>Vencer vale a insígnia.</small>
-          </button>
-        </div>
-        <template v-if="duelRival === 'liga'">
-          <p v-if="selectedChallenge" class="hint" role="status">Líder escolhido: <strong>{{ selectedChallenge.leader }}</strong> ({{ selectedChallenge.role }}).</p>
-          <LeagueCard embedded />
-        </template>
-      </section>
-
-      <section v-else-if="choice === 'liga'" id="arena-step-3" class="arena-section arena-league" aria-labelledby="arena-step-3-title">
+      <section v-if="choice === 'liga'" id="arena-step-3" class="arena-section arena-league" aria-labelledby="arena-step-3-title">
         <h3 id="arena-step-3-title">3 · Escolha o líder</h3>
         <p class="note">Por região e em ordem. O próximo desafio aberto vem destacado e cada bloqueio diz o que falta.</p>
         <p v-if="selectedChallenge" class="hint" role="status">Líder escolhido: <strong>{{ selectedChallenge.leader }}</strong> ({{ selectedChallenge.role }}).</p>
@@ -272,30 +180,9 @@ onMounted(() => {
             <small>{{ ENDLESS_ARENA_LABELS[m].tutorial }}</small>
           </button>
         </div>
-        <p class="hint">Os adversários usam espécies em estágio final e treinadores sorteados. Use <strong>Desistir</strong> dentro da luta para encerrar e guardar o placar.</p>
-      </section>
-
-      <section class="arena-section" aria-labelledby="arena-effects-title">
-        <details class="arena-advanced">
-          <summary id="arena-effects-title">Opções avançadas · luz, som e cenário</summary>
-          <label class="arena-toggle"><input v-model="visual.lighting" type="checkbox" /><span>Luz dos golpes <small>poupa a GPU se desligar</small></span></label>
-          <label class="arena-toggle"><input v-model="visual.impactFx" type="checkbox" /><span>Faíscas e ondas nos golpes fortes <small>desligado, a tela fica mais calma</small></span></label>
-          <label class="arena-toggle"><input v-model="visual.sound" type="checkbox" /><span>Som dos golpes e da vitória</span></label>
-          <label class="arena-toggle"><input v-model="visual.scenery" type="checkbox" /><span>Muro, arquibancada e tochas do Coliseu <small>desligado, só a areia</small></span></label>
-          <p class="hint">Dentro da luta ainda dá para ajustar a suavização dos pixels.</p>
-        </details>
+        <p class="hint">Os adversários usam espécies em estágio final e treinadores sorteados, e ficam mais fortes a cada vitória.</p>
       </section>
     </template>
-
-    <details id="arena-moves" class="arena-section arena-more" :open="moreOpen" @toggle="(e: Event) => (moreOpen = (e.target as HTMLDetailsElement).open)">
-      <summary>Golpes da equipe</summary>
-      <p class="note">Escolha até 4 golpes para cada Pokémon da equipe (só os que a espécie aprende de verdade, pela PokéAPI). Na batalha automática eles também valem. No <strong>duelo por turnos</strong> você escolhe o golpe a cada turno, como nos jogos.</p>
-      <p v-if="membersError" class="hint" role="alert">{{ membersError }}</p>
-      <ArenaMovesetEditor :members="members" />
-      <p v-if="unarmed.length > 0 && members.length > 0" class="hint">Sem golpes montados, entram no duelo com os sugeridos: {{ unarmed.map((m) => m.name).join(', ') }}.</p>
-    </details>
-
-    <TurnDuel v-if="duelOpponent" :members="members" :opponent="duelOpponent" @close="duelOpponent = null" />
 
     <!-- Passo 4: o resumo e o botão principal ficam sempre à mão, no pé da tela. -->
     <section id="arena-step-4" class="arena-enter" :class="{ waiting: !chosen }" aria-labelledby="arena-step-4-title">
@@ -303,9 +190,9 @@ onMounted(() => {
       <p v-if="chosen" class="arena-summary"><span aria-hidden="true">{{ chosen.icon }}</span> {{ plan.summary }}</p>
       <p v-if="!plan.ready && plan.blocker" class="arena-blocker" role="status">{{ plan.blocker }}</p>
       <button type="button" class="primary arena-go" :disabled="!plan.ready" @click="enter">{{ plan.cta }}</button>
-      <button v-if="choice === 'liga' && plan.ready" type="button" class="arena-duel-alt" @click="startLeagueDuel">🎯 Enfrentar por turnos, escolhendo cada golpe</button>
-      <p v-if="plan.ready" class="hint">Você pode parar a luta a qualquer momento com o botão Parar, e fechar a Arena para voltar aqui.</p>
     </section>
+
+    <ArenaFight v-if="fight" :setup="fight" :members="members" @close="fight = null" />
   </section>
 </template>
 

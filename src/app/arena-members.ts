@@ -7,7 +7,7 @@ import { currentDexId } from './moveset-store';
 import { getCache } from './services';
 import { loadVillage } from './village-store';
 
-/** Pokémon da equipe da Arena com o que a montagem de golpes e o duelo por turnos precisam. */
+/** Pokémon da equipe da Arena com o que a luta precisa. */
 export interface ArenaMember {
   id: string;
   /** Apelido da Vila, se houver. */
@@ -15,8 +15,10 @@ export interface ArenaMember {
   /** Espécie atual (já com a evolução da jornada); sem número da Pokédex não dá para buscar golpes. */
   dexId: number | undefined;
   shiny: boolean;
-  /** Intimidade da Vila (0 a 4), a mesma da batalha da Caixa. */
+  /** Intimidade da Vila (0 a 4). */
   bond: number;
+  /** Morador digital: não tem carta para somar vitórias. */
+  digital: boolean;
 }
 
 /** Monta os membros na ordem dos ids da equipe; quem sumiu do aparelho fica de fora. */
@@ -33,6 +35,7 @@ export async function loadArenaMembers(ids: readonly string[]): Promise<ArenaMem
       dexId: currentDexId(id, spriteIdOf(row)),
       shiny: 'digital' in row ? false : isShiny(row),
       bond: friendLevel(village.friends[id]?.points ?? 0).level,
+      digital: 'digital' in row,
     }];
   });
 }

@@ -6,13 +6,20 @@ vi.mock('../components/TeamPicker.vue', () => ({
     emits: ['ready', 'change'],
     setup(_props, { emit }) {
       onMounted(() => emit('ready', []));
-      return () => h('button', { type: 'button', class: 'team-picker-stub', onClick: () => emit('change', ['capturado-1']) }, 'Adicionar Pokémon');
+      return () => h('button', { type: 'button', class: 'team-picker-stub', onClick: () => emit('change', ['a', 'b', 'c', 'd', 'e', 'f']) }, 'Adicionar Pokémon');
     },
   }),
 }));
 
 // A equipe vem do cache de cartas (IndexedDB): aqui fica vazia, o que importa é o fluxo do desafio.
 vi.mock('../app/arena-members', () => ({ loadArenaMembers: vi.fn(async () => []) }));
+
+vi.mock('../components/ArenaFight.vue', () => ({
+  default: defineComponent({
+    props: { setup: { type: Object, required: true } },
+    setup: (props) => () => h('div', { class: 'arena-fight-stub' }, JSON.stringify((props.setup as { challenge?: { leader: string } }).challenge?.leader ?? (props.setup as { kind: string }).kind)),
+  }),
+}));
 
 vi.mock('../components/LeagueCard.vue', async () => {
   const { pendingChallenge } = await import('../app/league-store');
@@ -58,7 +65,7 @@ describe('ArenaView: desafio da Liga', () => {
     window.location.hash = '';
   });
 
-  it('no menu único, escolher a Liga e um líder só libera entrar com um Pokémon na equipe', async () => {
+  it('no menu único, a Liga pede líder e 6 Pokémon e abre a luta contra o líder, aqui mesmo', async () => {
     host = document.createElement('div');
     document.body.append(host);
     app = createApp(ArenaView);
@@ -81,7 +88,7 @@ describe('ArenaView: desafio da Liga', () => {
     await nextTick();
     expect(scrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth', block: 'start' });
     // Ainda sem Pokémon na equipe: o plano pede a equipe primeiro e não dá para entrar.
-    expect(host.querySelector('#arena-step-4')!.textContent).toContain('Escolha pelo menos 1 Pokémon');
+    expect(host.querySelector('#arena-step-4')!.textContent).toContain('exatamente 6 Pokémon');
     expect(go().disabled).toBe(true);
 
     host.querySelector<HTMLButtonElement>('.team-picker-stub')!.click();
@@ -90,6 +97,30 @@ describe('ArenaView: desafio da Liga', () => {
     expect(host.querySelector('#arena-step-4')!.textContent).toContain('Roark');
     expect(go().disabled).toBe(false);
     go().click();
-    expect(window.location.hash).toContain('/caixa');
+    await nextTick();
+    expect(window.location.hash).not.toContain('/caixa');
+    expect(host.querySelector('.arena-fight-stub')!.textContent).toContain('Roark');
+  });
+
+  it('quem chega com um desafio marcado cai direto na Liga, com o líder escolhido', async () => {
+    pendingChallenge.value = 'gym-0';
+    host = document.createElement('div');
+    document.body.append(host);
+    app = createApp(ArenaView);
+    app.mount(host);
+    await nextTick();
+    await nextTick();
+    expect(host.querySelector('.league-card-stub')).not.toBeNull();
+    expect(host.querySelector('#arena-step-3')!.textContent).toContain('Roark');
+  });
+
+  it('as lutas por turnos e o Coliseu saíram do menu', async () => {
+    host = document.createElement('div');
+    document.body.append(host);
+    app = createApp(ArenaView);
+    app.mount(host);
+    await nextTick();
+    const titles = [...host.querySelectorAll('.arena-choice strong')].map((el) => el.textContent);
+    expect(titles).toEqual(['Luta 6×6', 'Liga e desafios', 'Corridas 6×6', 'PvP com um amigo']);
   });
 });

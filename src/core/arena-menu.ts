@@ -1,16 +1,13 @@
-import { BATTLE_MODE_LABELS_PT } from './battle';
-import type { BattleMode } from './battle';
 import { ENDLESS_ARENA_LABELS } from './endless-arena';
 import type { EndlessArenaMode } from './endless-arena';
 
 /** O que a pessoa quer fazer na Arena: a primeira escolha do menu, antes de montar equipe e opções. */
-export type ArenaChoice = 'duelo' | 'livre' | 'liga' | 'corridas' | 'pvp';
+export type ArenaChoice = 'treino' | 'liga' | 'corridas' | 'pvp';
 
 export const ARENA_CHOICES: readonly { id: ArenaChoice; icon: string; title: string; hint: string }[] = [
-  { id: 'duelo', icon: '🎯', title: 'Duelo por turnos', hint: 'Você escolhe cada golpe, como num jogo Pokémon.' },
-  { id: 'livre', icon: '⚔️', title: 'Batalha livre', hint: 'Seus Pokémon lutam sozinhos no Coliseu, sem desafio.' },
+  { id: 'treino', icon: '⚔️', title: 'Luta 6×6', hint: 'Contra um treinador sorteado, em tempo real.' },
   { id: 'liga', icon: '🏅', title: 'Liga e desafios', hint: 'Enfrente líderes de ginásio e ganhe insígnias.' },
-  { id: 'corridas', icon: '🏁', title: 'Corridas 6×6', hint: 'Batalhas em sequência, valendo pontos.' },
+  { id: 'corridas', icon: '🏁', title: 'Corridas 6×6', hint: 'Lutas em sequência, valendo pontos.' },
   { id: 'pvp', icon: '🤝', title: 'PvP com um amigo', hint: 'Luta contra um amigo, cada um no seu aparelho.' },
 ];
 
@@ -22,11 +19,12 @@ export function isArenaChoice(value: unknown): value is ArenaChoice {
 
 /** Sinalizadores do endereço que já dizem a opção certa (Vila, Fliperama, PvP, Liga). Vazio = a pessoa escolhe. */
 export function choiceFromFlags(flags: ReadonlySet<string>, hasPendingChallenge: boolean): ArenaChoice | null {
+  // O pedido do endereço vem antes do desafio guardado: quem vem do Fliperama luta, mesmo com um líder marcado.
   if (flags.has('pvp')) return 'pvp';
   if (flags.has('corridas') || flags.has('formatacao') || flags.has('restauracao')) return 'corridas';
-  if (flags.has('liga') || hasPendingChallenge) return 'liga';
-  if (flags.has('batalha') || flags.has('livre')) return 'livre';
-  return null;
+  if (flags.has('liga')) return 'liga';
+  if (flags.has('batalha') || flags.has('livre')) return 'treino';
+  return hasPendingChallenge ? 'liga' : null;
 }
 
 /** Corrida pedida pelo endereço (`formatacao`/`restauracao`); a escolha padrão do menu é a primeira. */
@@ -38,18 +36,15 @@ export interface ArenaPlanInput {
   choice: ArenaChoice | null;
   /** Quantos Pokémon estão na equipe de batalha. */
   teamCount: number;
-  mode: BattleMode;
+  /** Por que esta equipe não pode lutar (Pokémon sem número da Pokédex), se for o caso. */
+  teamBlocker?: string | null;
   endless: EndlessArenaMode;
   /** Líder do desafio da Liga já escolhido, se houver. */
   leader: string | null;
-  /** Duelo: enfrentar um líder da Liga em vez de um treinador sorteado. */
-  duelLeague?: boolean;
+  /** O líder escolhido ainda está bloqueado. */
+  leaderLocked?: boolean;
   /** PvP: já conectado com o amigo? */
-  pvpConnected: boolean;
-  /** PvP: nome do amigo conectado. */
-  friend?: string | null;
-  /** Batalha livre: por que o formato escolhido não cabe na equipe (`battleModeBlocker`), se não couber. */
-  modeBlocker?: string | null;
+  friendReady?: boolean;
 }
 
 export interface ArenaPlan {
@@ -65,41 +60,29 @@ export interface ArenaPlan {
   step: 1 | 2 | 3 | 4;
 }
 
-function plural(n: number): string {
-  return `${n} Pokémon`;
-}
+/** A equipe da luta: sempre 6 de cada lado. */
+export const ARENA_TEAM = 6;
 
 /** Resume o que o menu da Arena vai fazer e o que falta, sem tocar em tela nem em armazenamento. */
 export function arenaPlan(input: ArenaPlanInput): ArenaPlan {
   const { choice, teamCount } = input;
   if (!choice) return { ready: false, blocker: 'Escolha o que quer fazer na Arena.', summary: '', cta: 'Escolha uma opção acima', step: 1 };
-  const modeName = BATTLE_MODE_LABELS_PT[input.mode];
-  if (choice === 'duelo') {
-    const pitch = 'Duelo um contra um: você escolhe cada golpe e quando trocar de Pokémon.';
-    if (teamCount < 1) return { ready: false, blocker: 'Escolha pelo menos 1 Pokémon para o duelo.', summary: pitch, cta: 'Escolha a equipe primeiro', step: 2 };
-    if (input.duelLeague && !input.leader) return { ready: false, blocker: 'Escolha um líder para desafiar.', summary: pitch, cta: 'Escolha um líder primeiro', step: 3 };
-    const rival = input.duelLeague ? `contra ${input.leader}, valendo a Liga` : 'contra um treinador sorteado';
-    return { ready: true, blocker: null, summary: `${plural(teamCount)} ${rival}. Quem não tem golpes montados usa os sugeridos.`, cta: '🎯 Começar o duelo', step: 4 };
+  const pitch = 'Cada Pokémon ganha 10 níveis antes da luta, e você escolhe as cartas.';
+  if (teamCount !== ARENA_TEAM) {
+    return { ready: false, blocker: `A luta é 6×6: escolha exatamente ${ARENA_TEAM} Pokémon (hoje ${teamCount}).`, summary: pitch, cta: 'Complete a equipe de 6 primeiro', step: 2 };
   }
+  if (input.teamBlocker) return { ready: false, blocker: input.teamBlocker, summary: pitch, cta: 'Troque a equipe primeiro', step: 2 };
   if (choice === 'pvp') {
-    if (!input.pvpConnected) {
-      return { ready: false, blocker: 'Conecte com o amigo (código da sala) para continuar.', summary: 'Você e um amigo lutam cada um no seu aparelho, com a equipe que cada um montou.', cta: 'Conecte com um amigo primeiro', step: 2 };
-    }
-    const friend = input.friend || 'o amigo';
-    if (teamCount < 1) return { ready: false, blocker: 'Escolha pelo menos 1 Pokémon para a luta.', summary: `Conectado com ${friend}.`, cta: 'Escolha a equipe primeiro', step: 3 };
-    return { ready: true, blocker: null, summary: `PvP com ${friend}: o anfitrião escolhe o modo e toca em Batalhar; ${plural(teamCount)} seu${teamCount === 1 ? '' : 's'} entram na luta.`, cta: '🤝 Entrar na Arena do PvP', step: 4 };
+    return { ready: true, blocker: null, summary: `Você e um amigo lutam em tempo real, cada um no seu aparelho. ${pitch}`, cta: '🤝 Conectar com um amigo', step: 4 };
   }
   if (choice === 'liga') {
-    if (teamCount < 1) return { ready: false, blocker: 'Escolha pelo menos 1 Pokémon para o desafio.', summary: 'Você escolhe um líder, monta a equipe e enfrenta o desafio na Arena.', cta: 'Escolha a equipe primeiro', step: 2 };
-    if (!input.leader) return { ready: false, blocker: 'Escolha um líder para desafiar.', summary: `${plural(teamCount)} prontos para a Liga.`, cta: 'Escolha um líder primeiro', step: 3 };
-    return { ready: true, blocker: null, summary: `Desafio contra ${input.leader}: até 6 dos seus ${plural(teamCount)} lutam contra a equipe do líder, um duelo por vez.`, cta: `🏅 Entrar na Arena e desafiar ${input.leader}`, step: 4 };
+    if (!input.leader) return { ready: false, blocker: 'Escolha um líder para desafiar.', summary: pitch, cta: 'Escolha um líder primeiro', step: 3 };
+    if (input.leaderLocked) return { ready: false, blocker: `${input.leader} ainda está bloqueado: vença os desafios anteriores.`, summary: pitch, cta: 'Escolha um líder aberto', step: 3 };
+    return { ready: true, blocker: null, summary: `Desafio contra ${input.leader}, valendo a Liga. ${pitch}`, cta: `🏅 Desafiar ${input.leader}`, step: 4 };
   }
   if (choice === 'corridas') {
     const run = ENDLESS_ARENA_LABELS[input.endless].title;
-    if (teamCount < 6) return { ready: false, blocker: `A corrida 6×6 pede exatamente 6 Pokémon (hoje ${teamCount}).`, summary: 'Batalhas automáticas em sequência, com a sua equipe de 6.', cta: 'Complete a equipe de 6 primeiro', step: 2 };
-    return { ready: true, blocker: null, summary: `${run}: batalhas 6×6 em sequência até você desistir. O placar da sessão é guardado.`, cta: `🏁 Entrar na Arena · ${run}`, step: 4 };
+    return { ready: true, blocker: null, summary: `${run}: lutas 6×6 em sequência até você sair. ${pitch}`, cta: `🏁 Começar ${run}`, step: 4 };
   }
-  if (teamCount < 2) return { ready: false, blocker: 'Escolha pelo menos 2 Pokémon para batalhar.', summary: 'Seus Pokémon lutam sozinhos no Coliseu virtual.', cta: 'Escolha a equipe primeiro', step: 2 };
-  if (input.modeBlocker) return { ready: false, blocker: input.modeBlocker, summary: `Batalha livre (${modeName}).`, cta: 'Troque o formato ou a equipe', step: 3 };
-  return { ready: true, blocker: null, summary: `Batalha livre (${modeName}): ${plural(teamCount)} lutam sozinhos no Coliseu virtual, sem câmera.`, cta: '⚔️ Entrar na Arena e batalhar', step: 4 };
+  return { ready: true, blocker: null, summary: `Luta 6×6 contra um treinador sorteado. ${pitch}`, cta: '⚔️ Preparar a luta', step: 4 };
 }

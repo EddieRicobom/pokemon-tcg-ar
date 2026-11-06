@@ -1,5 +1,7 @@
 # Regras do duelo por turnos da Arena
 
+> **Fora do menu**: a Arena agora usa a luta 6x6 em tempo real (`docs/ARCHITECTURE.md`, «A luta 6x6 da Arena»). Estas regras descrevem o motor `turn-battle.ts`, que não aparece mais na Arena.
+
 > **Menu da Arena** (`#/arena`): a entrada da Arena é um menu em quatro passos (o que fazer, equipe, opções, entrar), descrito em `docs/ARCHITECTURE.md` («O menu único da Arena»). O duelo por turnos abaixo fica em «Mais opções» do menu; a batalha livre, a Liga, as corridas 6×6 e o PvP abrem o palco depois das escolhas.
 
 Resumo das regras dos jogos (Gen VI em diante) que o duelo por turnos (`src/core/turn-battle.ts`) segue, do que ainda falta

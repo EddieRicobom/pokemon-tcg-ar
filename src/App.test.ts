@@ -74,7 +74,7 @@ describe('App', () => {
     expect(host?.querySelector('#arena-title')?.textContent).toBe('Arena');
     expect(text).not.toContain('Arena 3D');
     expect(text).not.toContain('Arena Digital');
-    for (const title of ['Batalha livre', 'Liga e desafios', 'Corridas 6×6', 'PvP com um amigo']) expect(text).toContain(title);
+    for (const title of ['Luta 6×6', 'Liga e desafios', 'Corridas 6×6', 'PvP com um amigo']) expect(text).toContain(title);
     // Sem escolha, o botão principal existe mas está desligado e a tela diz o que fazer.
     const go = host?.querySelector<HTMLButtonElement>('button.arena-go');
     expect(go?.disabled).toBe(true);
@@ -95,7 +95,7 @@ describe('App', () => {
     app?.unmount();
     host?.remove();
     await mount('#/arena?batalha=1&vila=1');
-    expect(host?.querySelector('button.arena-choice.on')?.textContent).toContain('Batalha livre');
+    expect(host?.querySelector('button.arena-choice.on')?.textContent).toContain('Luta 6×6');
     expect(host?.textContent).toContain('Fliperama');
     expect(host?.querySelector('.arena-view a[href="#/vila"]')?.textContent).toContain('Voltar à Vila');
   });

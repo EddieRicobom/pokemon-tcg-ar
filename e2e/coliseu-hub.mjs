@@ -1,4 +1,4 @@
-/** O menu único da Arena: o Coliseu da Vila abre a Arena (ou direto a Liga e o PvP), o Fliperama cai em «Batalha livre»,
+/** O menu único da Arena: o Coliseu da Vila abre a Arena (ou direto a Liga e o PvP), o Fliperama cai em «Luta 6×6»,
  * os endereços antigos (`#/caixa?pvp=1`) levam ao menu, e «Voltar à Vila» funciona. Sem câmera e sem rede: só navegação e telas.
  * APP_URL=http://127.0.0.1:4175/pokemon-tcg-ar/ BROWSER_PATH=<opcional> SCREENSHOT_DIR=<opcional> node e2e/coliseu-hub.mjs
  * Não abre câmera nem WebGL (só o menu); o palco em si é visto em `e2e/caixa-batalha.mjs`.
@@ -60,7 +60,7 @@ try {
   assert.match(await hash(), /^#\/arena/);
   assert.deepEqual(await page.locator('nav.tabs a.active').allInnerTexts(), ['Vila']);
   assert.equal(await page.locator('nav.modes').count(), 0);
-  for (const title of ['Batalha livre', 'Liga e desafios', 'Corridas 6×6', 'PvP com um amigo']) await page.locator('button.arena-choice').filter({ hasText: title }).waitFor();
+  for (const title of ['Luta 6×6', 'Liga e desafios', 'Corridas 6×6', 'PvP com um amigo']) await page.locator('button.arena-choice').filter({ hasText: title }).waitFor();
   assert.equal(await page.locator('button.arena-choice.on').count(), 0, 'sem pista no endereço, a pessoa escolhe');
   assert.equal(await page.locator('button.arena-go').isDisabled(), true, 'o botão principal só liga depois das escolhas');
   assert.match(await page.locator('.arena-guide').innerText(), /Escolha o que quer fazer/);
@@ -86,12 +86,12 @@ try {
   await page.waitForSelector('.village-pad');
   await capture('vila-com-coliseu');
 
-  // --- 3. Fliperama → menu da Arena já em «Batalha livre», com as moedas do dia
+  // --- 3. Fliperama → menu da Arena já em «Luta 6×6», com as moedas do dia
   await dismissNotices();
   await openPlace('Fliperama');
   await page.getByRole('button', { name: /Batalha na Arena/ }).click();
   await page.getByRole('heading', { name: 'Arena', exact: true }).waitFor();
-  await page.waitForFunction(() => document.querySelector('button.arena-choice.on')?.textContent?.includes('Batalha livre'));
+  await page.waitForFunction(() => document.querySelector('button.arena-choice.on')?.textContent?.includes('Luta 6×6'));
   assert.match(await page.locator('.arena-view').innerText(), /Fliperama/);
   await capture('hub-fliperama-arena');
 
