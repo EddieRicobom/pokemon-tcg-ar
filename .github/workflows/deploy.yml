@@ -108,7 +108,14 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+      url: ${{ steps.deployment.outputs.page_url || steps.retry.outputs.page_url }}
     steps:
+      # O Pages às vezes trava e a ação desiste em 10 minutos (o limite dela), com o build bom. Uma segunda tentativa
+      # com o mesmo artefato resolve sem refazer o build; se ela também falhar, o job falha e o site segue como estava.
       - id: deployment
+        uses: actions/deploy-pages@v5
+        continue-on-error: true
+
+      - id: retry
+        if: steps.deployment.outcome == 'failure'
         uses: actions/deploy-pages@v5
