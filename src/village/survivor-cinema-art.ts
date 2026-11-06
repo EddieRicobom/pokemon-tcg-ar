@@ -1,5 +1,5 @@
 import type { CinemaLook } from '../core/survivor-cinema';
-import { shadowFrom } from '../core/survivor-scars';
+import { shadowFrom } from '../core/survivor-impacts';
 
 /**
  * Desenho da luz cinematográfica da Torre. Feito para custar pouco: sem `shadowBlur` nem filtros; o brilho é um sprite
