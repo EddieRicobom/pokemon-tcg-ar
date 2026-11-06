@@ -45,31 +45,57 @@ describe('cone', () => {
     expect(inSurvivorCone(player, x, y, 140, 13)).toBe(true);
   });
 
-  it('ataca na direção do último passo, inclusive para cima e para baixo', () => {
+  it('mira sozinho no inimigo mais próximo, mesmo andando para o outro lado', () => {
     const s = run('fighting', 'cone');
-    const above = dummy(1, s.player.x, s.player.y - 70);
-    const right = dummy(2, s.player.x + 70, s.player.y);
-    s.enemies = [above, right];
-    s.player.attackTimerMs = 1_000;
-    stepSurvivor(s, { dx: 0, dy: -1 }, 16);
-    s.player.attackTimerMs = 0;
-    stepSurvivor(s, { dx: 0, dy: 0 }, 16);
-    expect(above.hp).toBeLessThan(1000);
-    expect(right.hp).toBe(1000);
+    const near = dummy(1, s.player.x, s.player.y - 70);
+    const far = dummy(2, s.player.x + 120, s.player.y);
+    s.enemies = [far, near];
+    stepSurvivor(s, { dx: 1, dy: 0 }, 16);
+    expect(near.hp).toBeLessThan(1000);
+    expect(far.hp).toBe(1000);
     const fx = s.fx.find((mark) => mark.kind === 'cone');
-    expect(fx?.angle).toBeCloseTo(-Math.PI / 2);
+    expect(fx?.angle).toBeCloseTo(Math.atan2(near.y - s.player.y, near.x - s.player.x));
     expect(fx?.moveType).toBe('fighting');
   });
 
-  it('no BONK a frente é a câmera: andar de lado não vira o cone para o lado', () => {
+  it('o guia aponta para o alvo enquanto o golpe recarrega', () => {
     const s = run('fighting', 'cone');
-    const ahead = dummy(1, s.player.x, s.player.y + 70);
-    const side = dummy(2, s.player.x + 70, s.player.y);
-    s.enemies = [ahead, side];
-    // Câmera olhando para +y e o jogador andando de lado (+x no mundo).
+    s.enemies = [dummy(1, s.player.x, s.player.y + 70)];
+    s.player.attackTimerMs = 1_000;
+    stepSurvivor(s, { dx: 1, dy: 0 }, 16);
+    expect(s.player.aimAngle).toBeCloseTo(Math.atan2(s.enemies[0]!.y - s.player.y, s.enemies[0]!.x - s.player.x));
+    expect(s.fx.some((mark) => mark.kind === 'cone')).toBe(false);
+  });
+
+  it('sem inimigo no alcance não ataca, não gasta a recarga e segue o último passo', () => {
+    const s = run('fighting', 'cone');
+    s.enemies = [dummy(1, s.player.x + s.player.attackRange + 200, s.player.y)];
+    stepSurvivor(s, { dx: 0, dy: -1 }, 16);
+    expect(s.fx.some((mark) => mark.kind === 'cone')).toBe(false);
+    expect(s.player.attackTimerMs).toBe(0);
+    expect(s.player.aimAngle).toBeCloseTo(-Math.PI / 2);
+  });
+
+  it('o corpo de um alvo grande com o centro fora do alcance conta', () => {
+    const s = run('fighting', 'cone');
+    const boss = dummy(1, s.player.x, s.player.y + s.player.attackRange + 20);
+    boss.radius = 40;
+    s.enemies = [boss];
+    stepSurvivor(s, { dx: 0, dy: 0 }, 16);
+    expect(boss.hp).toBeLessThan(1000);
+  });
+
+  it('no BONK a câmera só vale quando não há alvo: com inimigo perto, o cone vira para ele', () => {
+    const s = run('fighting', 'cone');
+    s.enemies = [];
+    s.player.attackTimerMs = 1_000;
     stepSurvivor(s, { dx: 1, dy: 0, aimAngle: Math.PI / 2 }, 16);
-    expect(ahead.hp).toBeLessThan(1000);
-    expect(side.hp).toBe(1000);
+    expect(s.player.aimAngle).toBeCloseTo(Math.PI / 2);
+    const side = dummy(1, s.player.x + 70, s.player.y);
+    s.enemies = [side];
+    s.player.attackTimerMs = 0;
+    stepSurvivor(s, { dx: 0, dy: 0, aimAngle: Math.PI / 2 }, 16);
+    expect(side.hp).toBeLessThan(1000);
   });
 });
 

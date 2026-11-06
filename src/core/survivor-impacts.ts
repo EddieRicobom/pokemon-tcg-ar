@@ -2,16 +2,16 @@ import type { PokemonType } from './pokemon-data';
 import type { SurvivorFx } from './survivor-types';
 
 /**
- * Marcas que os golpes deixam no chão da Torre e a luz que eles soltam. Lógica pura; o desenho fica em
- * `village/survivor-scars-art.ts`. A marca segue o golpe: o tipo escolhe o material, a forma do efeito escolhe o contorno
- * (explosão redonda, leque ou faixa de feixe) e o tamanho vem do alcance. Ela é só desenho: física e inimigos não mudam.
+ * Onde os golpes da Torre estouram e a luz que eles soltam. Lógica pura; as partículas ficam em
+ * `village/survivor-impact-art.ts`. O impacto segue o golpe: o tipo escolhe as partículas, a forma do efeito escolhe de onde
+ * saem (explosão redonda, leque ou faixa de feixe) e o tamanho vem do alcance. É só desenho e não deixa nada no chão.
  */
 
-export type ScarShape = 'round' | 'cone' | 'line';
+export type ImpactShape = 'round' | 'cone' | 'line';
 
-export interface Scar {
+export interface Impact {
   type: PokemonType;
-  shape: ScarShape;
+  shape: ImpactShape;
   x: number;
   y: number;
   /** Raio da explosão, alcance do leque ou meia largura da faixa. */
@@ -25,15 +25,15 @@ export interface Scar {
   seed: number;
 }
 
-/** Abaixo disso o golpe é pequeno demais para marcar o chão. */
+/** Abaixo disso o golpe é pequeno demais para soltar partículas. */
 const MIN_ROUND_RADIUS = 22;
 const MAX_ROUND_RADIUS = 110;
 const MAX_LINE_WIDTH = 30;
 
 const seedOf = (x: number, y: number): number => (Math.round(x) * 73 + Math.round(y) * 179) >>> 0;
 
-/** A marca de um efeito de golpe, ou nada se ele não for um golpe que acerta o chão. */
-export function scarFromFx(fx: SurvivorFx, power: number): Scar | null {
+/** O impacto de um efeito de golpe, ou nada se ele não for um golpe que acerta o chão. */
+export function impactFromFx(fx: SurvivorFx, power: number): Impact | null {
   if (!fx.moveType) return null;
   const base = { type: fx.moveType, x: fx.x, y: fx.y, seed: seedOf(fx.x, fx.y) };
   if (fx.kind === 'blast' || fx.kind === 'pulse') {
@@ -55,40 +55,6 @@ export function scarFromFx(fx: SurvivorFx, power: number): Scar | null {
     return { ...base, shape: 'line', x: fx.fromX, y: fx.fromY, r, angle: Math.atan2(dy, dx), spread: 0, length };
   }
   return null;
-}
-
-/** Lado do pedaço de chão em que as marcas são pintadas de vez. */
-export const SCAR_CHUNK = 480;
-/** Pedaços a mais de dois de distância do jogador se perdem, e as marcas deles junto. */
-const KEPT_CHUNKS = 2;
-
-/** Retângulo que a marca ocupa, com folga para a borda irregular. */
-export function scarBounds(scar: Scar): { left: number; top: number; right: number; bottom: number } {
-  const margin = scar.r * 1.4 + 8;
-  const endX = scar.x + Math.cos(scar.angle) * (scar.shape === 'line' ? scar.length : scar.shape === 'cone' ? scar.r : 0);
-  const endY = scar.y + Math.sin(scar.angle) * (scar.shape === 'line' ? scar.length : scar.shape === 'cone' ? scar.r : 0);
-  return {
-    left: Math.min(scar.x, endX) - margin,
-    top: Math.min(scar.y, endY) - margin,
-    right: Math.max(scar.x, endX) + margin,
-    bottom: Math.max(scar.y, endY) + margin,
-  };
-}
-
-/** Pedaços de chão que a marca toca: uma marca na divisa é pintada nos dois. */
-export function chunksTouched(scar: Scar): [number, number][] {
-  const box = scarBounds(scar);
-  const out: [number, number][] = [];
-  for (let cy = Math.floor(box.top / SCAR_CHUNK); cy <= Math.floor(box.bottom / SCAR_CHUNK); cy++) {
-    for (let cx = Math.floor(box.left / SCAR_CHUNK); cx <= Math.floor(box.right / SCAR_CHUNK); cx++) out.push([cx, cy]);
-  }
-  return out;
-}
-
-export function isChunkLost(cx: number, cy: number, playerX: number, playerY: number): boolean {
-  const px = Math.floor(playerX / SCAR_CHUNK);
-  const py = Math.floor(playerY / SCAR_CHUNK);
-  return Math.max(Math.abs(cx - px), Math.abs(cy - py)) > KEPT_CHUNKS;
 }
 
 const LIGHT_BY_TYPE: Partial<Record<PokemonType, number>> = {

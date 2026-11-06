@@ -5,9 +5,9 @@ import SurvivorDebug from './SurvivorDebug.vue';
 import AttackIcon from './AttackIcon.vue';
 import { MusicPlayer } from '../app/music-player';
 import { cinemaLook, cinemaPower } from '../core/survivor-cinema';
-import { flashAlpha, moveLight, scarFromFx } from '../core/survivor-scars';
+import { flashAlpha, impactFromFx, moveLight } from '../core/survivor-impacts';
 import { drawCastShadows, drawLights, drawNight } from '../village/survivor-cinema-art';
-import { ScarField, ScarSparks } from '../village/survivor-scars-art';
+import { ImpactSparks } from '../village/survivor-impact-art';
 import { ARTIFACT_ICONS, artifactIconUrl, drawArtifactIcon } from '../village/artifact-icons-art';
 import type { CinemaLight } from '../village/survivor-cinema-art';
 import { routeHref } from '../app/route';
@@ -139,7 +139,7 @@ const MOVE_CATEGORY_HINTS_PT: Record<SurvivorMove['category'], string> = {
   projetil: 'Mantenha distância: o dano cai conforme o alvo se afasta.',
   aura: 'Fere quem encosta. Circule para não ficar cercado.',
   area: 'Explode no alvo e também atinge inimigos próximos.',
-  cone: 'Acerte à frente e atravesse grupos em movimento.',
+  cone: 'Mira sozinho no inimigo mais perto e acerta o grupo no leque.',
   orbit: 'Ataca ao redor. Fica melhor quando você se aproxima e se move.',
   foco: 'Disparo largo e lento. Segure o botão de carga (ou R) para um feixe que atravessa todos; você fica lento enquanto carrega.',
   rapido: 'Dispara três tiros rápidos e então faz uma breve pausa. Mantenha-se em movimento durante a pausa.',
@@ -2135,10 +2135,9 @@ function preloadVisibleEnemyRegions(elapsedMs: number, runSeed = 0, enemies: rea
 
 const cinemaCasters: SurvivorEnemy[] = [];
 const cinemaLights: CinemaLight[] = [];
-/** Marcas e partículas dos golpes: só desenho, a física e o caminho dos inimigos não mudam. */
-const scarField = new ScarField();
-const scarSparks = new ScarSparks();
-let seenScarFx = new WeakSet<object>();
+/** Partículas dos golpes: só desenho, a física e o caminho dos inimigos não mudam. */
+const impactSparks = new ImpactSparks();
+let seenImpactFx = new WeakSet<object>();
 
 function draw(): void {
   if (!ctx || !canvasEl.value || !state.value) return;
@@ -2278,13 +2277,10 @@ function draw(): void {
     const lights = cinemaLights;
     lights.length = 0;
     for (const f of s.fx) {
-      if (!seenScarFx.has(f)) {
-        seenScarFx.add(f);
-        const scar = scarFromFx(f, cinemaStrength);
-        if (scar) {
-          scarField.add(scar);
-          if (!reducedMotion) scarSparks.burst(scar);
-        }
+      if (!seenImpactFx.has(f)) {
+        seenImpactFx.add(f);
+        const impact = reducedMotion ? null : impactFromFx(f, cinemaStrength);
+        if (impact) impactSparks.burst(impact);
       }
       if (lights.length >= cinema.glows) continue;
       if (f.kind !== 'blast' && f.kind !== 'pulse' && f.kind !== 'beam' && f.kind !== 'cone' && f.kind !== 'rush') continue;
@@ -2312,7 +2308,6 @@ function draw(): void {
       if (e.x < left || e.x > right || e.y < top || e.y > bottom) continue;
       lights.push({ x: e.x, y: e.y - 14, r: 90, color: '#ff3b2f', alpha: 0.4 });
     }
-    scarField.draw(ctx, { x: camX, y: camY, w: worldViewW, h: worldViewH }, s.player.x, s.player.y);
     cinemaCasters.length = 0;
     for (const e of s.enemies) {
       if (cinemaCasters.length >= cinema.shadows) break;
@@ -2608,7 +2603,7 @@ function draw(): void {
   if (cinema) {
     const view = { x: camX, y: camY, w: worldViewW, h: worldViewH };
     drawNight(ctx, cinema, cinemaLights, view, animMs);
-    scarSparks.draw(ctx, animMs);
+    impactSparks.draw(ctx, animMs);
     drawLights(ctx, cinemaLights);
   }
   ctx.restore();
@@ -3413,9 +3408,8 @@ async function beginRun(dexId: number, name: string, picked?: PokemonType, infin
   runCompanion = companion;
   runShiny = shiny;
   runEpoch++;
-  scarField.clear();
-  scarSparks.clear();
-  seenScarFx = new WeakSet<object>();
+  impactSparks.clear();
+  seenImpactFx = new WeakSet<object>();
   pickBusy.value = true;
   try {
     avatarName.value = name;
