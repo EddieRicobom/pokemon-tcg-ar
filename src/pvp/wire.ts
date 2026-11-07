@@ -1,7 +1,5 @@
-import { parseBoxMessage } from './box-wire';
 import { parseSurvivalMessage } from './survival-wire';
 import type { SurvivalWireMessage } from './survival-wire';
-import type { BoxWireMessage } from './box-wire';
 import type { Rng } from '../core/battle';
 import { ARENA_RADIUS, EFFECT_KINDS, MAX_MOVES, MAX_PER_SIDE, pinFromSpec } from '../core/pins';
 import type { Patch, PinSpec, PinWall, PinWorld, Shot, ShotEffect } from '../core/pins';
@@ -68,7 +66,6 @@ export interface WireInit extends WireWorld {
 }
 
 export type WireMessage =
-  | BoxWireMessage
   | SurvivalWireMessage
   | DungeonWireMessage
   | TauntMessage
@@ -357,11 +354,6 @@ export function parseMessage(raw: unknown): WireMessage | null {
       const world = parseWorld(v.world);
       return world ? { t: 'settled', world } : null;
     }
-    case 'cx-team':
-    case 'cx-start':
-    case 'cx-ready':
-    case 'cx-go':
-      return parseBoxMessage(v);
     case 'sv-team':
     case 'sv-progress':
     case 'sv-start':

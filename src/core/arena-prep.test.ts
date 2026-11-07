@@ -142,6 +142,13 @@ describe('rival', () => {
     expect(team.map((m) => m.dexId)).toEqual([74, 95, 74, 95, 74, 95]);
   });
 
+  it('todo rival recebe os mesmos 10 níveis, em qualquer dificuldade', () => {
+    // A nota da preparação é 2 pontos por nível: nível 1 + 10 cartas = 22.
+    for (const power of [0.8, 1, 1.72]) {
+      for (const mon of arenaRivalTeam([3, 25, 94, 130, 143, 445], power, 13)) expect(mon.score).toBe(2 * (1 + ARENA_LEVEL_UPS));
+    }
+  });
+
   it('a dificuldade do desafio aumenta vida e dano', () => {
     const [easy] = arenaRivalTeam([74], 1, 5);
     const [hard] = arenaRivalTeam([74], 1.5, 5);

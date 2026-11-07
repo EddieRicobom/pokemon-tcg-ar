@@ -1,6 +1,8 @@
 import { visibleVerticalFov } from './orientation';
 import { BOX_NEAR_GAP_M } from './floor';
-import { ARENA_MAX_DISTANCE } from './arena';
+
+/** O palco virtual nasce a esta distância da câmera, no máximo (m). */
+export const ARENA_MAX_DISTANCE = 3.2;
 
 /** O que a cena precisa saber do vídeo de fundo: só o tamanho dele (ainda 0×0 antes de `loadedmetadata`). */
 export interface VideoSize {

@@ -18,11 +18,11 @@ function fakeBox(placeResult: { ok: true } | { ok: false; message: string } = { 
     clearPlacement: vi.fn(),
     pick: () => null,
     setCreatures: vi.fn(),
-    setMode: vi.fn(), setSmoothing: vi.fn(), setLighting: vi.fn(), setImpactEffects: vi.fn(), setTerrain: vi.fn(), setSocial: vi.fn(), setWeather: vi.fn(), setSound: vi.fn(),
+    setMode: vi.fn(), setSmoothing: vi.fn(), setLighting: vi.fn(), setTerrain: vi.fn(), setSocial: vi.fn(), setWeather: vi.fn(), setSound: vi.fn(),
     setScenery: (on: boolean) => calls.setScenery.push(on),
     setPhoneHeight: (m: number) => calls.setPhoneHeight.push(m),
     setHalfSize: (m: number) => calls.setHalfSize.push(m),
-    setVideoFov: vi.fn(), unlockAudio: vi.fn(), startBattle: vi.fn(), stopBattle: vi.fn(), recenterBattle: vi.fn(), resize: vi.fn(),
+    setVideoFov: vi.fn(), resize: vi.fn(),
     stop: () => { calls.stop++; },
   };
   return { box, calls };
@@ -57,8 +57,8 @@ describe('CaixaView: o palco da Arena (virtual, sem câmera)', () => {
 
   it('abre sempre na Arena, sem escolher câmera ou fundo, e aponta para o menu', async () => {
     const root = await mount('#/caixa');
-    expect(root.querySelector('h2')?.textContent).toBe('Arena');
-    expect(button(root, 'Entrar na Arena')).toBeTruthy();
+    expect(root.querySelector('h2')?.textContent).toBe('Coliseu');
+    expect(button(root, 'Entrar no Coliseu')).toBeTruthy();
     expect(root.querySelector('.virtual-sky')).not.toBeNull();
     expect(startBox).not.toHaveBeenCalled();
     // Equipe, formato e PvP são escolhidos antes, no menu da Arena.
@@ -85,8 +85,8 @@ describe('CaixaView: o palco da Arena (virtual, sem câmera)', () => {
     const { box, calls } = fakeBox();
     startBox.mockResolvedValue(box);
     const root = await mount('#/caixa?virtual=1');
-    expect(root.querySelector('h2')?.textContent).toBe('Arena');
-    button(root, 'Entrar na Arena')!.click();
+    expect(root.querySelector('h2')?.textContent).toBe('Coliseu');
+    button(root, 'Entrar no Coliseu')!.click();
     await vi.waitFor(() => expect(root.querySelector('.stage-bar')).not.toBeNull());
     expect(startBox).toHaveBeenCalledTimes(1);
     const options = startBox.mock.calls[0]![0] as { virtual?: boolean; video?: unknown; canvas: unknown; container: unknown };
@@ -108,7 +108,7 @@ describe('CaixaView: o palco da Arena (virtual, sem câmera)', () => {
     const { box } = fakeBox();
     startBox.mockResolvedValue(box);
     const root = await mount('#/caixa?virtual=1');
-    button(root, 'Entrar na Arena')!.click();
+    button(root, 'Entrar no Coliseu')!.click();
     await vi.waitFor(() => expect(root.querySelector('.stage-bar')).not.toBeNull());
     [...root.querySelectorAll<HTMLButtonElement>('.stage-bar button')].find((b) => b.textContent?.includes('Ajustes'))!.click();
     await nextTick();
@@ -120,9 +120,9 @@ describe('CaixaView: o palco da Arena (virtual, sem câmera)', () => {
   it('se a cena não monta, mostra o erro em português e volta à tela inicial', async () => {
     startBox.mockRejectedValue(new Error('WebGL indisponível'));
     const root = await mount('#/caixa?virtual=1');
-    button(root, 'Entrar na Arena')!.click();
-    await vi.waitFor(() => expect(root.textContent).toContain('Não consegui montar a Arena: WebGL indisponível'));
-    expect(button(root, 'Entrar na Arena')).toBeTruthy();
+    button(root, 'Entrar no Coliseu')!.click();
+    await vi.waitFor(() => expect(root.textContent).toContain('Não consegui montar o Coliseu: WebGL indisponível'));
+    expect(button(root, 'Entrar no Coliseu')).toBeTruthy();
     expect(root.querySelector('.stage-bar')).toBeNull();
   });
 
@@ -130,8 +130,8 @@ describe('CaixaView: o palco da Arena (virtual, sem câmera)', () => {
     const { box, calls } = fakeBox({ ok: false, message: 'sem chão' });
     startBox.mockResolvedValue(box);
     const root = await mount('#/caixa?virtual=1');
-    button(root, 'Entrar na Arena')!.click();
-    await vi.waitFor(() => expect(root.textContent).toContain('Não consegui montar a Arena: sem chão'));
+    button(root, 'Entrar no Coliseu')!.click();
+    await vi.waitFor(() => expect(root.textContent).toContain('Não consegui montar o Coliseu: sem chão'));
     expect(calls.stop).toBe(1);
     expect(root.querySelector('.stage-bar')).toBeNull();
   });

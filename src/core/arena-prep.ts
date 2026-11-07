@@ -49,9 +49,12 @@ export function arenaIdleUpgrades(player: SurvivorPlayer): string[] {
 
 function nextOffer(prep: ArenaPrep): void {
   const { state } = prep;
-  const offer = prep.picked.length < ARENA_LEVEL_UPS
-    ? rollUpgrades(state.rng, OFFER_SIZE, state.player.move, state.player, { excludeIds: arenaIdleUpgrades(state.player) })
-    : [];
+  let offer: SurvivorUpgradeOption[] = [];
+  if (prep.picked.length < ARENA_LEVEL_UPS) {
+    offer = rollUpgrades(state.rng, OFFER_SIZE, state.player.move, state.player, { excludeIds: arenaIdleUpgrades(state.player) });
+    // Os 10 níveis são garantidos para os dois lados: sem carta útil sobrando, vale qualquer carta da forma do golpe.
+    if (offer.length === 0) offer = rollUpgrades(state.rng, OFFER_SIZE, state.player.move, state.player);
+  }
   prep.offer = offer;
   state.pendingUpgrade = offer.length > 0 ? offer : null;
 }

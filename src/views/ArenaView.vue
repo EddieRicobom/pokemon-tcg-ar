@@ -190,6 +190,7 @@ onMounted(() => {
       <p v-if="chosen" class="arena-summary"><span aria-hidden="true">{{ chosen.icon }}</span> {{ plan.summary }}</p>
       <p v-if="!plan.ready && plan.blocker" class="arena-blocker" role="status">{{ plan.blocker }}</p>
       <button type="button" class="primary arena-go" :disabled="!plan.ready" @click="enter">{{ plan.cta }}</button>
+      <a class="arena-stroll" :href="routeHref('caixa', undefined, ['arena'])">Ver os Pokémon passeando no Coliseu</a>
     </section>
 
     <ArenaFight v-if="fight" :setup="fight" :members="members" @close="fight = null" />

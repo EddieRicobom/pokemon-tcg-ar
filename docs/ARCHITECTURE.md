@@ -187,6 +187,8 @@ Quem chega de outro lugar cai na opção certa (`choiceFromFlags`): `vilaExitHre
 
 Interface: alvos de toque de pelo menos 2,75 rem, botão principal de 3,4 rem, `prefers-reduced-motion` desliga transições e a rolagem suave entre passos. O palco (`CaixaView`) abre sempre sem câmera e mantém só os ajustes de dentro da luta (Suavizar, equipe que passeia, formação, escalação Vermelha/Azul, Livro).
 
+> **Batalha 3D removida**: a sessão de batalha (`box-battle-session`), o diretor de cena (`battle-director`), a torcida, a escalação, a Mega de batalha e o PvP da Caixa saíram do código. As lutas são as da seção «A luta 6x6 da Arena», e `#/caixa` só mostra a equipe passeando no Coliseu. Os trechos abaixo que descrevem batalha na Caixa são histórico; `core/battle.ts` segue com `seededRng`, `typeEffectiveness` e o motor antigo.
+
 ### Arena: o palco virtual da Caixa (`src/box/coliseu-scenery.ts`, `startBox({ virtual: true })`)
 
 A mesma tela da Caixa (`CaixaView`, a mesma sessão de batalha) abre sem câmera quando o endereço traz `?virtual=1` ou quando se escolhe **«Arena virtual»** no interruptor de fundo (ao lado de **«Câmera (AR)»**, que continua sendo a Caixa em AR de sempre; o fundo vale para a visita e não muda com a sessão aberta). No palco virtual:

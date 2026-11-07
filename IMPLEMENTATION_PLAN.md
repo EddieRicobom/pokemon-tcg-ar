@@ -28,7 +28,7 @@ Registro de entregas já concluídas (cada uma com a data, o que mudou e o que n
 - 🔶 Fluidez, calor e leituras/s em celular real: não medidos. No Chromium sem GPU: ~6–8 leituras/s com a normalização de luz; ~7–11 sem ela.
 
 ### Caixa e batalha 🔶
-- ✅ **Arena 6x6 em tempo real**: treino, Liga, corridas e PvP usam a arena do fim do PvP do Survivor, com 10 cartas por Pokémon antes da luta e botão para trocar de ataque. A Caixa deixou de iniciar lutas. 🔶 O código da batalha 3D ainda existe sem entrada; PvP entre dois aparelhos e toque em celular real não foram testados.
+- ✅ **Arena 6x6 em tempo real**: treino, Liga, corridas e PvP usam a arena do fim do PvP do Survivor, com 10 cartas por Pokémon antes da luta e botão para trocar de ataque. A batalha 3D da Caixa foi removida do código, e `#/caixa` mostra a equipe passeando no Coliseu. 🔶 PvP entre dois aparelhos e toque em celular real não foram testados.
 - ✅ Caixa de Pokémon soltos no chão pelo giroscópio, equipe de até 40 com escalação por lado, formação, tela cheia.
 - ✅ Telas com câmera em modo imersivo (a imagem cobre a janela; avisos no topo e folhas sobre a imagem, sem rolar). 🔶 Falta ver em celular real.
 - ✅ Rastreio: pose repetida pelo MindAR não segura mais o Pokémon (some em poucos segundos); foco/exposição contínuos e 720p. 🔶 Efeito do foco e do 720p só em celular real.
