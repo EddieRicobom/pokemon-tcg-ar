@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { craftMany, craftMissing, maxCraftable, recipeLines } from './crafting';
+import { craftMany, craftMissing, craftMissingFor, goalsByItem, maxCraftable, recipeLines, villageGoals } from './crafting';
 import { count, emptyVillage } from './life';
 import type { VillageState } from './life';
 
@@ -57,5 +57,38 @@ describe('fabricar na Vila', () => {
     const s = village({});
     expect(recipeLines(s, 'pao-mel')).toEqual([]);
     expect(maxCraftable(s, 'pao-mel')).toBe(0);
+  });
+});
+
+describe('o que as melhorias da Vila pedem', () => {
+  it('a casa, a casa do morador e o Dojô aparecem com os materiais', () => {
+    const s = village({ madeira: 3 });
+    const goals = villageGoals(s, { homeLots: [2, 5], dojoOpen: true });
+    expect(goals.map((g) => g.id)).toEqual(expect.arrayContaining(['casa', 'morador-2', 'dojo']));
+    const dojo = goals.find((g) => g.id === 'dojo')!;
+    expect(dojo.coins).toBe(400);
+    expect(dojo.lines).toEqual([expect.objectContaining({ item: 'tabua', need: 4, have: 0, makeable: false })]);
+  });
+
+  it('com o Dojô fechado, ele não entra', () => {
+    const goals = villageGoals(village({}), { dojoOpen: false });
+    expect(goals.some((g) => g.id.startsWith('dojo') || g.id.startsWith('treino') || g.id.startsWith('licao'))).toBe(false);
+  });
+
+  it('fabrica as tábuas que o Tatame pede', () => {
+    const s = village({ madeira: 8 });
+    const dojo = villageGoals(s, { dojoOpen: true }).find((g) => g.id === 'dojo')!;
+    expect(dojo.makeable).toBe(true);
+    const result = craftMissingFor(s, { tabua: 4 }, 'o Tatame');
+    expect(result.ok).toBe(true);
+    expect(result.message).toContain('o Tatame');
+    expect(count(s, 'tabua')).toBe(4);
+    expect(villageGoals(s, { dojoOpen: true }).find((g) => g.id === 'dojo')!.ready).toBe(true);
+  });
+
+  it('cada material que falta sabe para qual melhoria serve', () => {
+    const s = village({});
+    const map = goalsByItem(villageGoals(s, { dojoOpen: true }));
+    expect(map.get('tabua')).toEqual(expect.arrayContaining(['Dojô: Tatame']));
   });
 });
