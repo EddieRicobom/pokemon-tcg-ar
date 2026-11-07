@@ -36,8 +36,12 @@ import type { PokemonType } from './pokemon-data';
 
 export * from './survivor-types';
 import { createBonkObstacles } from './survivor-bonk';
+import {
+  ADAPTIVE_START, adaptiveTarget, applyLevelBonus, damageRanking, emptyRunStats, LEVEL_BONUS_TEXT, recordDamage, sampleTimeline, stepAdaptive,
+  SURVIVOR_THIEF_DEX, SURVIVOR_THIEF_EVERY_MS, SURVIVOR_THIEF_FIRST_MS, SURVIVOR_THIEF_LIFE_MS, SURVIVOR_THIEF_SPEED, thiefFleeTarget, thiefReward,
+} from './survivor-extras';
 import { ARENA_H, ARENA_W, DIGITAL_DANGER_COOLDOWN_MS, DIGITAL_DANGER_MAX, DIGITAL_DANGER_UNLOCK_MS, DIGITAL_DANGER_VISIBLE_RADIUS, MAGNET_PICKUP_RADIUS_CAP, MAX_DIGITAL_POKEBALLS_PER_RUN, MAX_SURVIVOR_SUPPORTS, PICKUP_RADIUS, PLAYER_RADIUS, SPAWN_MARGIN, SURVIVOR_FIELD_EVENT_BEACON_MS, SURVIVOR_FIELD_EVENT_EVERY_MS, SURVIVOR_FIELD_EVENT_FIRST_MS, SURVIVOR_FIELD_EVENT_HUNT_MS, SURVIVOR_FIELD_EVENT_REACH_RADIUS, SURVIVOR_LOVE_CANDY_MS, SURVIVOR_OMEGA_SHARD_MS, SURVIVOR_SHADOW_BALL_EVERY_MS, SURVIVOR_SHADOW_BALL_FIRST_MS, SURVIVOR_SHADOW_BALL_MAX_PER_RUN, SURVIVOR_SHADOW_CUTSCENE_MS, SURVIVOR_SPAWN_DISTANCE, SURVIVOR_SUPPORT_EVOLUTION_OFFER_CHANCE, SURVIVOR_SUPPORT_RARE_OFFER_CHANCE, SURVIVOR_TRUST_STONE_MS, SURVIVOR_UPGRADE_RARITIES, SURVIVOR_FAST_TRAINER_COIN_SCALE, survivorMilestoneMs } from './survivor-types';
-import type { SurvivorArtifactKind, SurvivorChest, SurvivorGravityWell, SurvivorHeldStrike, SurvivorTimeBubble, SurvivorFinalHit, SurvivorHitSource, SurvivorEnemy, SurvivorEnemyArchetype, SurvivorEnemyGrade, SurvivorEvent, SurvivorEvolutionOption, SurvivorInput, SurvivorPlayer, SurvivorProjectile, SurvivorState, SurvivorSupport, SurvivorSupportCandidate, SurvivorSupportRole, SurvivorTypeAffinity, SurvivorUpgrade, SurvivorUpgradeOption, SurvivorUpgradeRarity } from './survivor-types';
+import type { SurvivorSummary, SurvivorArtifactKind, SurvivorChest, SurvivorGravityWell, SurvivorHeldStrike, SurvivorTimeBubble, SurvivorFinalHit, SurvivorHitSource, SurvivorEnemy, SurvivorEnemyArchetype, SurvivorEnemyGrade, SurvivorEvent, SurvivorEvolutionOption, SurvivorInput, SurvivorPlayer, SurvivorProjectile, SurvivorState, SurvivorSupport, SurvivorSupportCandidate, SurvivorSupportRole, SurvivorTypeAffinity, SurvivorUpgrade, SurvivorUpgradeOption, SurvivorUpgradeRarity } from './survivor-types';
 import { cadenceCanImprove, CHARGE_FOCUS_RATE_ID, CHARGE_RUSH_LENGTH_ID, SURVIVOR_ATTACK_DAMAGE_CAP, SURVIVOR_UPGRADES, SURVIVOR_RARITY_ORDER, round1 } from './survivor-upgrades';
 import { cancelTeleportHold, createSurvivorCharge, distanceToSegment, FOCUS_CHARGE_PER_SEC, FOCUS_HIT_CHARGE, FOCUS_SHOT_PIERCE, FOCUS_SHOT_SIZE_MULTIPLIER, FOCUS_SHOT_SPEED_MULTIPLIER, FOCUS_SLOW_MULTIPLIER, focusBeam, TELEPORT_MAX_RANGE, RAPID_BURST_MIN_CYCLE_MS, RAPID_BURST_SHOT_INTERVAL_MS, RAPID_BURST_SHOTS, RAPID_BURST_SPREAD, RUSH_REFERENCE_SPEED, stepChargeMeter, teleportReach } from './survivor-charge';
 import type { ChargeStyle } from './survivor-charge';
@@ -233,6 +237,8 @@ export interface CreateSurvivorOptions {
   typeAffinityChoices?: readonly PokemonType[];
   /** Forma Mega escolhida na seleção (`core/survivor-mega.ts`); começa ativa e dura até o fim da corrida. */
   mega?: SurvivorMegaForm;
+  /** Desafio que se adapta à força do Pokémon (`core/survivor-extras.ts`). Desligado por padrão. */
+  adaptive?: boolean;
 }
 
 /** Técnica interna da Torre para que até Pokémon de um tipo tenham uma segunda opção desbloqueável. */
@@ -332,6 +338,10 @@ export function createSurvivorState(seed: number, options: CreateSurvivorOptions
     shadowTrustStones: 0,
     fieldEvent: null,
     nextFieldEventAtMs: SURVIVOR_FIELD_EVENT_FIRST_MS,
+    thief: null,
+    nextThiefAtMs: SURVIVOR_THIEF_FIRST_MS,
+    adaptive: options.adaptive ? { value: ADAPTIVE_START } : null,
+    runStats: emptyRunStats(),
     fx: [],
     kills: 0,
     wave: 1,
@@ -400,7 +410,8 @@ function spawnIntervalMs(state: SurvivorState): number {
   const t = state.elapsedMs / 1000;
   const base = Math.max(BALANCE.spawnFloorMs, BALANCE.spawnStartMs - t * BALANCE.spawnPerSecMs - state.wave * BALANCE.spawnPerWaveMs);
   const early = Math.max(0, 1 - state.elapsedMs / BALANCE.earlyGameMs);
-  const interval = base * (1 + BALANCE.earlySpawnIntervalBonus * early) * BALANCE.spawnRateMultiplier / survivorDifficultyDensityMultiplier(state.player.difficultyStacks ?? 0);
+  const interval = base * (1 + BALANCE.earlySpawnIntervalBonus * early) * BALANCE.spawnRateMultiplier / survivorDifficultyDensityMultiplier(state.player.difficultyStacks ?? 0)
+    / Math.sqrt(state.adaptive?.value ?? 1);
   return interval;
 }
 
@@ -532,7 +543,9 @@ function spawnEnemy(
     : grade === 'elite' ? 72 + state.rng() * 18 : 60 + state.rng() * 15)
     * earlyCurve(state.elapsedMs, BALANCE.earlyEnemySpeedMultiplier)
     * (0.9 + Math.min(0.4, state.infiniteScale * 0.1));
-  const hp = Math.round(baseHp * hpMul * state.infiniteScale);
+  // Treinadores e chefões ficam de fora do desafio adaptável: são os marcos da corrida.
+  const adaptive = trainerId === undefined ? state.adaptive?.value ?? 1 : 1;
+  const hp = Math.round(baseHp * hpMul * state.infiniteScale * adaptive);
   const kind = Math.floor(state.rng() * state.kindCount);
   const id = state.nextId++;
   const archetype = resolveEnemyArchetype(state, kind, false, grade, id);
@@ -547,7 +560,7 @@ function spawnEnemy(
     hp,
     maxHp: hp,
     speed,
-    damage: Math.round(baseDmg * dmgMul * state.infiniteScale),
+    damage: Math.round(baseDmg * dmgMul * state.infiniteScale * adaptive),
     radius: grade === 'chefao' ? 20 : grade === 'elite' ? 16 : 13,
     hitFlashMs: 0,
     archetype,
@@ -767,11 +780,11 @@ function levelUp(state: SurvivorState, events: SurvivorEvent[]): void {
     state.upgradesOwed += 1;
     events.push({ type: 'levelup', level: state.player.level });
   }
-  offerOwedUpgrade(state);
+  offerOwedUpgrade(state, events);
 }
 
 /** Abre a próxima escolha de upgrade devida, se não houver uma aberta. */
-function offerOwedUpgrade(state: SurvivorState): void {
+function offerOwedUpgrade(state: SurvivorState, events?: SurvivorEvent[]): void {
   if (state.pendingUpgrade || state.upgradesOwed <= 0) return;
   state.upgradesOwed -= 1;
   // Olhar treinado (Dojô): só a primeira oferta mostra a carta a mais, e nunca passa do teto de 5.
@@ -815,6 +828,13 @@ function offerOwedUpgrade(state: SurvivorState): void {
   if (!evolve && !state.supportCandidate) {
     const supportEvolution = supportEvolutionOffer(state);
     if (supportEvolution) options.splice(options.length - 1, 1, supportEvolution);
+  }
+  if (options.length === 0) {
+    // Sem nenhuma carta para escolher, o nível rende um bônus na hora em vez de abrir uma tela vazia.
+    const kind = applyLevelBonus(state.player, state.rng());
+    events?.push({ type: 'levelBonus', text: LEVEL_BONUS_TEXT[kind] });
+    offerOwedUpgrade(state, events);
+    return;
   }
   state.pendingUpgrade = options;
 }
@@ -899,7 +919,7 @@ export function applyUpgrade(state: SurvivorState, id: string): SurvivorEvent[] 
   if (offeredSupport && id !== 'second-attack') state.supportCandidate = null;
   state.supportCandidateGuaranteed = false;
   state.pendingUpgrade = null;
-  offerOwedUpgrade(state);
+  offerOwedUpgrade(state, events);
   return events;
 }
 
@@ -2088,8 +2108,10 @@ function hitEnemy(state: SurvivorState, e: SurvivorEnemy, damage: number, from: 
   const reducedDamage = e.protectedMs && e.protectedMs > 0 ? environmentalDamage * 0.75 : environmentalDamage;
   const finalDamage = reducedDamage * finalThreatHunterMultiplier;
   if (critical && state.criticalHits.length < 64) state.criticalHits.push({ enemyId: e.id, x: e.x, y: e.y, damage: finalDamage, boss: e.boss || e.grade === 'chefao' || e.shadowBoss === true });
+  const hpBefore = Math.max(0, e.hp);
   e.hp -= finalDamage;
   e.hitFlashMs = 90;
+  if (state.runStats) recordDamage(state.runStats, move.name, move.color, Math.min(hpBefore, finalDamage));
   if (synergy?.consume) e[synergy.consume] = 0;
   if (synergy?.refreshSlowMs) e.slowMs = Math.max(e.slowMs ?? 0, synergy.refreshSlowMs);
   Object.assign(e, survivorElementalStatus(move.type));
@@ -2993,6 +3015,55 @@ function fieldEventPoint(state: SurvivorState): { x: number; y: number } {
   };
 }
 
+/** Gráficos do resumo: as fontes de dano e a linha do tempo, fechada com o momento do fim. */
+function runStatsSummary(state: SurvivorState): Partial<Pick<SurvivorSummary, 'damageBySource' | 'timeline' | 'thievesCaught' | 'adaptive'>> {
+  const stats = state.runStats;
+  if (!stats) return {};
+  const last = stats.timeline[stats.timeline.length - 1];
+  const timeline = last && last.ms < state.elapsedMs ? [...stats.timeline, { ms: state.elapsedMs, kills: state.kills, level: state.player.level }] : [...stats.timeline];
+  return { damageBySource: damageRanking(stats), timeline, thievesCaught: stats.thievesCaught, ...(state.adaptive ? { adaptive: Math.round(state.adaptive.value * 100) / 100 } : {}) };
+}
+
+/** O ladrão de tesouro aparece de tempos em tempos, longe o bastante para exigir ir atrás. */
+function spawnThiefIfDue(state: SurvivorState, dtMs: number, events: SurvivorEvent[]): void {
+  // Conta só o tempo jogado de verdade (não o relógio da corrida, que cenários e o modo rápido pulam).
+  state.thiefClockMs = (state.thiefClockMs ?? 0) + Math.max(0, dtMs);
+  if (state.debugLaboratory || state.heldDisabled || state.thief || state.thiefClockMs < (state.nextThiefAtMs ?? Infinity)) return;
+  state.nextThiefAtMs = state.thiefClockMs + SURVIVOR_THIEF_EVERY_MS;
+  const id = spawnEnemy(state, false, 'elite');
+  const thief = id === null ? undefined : state.enemies.find((e) => e.id === id);
+  if (!thief) return;
+  thief.thief = true;
+  thief.dexId = SURVIVOR_THIEF_DEX;
+  thief.speed = SURVIVOR_THIEF_SPEED;
+  thief.damage = 0;
+  thief.hp = thief.maxHp = Math.round(thief.maxHp * 0.6);
+  thief.archetype = 'perseguidor';
+  // Não conta como elite: não é de treinador, não solta chave e não entra nas contas de elites.
+  thief.grade = 'comum';
+  thief.radius = 15;
+  delete thief.supportRole;
+  state.thief = { enemyId: thief.id, leftMs: SURVIVOR_THIEF_LIFE_MS };
+  events.push({ type: 'thiefSpawn', dexId: SURVIVOR_THIEF_DEX, leftMs: SURVIVOR_THIEF_LIFE_MS });
+}
+
+/** O tempo do ladrão corre; se ele não foi pego, some do campo sem deixar nada. */
+function updateThief(state: SurvivorState, dtMs: number, events: SurvivorEvent[]): void {
+  const thief = state.thief;
+  if (!thief) return;
+  if (!state.enemies.some((e) => e.id === thief.enemyId)) {
+    state.thief = null;
+    return;
+  }
+  thief.leftMs = Math.max(0, thief.leftMs - dtMs);
+  if (thief.leftMs > 0) return;
+  const escaped = state.enemies.find((e) => e.id === thief.enemyId);
+  if (escaped) state.fx.push({ kind: 'pulse', x: escaped.x, y: escaped.y, r: 40, color: '#ffd84a', ageMs: 0, lifeMs: 500 });
+  state.enemies = state.enemies.filter((e) => e.id !== thief.enemyId);
+  state.thief = null;
+  events.push({ type: 'thiefEscaped' });
+}
+
 function spawnFieldEventIfDue(state: SurvivorState, events: SurvivorEvent[]): void {
   if (state.fieldEvent || state.elapsedMs < state.nextFieldEventAtMs) return;
   const kind = state.rng() < 0.5 ? 'resonance' : 'hunt';
@@ -3100,6 +3171,9 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
   }
   spawnShadowBallIfDue(state, events);
   spawnFieldEventIfDue(state, events);
+  spawnThiefIfDue(state, dtMs, events);
+  if (state.adaptive) state.adaptive.value = stepAdaptive(state.adaptive.value, adaptiveTarget(state.player), dtMs);
+  if (state.runStats) sampleTimeline(state.runStats, state.elapsedMs, state.kills, state.player.level);
   if (!state.debugLaboratory && advanceSpecialEncounter(state, 0)) return events;
   const p = state.player;
   p.artifactSpeedMs = Math.max(0, p.artifactSpeedMs - dtMs);
@@ -3209,7 +3283,7 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
     if ((e.orbitHitMs ?? 0) > 0) e.orbitHitMs = Math.max(0, (e.orbitHitMs ?? 0) - dtMs);
     // Em estase, a IA não decide cura, proteção, investida ou novos tiros.
     // O restante do quadro ainda reduz efeitos temporários de forma previsível.
-    const target = timeStopped ? { x: e.x, y: e.y } : updateEnemyBehavior(state, e, dtMs);
+    const target = timeStopped ? { x: e.x, y: e.y } : e.thief ? thiefFleeTarget(e, p, { w: ARENA_W, h: ARENA_H }) : updateEnemyBehavior(state, e, dtMs);
     const dx = target.x - e.x;
     const dy = target.y - e.y;
     const d = Math.hypot(dx, dy) || 1;
@@ -3233,7 +3307,7 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
     if ((p.thornsDamage ?? 0) > 0 && playerDistance < PLAYER_RADIUS + e.radius) e.hp -= (p.thornsDamage ?? 0) * dt;
     // Congelado no tempo não ataca: a bolha do Orbe Adamante e a Estase protegem de verdade.
     // No BONK, quem está no alto passa por cima de quem encosta.
-    if (!timeStopped && !input.airborne && playerDistance < PLAYER_RADIUS + e.radius && p.invulnMs <= 0) {
+    if (!e.thief && !timeStopped && !input.airborne && playerDistance < PLAYER_RADIUS + e.radius && p.invulnMs <= 0) {
       if (specialProtects(state)) {
         breakSurvivorShield(state);
         continue;
@@ -3379,6 +3453,14 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
     state.enemies = state.enemies.filter((e) => e.hp > 0);
     state.kills += dead.length;
     for (const e of dead) {
+      if (e.thief && !state.debugLaboratory) {
+        const coins = thiefReward(state.elapsedMs);
+        p.bonusCoins = (p.bonusCoins ?? 0) + coins;
+        if (state.runStats) state.runStats.thievesCaught += 1;
+        if (state.thief?.enemyId === e.id) state.thief = null;
+        state.fx.push({ kind: 'pulse', x: e.x, y: e.y, r: 70, color: '#ffd84a', ageMs: 0, lifeMs: 700 });
+        events.push({ type: 'thiefCaught', coins });
+      }
       state.fx.push({ kind: 'defeat', x: e.x, y: e.y, r: e.boss || e.grade === 'chefao' ? 26 : 14, color: e.archetype === 'suporte' ? '#ff78b7' : e.grade === 'elite' ? '#ffd84a' : '#e8f2ff', ageMs: 0, lifeMs: 360 });
       const value = normalizeSurvivorXp(e.boss ? 48 : e.grade === 'chefao' ? 36 : e.grade === 'elite' ? 20 : 8);
       const doubleXp = state.rng() < BALANCE.doubleXpOrbChance;
@@ -3435,13 +3517,14 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
         state.fx = [];
         events.push({
           type: 'gameover',
-          summary: { survivedMs: state.elapsedMs, level: state.player.level, stage: state.player.stage, kills: state.kills, wave: state.wave, trainersBeaten: state.trainersBeaten, bossesBeaten: state.bossesBeaten, finalBossBeaten: state.finalBossBeaten, infinite: state.infinite, fast: state.fast, digitalPokeballs: state.digitalPokeballs, shadowTrustStones: state.shadowTrustStones, bonusCoins: state.player.bonusCoins ?? 0 },
+          summary: { survivedMs: state.elapsedMs, level: state.player.level, stage: state.player.stage, kills: state.kills, wave: state.wave, trainersBeaten: state.trainersBeaten, bossesBeaten: state.bossesBeaten, finalBossBeaten: state.finalBossBeaten, infinite: state.infinite, fast: state.fast, digitalPokeballs: state.digitalPokeballs, shadowTrustStones: state.shadowTrustStones, bonusCoins: state.player.bonusCoins ?? 0, ...runStatsSummary(state) },
         });
       }
     }
   }
 
   updateFieldEvent(state, dtMs, events);
+  updateThief(state, dtMs, events);
   stepChests(state, events);
 
   // Coleta de orbes de XP (e nível, se passou da marca).
@@ -3503,7 +3586,7 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
     state.fx = [];
     events.push({
       type: 'gameover',
-      summary: { survivedMs: state.elapsedMs, level: p.level, stage: p.stage, kills: state.kills, wave: state.wave, trainersBeaten: state.trainersBeaten, bossesBeaten: state.bossesBeaten, finalBossBeaten: state.finalBossBeaten, infinite: state.infinite, fast: state.fast, digitalPokeballs: state.digitalPokeballs, shadowTrustStones: state.shadowTrustStones, bonusCoins: p.bonusCoins ?? 0, ...(state.lastHit ? { finalHit: state.lastHit } : {}) },
+      summary: { survivedMs: state.elapsedMs, level: p.level, stage: p.stage, kills: state.kills, wave: state.wave, trainersBeaten: state.trainersBeaten, bossesBeaten: state.bossesBeaten, finalBossBeaten: state.finalBossBeaten, infinite: state.infinite, fast: state.fast, digitalPokeballs: state.digitalPokeballs, shadowTrustStones: state.shadowTrustStones, bonusCoins: p.bonusCoins ?? 0, ...runStatsSummary(state), ...(state.lastHit ? { finalHit: state.lastHit } : {}) },
     });
   }
 
