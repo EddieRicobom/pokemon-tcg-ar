@@ -41,10 +41,10 @@ export function thiefFleeTarget(thief: { x: number; y: number }, player: { x: nu
 
 // ----------------------------------------------------------------------------- desafio que se adapta
 
-export const ADAPTIVE_MIN = 0.7;
+export const ADAPTIVE_MIN = 0.6;
 /** Começa abaixo da Torre de sempre: um Pokémon novo tem espaço para crescer. */
 export const ADAPTIVE_START = 0.85;
-export const ADAPTIVE_MAX = 1.6;
+export const ADAPTIVE_MAX = 1.4;
 
 /** Cartas pegas até agora (cada nível de upgrade conta uma). */
 export function upgradesTaken(p: Pick<SurvivorPlayer, 'upgradeLevels'>): number {
@@ -55,11 +55,24 @@ export function upgradesTaken(p: Pick<SurvivorPlayer, 'upgradeLevels'>): number 
  * Para onde o desafio quer ir: começa fácil e endurece a cada carta e evolução. Com pouca vida ele recua, para quem está
  * apanhando conseguir respirar. 1 é a Torre de sempre.
  */
-export function adaptiveTarget(p: Pick<SurvivorPlayer, 'upgradeLevels' | 'stage' | 'hp' | 'maxHp'>): number {
+export function adaptiveTarget(p: Pick<SurvivorPlayer, 'upgradeLevels' | 'stage' | 'hp' | 'maxHp' | 'level'>, elapsedMs = 0): number {
   const power = 0.8 + upgradesTaken(p) * 0.014 + p.stage * 0.08;
   const struggling = p.hp < p.maxHp * 0.35 ? 0.25 : 0;
-  return Math.max(ADAPTIVE_MIN, Math.min(ADAPTIVE_MAX, power - struggling));
+  // Quem está atrás do nível esperado para o minuto (um Pokémon fraco que mal consegue derrotar alguém) também ganha folga.
+  const behind = Math.max(0, ADAPTIVE_LEVEL_PER_MIN * (elapsedMs / 60_000) + 1 - p.level);
+  return Math.max(ADAPTIVE_MIN, Math.min(ADAPTIVE_MAX, power - struggling - Math.min(ADAPTIVE_BEHIND_MAX, behind * ADAPTIVE_BEHIND_STEP)));
 }
+
+/** Nível que um Pokémon que vai bem costuma ter por minuto, e quanto o desafio recua por nível de atraso. */
+export const ADAPTIVE_LEVEL_PER_MIN = 0.8;
+export const ADAPTIVE_BEHIND_STEP = 0.03;
+export const ADAPTIVE_BEHIND_MAX = 0.25;
+
+/**
+ * Treinadores e o chefe periódico: abaixo de 100% sentem a folga inteira (não viram um muro para quem está atrás); acima,
+ * só a raiz (continuam marcos que um Pokémon forte vence).
+ */
+export const adaptiveMilestone = (value: number): number => (value < 1 ? value : Math.sqrt(value));
 
 /** O desafio anda devagar até o alvo (no máximo 4% por segundo), para nunca dar um salto que a pessoa sinta de uma vez. */
 export function stepAdaptive(current: number, target: number, dtMs: number): number {

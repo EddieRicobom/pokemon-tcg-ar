@@ -440,3 +440,30 @@ e Teleporte (físico rápido). A carga vem da distância real percorrida: 2.250 
 desenho contínuo; a faixa se apaga suavemente após 3,5 s. Seu dano usa a média dos dois
 ataques. Como todas as formas, recebe cinco buffs específicos: quatro degraus da árvore
 e **Passos ressonantes**, que reduz a distância necessária para carregar.
+
+## Desafio adaptável — 07/11/2026
+
+Opção ligada por padrão na escolha da corrida (`core/survivor-extras.ts`). Ela multiplica a vida, o dano e a quantidade dos inimigos comuns pela força do Pokémon. Os valores ficaram assim depois das rodadas abaixo:
+
+- começa em 0,85 e sobe 0,014 por carta e 0,08 por evolução, entre 0,6 e 1,4, andando no máximo 4% por segundo;
+- recua 0,25 com menos de 35% de vida;
+- recua 0,03 por nível de atraso em relação a 0,8 nível por minuto, até 0,25;
+- treinadores e o chefe periódico sentem o valor inteiro quando ele está abaixo de 1 e só a raiz quando está acima. O lendário sombrio e as recompensas ficam de fora.
+
+O robô de `scripts/survivor-balance.eval.ts` joga espécies fortes, médias e fracas, com cartas ao acaso ou pela raridade. Ele passou a usar a carga automática: antes, Foco, Teleporte e Trilha nunca atacavam no robô, e as espécies fracas da matriz quase não derrotavam ninguém. Com 100 corridas por combinação (`BAL_RUNS=100 BAL_DT=50`), sobrevivência em minutos e quantas chegaram a 10 e a 20 min:
+
+| Matriz | Sem o adaptável: mediana · 10 min · 20 min | Com o adaptável: mediana · 10 min · 20 min |
+| --- | --- | --- |
+| Forte, cartas ao acaso | 16,4 · 75 · 36 | 18,2 · 90 · 47 |
+| Forte, cartas pela raridade | 15,1 · 75 · 40 | 15,1 · 74 · 35 |
+| Média, ao acaso | 7,3 · 28 · 4 | 10,1 · 51 · 8 |
+| Média, pela raridade | 7,3 · 28 · 4 | 9,3 · 48 · 6 |
+| Fraca, ao acaso | 5,2 · 6 · 1 | 6,1 · 15 · 5 |
+| Fraca, pela raridade | 5,1 · 8 · 1 | 6,1 · 14 · 3 |
+
+Hipótese: o adaptável dá uma rota de recuperação para Pokémon médios e fracos sem tirar a dificuldade de quem joga com um forte. A primeira versão, com treinadores e chefes de fora, não ajudava os fracos, que morriam no treinador dos 5 min. A Torre sem a opção não mudou. Cuidados:
+
+- **Mortes cedo:** de 12% a 19% das corridas fracas acabam antes dos 3 min. O robô segura a carga do Foco o tempo todo e anda devagar, o que uma pessoa não faz.
+- **Formas de perto:** aura e Trilha continuam subestimadas, porque o robô foge.
+
+Uma sessão humana em celular continua obrigatória. `survivor-extras.test.ts` mantém um teste rápido que compara os dois modos com as mesmas sementes.

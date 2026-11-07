@@ -37,7 +37,7 @@ import type { PokemonType } from './pokemon-data';
 export * from './survivor-types';
 import { createBonkObstacles } from './survivor-bonk';
 import {
-  ADAPTIVE_START, adaptiveTarget, applyLevelBonus, damageRanking, emptyRunStats, LEVEL_BONUS_TEXT, recordDamage, sampleTimeline, stepAdaptive,
+  ADAPTIVE_START, adaptiveMilestone, adaptiveTarget, applyLevelBonus, damageRanking, emptyRunStats, LEVEL_BONUS_TEXT, recordDamage, sampleTimeline, stepAdaptive,
   SURVIVOR_THIEF_DEX, SURVIVOR_THIEF_EVERY_MS, SURVIVOR_THIEF_FIRST_MS, SURVIVOR_THIEF_LIFE_MS, SURVIVOR_THIEF_SPEED, thiefFleeTarget, thiefReward,
 } from './survivor-extras';
 import { ARENA_H, ARENA_W, DIGITAL_DANGER_COOLDOWN_MS, DIGITAL_DANGER_MAX, DIGITAL_DANGER_UNLOCK_MS, DIGITAL_DANGER_VISIBLE_RADIUS, MAGNET_PICKUP_RADIUS_CAP, MAX_DIGITAL_POKEBALLS_PER_RUN, MAX_SURVIVOR_SUPPORTS, PICKUP_RADIUS, PLAYER_RADIUS, SPAWN_MARGIN, SURVIVOR_FIELD_EVENT_BEACON_MS, SURVIVOR_FIELD_EVENT_EVERY_MS, SURVIVOR_FIELD_EVENT_FIRST_MS, SURVIVOR_FIELD_EVENT_HUNT_MS, SURVIVOR_FIELD_EVENT_REACH_RADIUS, SURVIVOR_LOVE_CANDY_MS, SURVIVOR_OMEGA_SHARD_MS, SURVIVOR_SHADOW_BALL_EVERY_MS, SURVIVOR_SHADOW_BALL_FIRST_MS, SURVIVOR_SHADOW_BALL_MAX_PER_RUN, SURVIVOR_SHADOW_CUTSCENE_MS, SURVIVOR_SPAWN_DISTANCE, SURVIVOR_SUPPORT_EVOLUTION_OFFER_CHANCE, SURVIVOR_SUPPORT_RARE_OFFER_CHANCE, SURVIVOR_TRUST_STONE_MS, SURVIVOR_UPGRADE_RARITIES, SURVIVOR_FAST_TRAINER_COIN_SCALE, survivorMilestoneMs } from './survivor-types';
@@ -508,7 +508,9 @@ function spawnEnemy(
   const t = state.elapsedMs / 1000;
   if (boss) {
     const shadow = options?.shadowBoss === true;
-    const hp = Math.round((BALANCE.bossHpBase + state.wave * BALANCE.bossHpPerWave) * state.infiniteScale * (shadow ? BALANCE.shadowBossHpMultiplier : 1));
+    // O chefe periódico sente a raiz do desafio adaptável; o lendário sombrio, não.
+    const bossAdaptive = shadow ? 1 : adaptiveMilestone(state.adaptive?.value ?? 1);
+    const hp = Math.round((BALANCE.bossHpBase + state.wave * BALANCE.bossHpPerWave) * state.infiniteScale * (shadow ? BALANCE.shadowBossHpMultiplier : 1) * bossAdaptive);
     const id = state.nextId++;
     addEnemy(state, {
       id,
@@ -521,7 +523,7 @@ function spawnEnemy(
       hp,
       maxHp: hp,
       speed: shadow ? BALANCE.shadowBossSpeed : BALANCE.bossSpeed,
-      damage: Math.round((BALANCE.bossDamageBase + state.wave * BALANCE.bossDamagePerWave) * state.infiniteScale * (shadow ? BALANCE.shadowBossDamageMultiplier : 1)),
+      damage: Math.round((BALANCE.bossDamageBase + state.wave * BALANCE.bossDamagePerWave) * state.infiniteScale * (shadow ? BALANCE.shadowBossDamageMultiplier : 1) * bossAdaptive),
       radius: shadow ? 36 : 28,
       hitFlashMs: 0,
         archetype: resolveEnemyArchetype(state, state.kindCount, true, 'comum', id),
@@ -543,8 +545,8 @@ function spawnEnemy(
     : grade === 'elite' ? 72 + state.rng() * 18 : 60 + state.rng() * 15)
     * earlyCurve(state.elapsedMs, BALANCE.earlyEnemySpeedMultiplier)
     * (0.9 + Math.min(0.4, state.infiniteScale * 0.1));
-  // Treinadores e chefões ficam de fora do desafio adaptável: são os marcos da corrida.
-  const adaptive = trainerId === undefined ? state.adaptive?.value ?? 1 : 1;
+  // Treinadores sentem só a raiz do desafio adaptável: continuam sendo marcos da corrida.
+  const adaptive = trainerId === undefined ? state.adaptive?.value ?? 1 : adaptiveMilestone(state.adaptive?.value ?? 1);
   const hp = Math.round(baseHp * hpMul * state.infiniteScale * adaptive);
   const kind = Math.floor(state.rng() * state.kindCount);
   const id = state.nextId++;
@@ -3172,7 +3174,7 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
   spawnShadowBallIfDue(state, events);
   spawnFieldEventIfDue(state, events);
   spawnThiefIfDue(state, dtMs, events);
-  if (state.adaptive) state.adaptive.value = stepAdaptive(state.adaptive.value, adaptiveTarget(state.player), dtMs);
+  if (state.adaptive) state.adaptive.value = stepAdaptive(state.adaptive.value, adaptiveTarget(state.player, state.elapsedMs), dtMs);
   if (state.runStats) sampleTimeline(state.runStats, state.elapsedMs, state.kills, state.player.level);
   if (!state.debugLaboratory && advanceSpecialEncounter(state, 0)) return events;
   const p = state.player;

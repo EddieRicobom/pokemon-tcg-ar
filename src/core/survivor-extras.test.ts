@@ -1,12 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import {
-  adaptiveTarget, applyLevelBonus, SURVIVOR_THIEF_FIRST_MS, SURVIVOR_THIEF_LIFE_MS, damageRanking, emptyRunStats, recordDamage, sampleTimeline, stepAdaptive, thiefFleeTarget, thiefReward, ADAPTIVE_MAX, ADAPTIVE_MIN,
+  adaptiveMilestone, adaptiveTarget, applyLevelBonus, SURVIVOR_THIEF_FIRST_MS, SURVIVOR_THIEF_LIFE_MS, damageRanking, emptyRunStats, recordDamage, sampleTimeline, stepAdaptive, thiefFleeTarget, thiefReward, ADAPTIVE_MAX, ADAPTIVE_MIN,
 } from './survivor-extras';
 import type { SurvivorPlayer, SurvivorState } from './survivor-types';
-import { createSurvivorState, stepSurvivor } from './survivor';
+import { applyUpgrade, ARENA_H, ARENA_W, createSurvivorState, stepSurvivor } from './survivor';
+import { chooseSurvivorSpecial, chooseSurvivorSpecialBranch } from './survivor-specials';
+import { attackProfile, moveFor } from './survivor-moves';
+import { statsOfDex } from './survivor-stats';
+import { typesOfDex } from './species-filter';
 import { SURVIVOR_UPGRADES } from './survivor-upgrades';
 
-const player = (over: Partial<SurvivorPlayer> = {}): SurvivorPlayer => ({ upgradeLevels: {}, stage: 0, hp: 100, maxHp: 100, attackDamage: 10, speed: 150, ...over } as SurvivorPlayer);
+const player = (over: Partial<SurvivorPlayer> = {}): SurvivorPlayer => ({ upgradeLevels: {}, stage: 0, level: 1, hp: 100, maxHp: 100, attackDamage: 10, speed: 150, ...over } as SurvivorPlayer);
 
 describe('ladrão de tesouro', () => {
   it('foge para longe de quem joga', () => {
@@ -162,5 +166,59 @@ describe('na corrida de verdade', () => {
     expect(summary?.damageBySource?.[0]?.name).toBe(s.player.move.name);
     expect(summary?.damageBySource?.[0]?.damage).toBeGreaterThan(0);
     expect(summary?.timeline?.at(-1)?.ms).toBe(s.elapsedMs);
+  });
+});
+
+describe('equilíbrio do desafio adaptável (robô)', () => {
+  // Robô simples: foge de quem está perto e pega orbe quando está seguro. Mesmas sementes nos dois modos.
+  function survive(dexId: number, seed: number, adaptive: boolean, capMs: number): number {
+    const stats = statsOfDex(dexId);
+    const move = moveFor(typesOfDex(dexId), stats);
+    const s = createSurvivorState(seed, { kindCount: 6, dexId, move, profile: attackProfile(move, stats), adaptive });
+    while (!s.over && s.elapsedMs < capMs) {
+      if (s.pendingUpgrade) { applyUpgrade(s, s.pendingUpgrade[0]!.id); continue; }
+      if (s.special.phase === 'choice') { chooseSurvivorSpecial(s, 'shield'); continue; }
+      if (s.special.phase === 'branch-choice') { chooseSurvivorSpecialBranch(s, 'shield-permanent'); continue; }
+      let fx = 0;
+      let fy = 0;
+      for (const e of s.enemies) {
+        const dx = s.player.x - e.x;
+        const dy = s.player.y - e.y;
+        const d = Math.hypot(dx, dy) || 1;
+        if (d < 230 && !e.thief) { fx += (dx / d) * (1e4 / (d * d)); fy += (dy / d) * (1e4 / (d * d)); }
+      }
+      const orb = s.orbs[0];
+      if (Math.hypot(fx, fy) < 0.6 && orb) { fx += orb.x - s.player.x; fy += orb.y - s.player.y; }
+      if (s.player.x < 90) fx += 2;
+      if (s.player.x > ARENA_W - 90) fx -= 2;
+      if (s.player.y < 90) fy += 2;
+      if (s.player.y > ARENA_H - 90) fy -= 2;
+      stepSurvivor(s, { dx: fx, dy: fy }, 100);
+    }
+    return s.elapsedMs;
+  }
+  const median = (xs: number[]): number => [...xs].sort((a, b) => a - b)[Math.floor(xs.length / 2)]!;
+
+  it('Pokémon medianos duram mais com o desafio adaptável, e nenhum atalho vira vitória automática', () => {
+    const dexes = [58, 92, 1, 4, 66, 7];
+    const seeds = Array.from({ length: 12 }, (_, i) => 900 + i);
+    const fixed = seeds.map((seed, i) => survive(dexes[i % dexes.length]!, seed, false, 12 * 60_000));
+    const adaptive = seeds.map((seed, i) => survive(dexes[i % dexes.length]!, seed, true, 12 * 60_000));
+    expect(median(adaptive)).toBeGreaterThanOrEqual(median(fixed));
+    // Mesmo com folga, a maioria ainda não chega ao teto de 12 min: o adaptável ajuda, não carrega.
+    expect(adaptive.filter((ms) => ms >= 12 * 60_000).length).toBeLessThan(seeds.length / 2);
+  }, 120_000);
+});
+
+describe('folga para quem está atrás', () => {
+  it('quem está abaixo do nível esperado para o minuto ganha folga, até um limite', () => {
+    const p = player({ level: 2 });
+    expect(adaptiveTarget(p, 10 * 60_000)).toBeLessThan(adaptiveTarget(p, 0));
+    expect(adaptiveTarget(p, 60 * 60_000)).toBeGreaterThanOrEqual(ADAPTIVE_MIN);
+  });
+
+  it('treinadores e chefe sentem a folga inteira, mas só a raiz do aperto', () => {
+    expect(adaptiveMilestone(0.7)).toBe(0.7);
+    expect(adaptiveMilestone(1.44)).toBeCloseTo(1.2);
   });
 });
