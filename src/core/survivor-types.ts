@@ -3,6 +3,7 @@ import type { AttackProfile, MoveCategory, SurvivorMove } from './survivor-moves
 import type { ChargeStyle, SurvivorChargeState } from './survivor-charge';
 import type { PokemonType } from './pokemon-data';
 import type { SurvivorSpecialState } from './survivor-specials';
+import type { SurvivorDamageSource, SurvivorRunStats, SurvivorTimelinePoint } from './survivor-extras';
 import type { LunchEffect } from './survivor-lunch';
 import type { SurvivorMegaState } from './survivor-mega';
 import type { SurvivorProjectileLook } from './survivor-projectile-power';
@@ -235,6 +236,8 @@ export interface SurvivorEnemy {
   heldLastHitMs?: number;
   /** Orbe Adamante: parado no tempo até zerar. */
   timeFrozenMs?: number;
+  /** Ladrão de tesouro: foge de você e não ataca (`core/survivor-extras.ts`). */
+  thief?: boolean;
   /** Laço do Destino: grupo de inimigos ligados e quanto tempo a corrente ainda dura. */
   linkId?: number;
   linkMs?: number;
@@ -504,6 +507,15 @@ export interface SurvivorState {
   shadowBallsSpawned: number;
   /** Pedras asseguradas ao derrotar lendários; entram no inventário quando a corrida termina. */
   shadowTrustStones: number;
+  /** Ladrão de tesouro em campo e quando aparece o próximo. */
+  thief?: { enemyId: number; leftMs: number } | null;
+  /** Tempo jogado de verdade, que agenda o ladrão, e quando ele volta. */
+  thiefClockMs?: number;
+  nextThiefAtMs?: number;
+  /** Desafio que se adapta (null com a opção desligada): multiplica vida, dano e quantidade dos inimigos comuns. */
+  adaptive?: { value: number } | null;
+  /** Dano por golpe e a linha do tempo da corrida, para os gráficos do resumo. */
+  runStats?: SurvivorRunStats;
   /** Sinal visível no mapa e sua próxima janela; encontros são opcionais, mas dão uma razão para explorar. */
   fieldEvent: SurvivorFieldEvent | null;
   nextFieldEventAtMs: number;
@@ -640,6 +652,12 @@ export interface SurvivorSummary {
   shadowTrustStones?: number;
   /** Moedas concedidas por cartas durante a corrida, pagas apenas no resultado final. */
   bonusCoins?: number;
+  /** Para os gráficos do fim: quem causou mais dano e como derrotas e nível evoluíram. */
+  damageBySource?: SurvivorDamageSource[];
+  timeline?: SurvivorTimelinePoint[];
+  thievesCaught?: number;
+  /** Desafio adaptável no fim da corrida (sem a opção, não vem). */
+  adaptive?: number;
 }
 
 /** Pontuação da corrida (0–100): tempo vivo, derrotas e nível. */
@@ -746,6 +764,11 @@ export type SurvivorEvent =
   | { type: 'supportEvolve'; dexId: number; name: string }
   /** Artefato do chão realmente alcançado pelo jogador; a UI explica o efeito aplicado. */
   | { type: 'artifactCollected'; kind: SurvivorArtifactKind }
+  | { type: 'thiefSpawn'; dexId: number; leftMs: number }
+  | { type: 'thiefCaught'; coins: number }
+  | { type: 'thiefEscaped' }
+  /** Subiu de nível sem carta nova para escolher: o bônus já foi aplicado. */
+  | { type: 'levelBonus'; text: string }
   | { type: 'gameover'; summary: SurvivorSummary };
 
 export interface SurvivorUpgrade {

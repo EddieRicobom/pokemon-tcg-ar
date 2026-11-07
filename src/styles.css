@@ -8617,3 +8617,99 @@ body.no-scroll .reward-toasts {
 .craft-for {
   color: #ffd166;
 }
+
+/* Torre: ladrão no topo e gráficos do fim da corrida. */
+.survivor-thief-chip {
+  border-color: rgb(255 216 74 / 70%);
+  color: #ffd84a;
+}
+
+.survivor-chart {
+  display: grid;
+  gap: 6px;
+  margin: 10px 0;
+  padding: 8px 10px;
+  border: 1px solid rgb(255 255 255 / 12%);
+  border-radius: 12px;
+  background: rgb(255 255 255 / 4%);
+  text-align: left;
+}
+
+.survivor-chart ul {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.survivor-chart li {
+  display: grid;
+  grid-template-columns: minmax(0, 7.5em) 1fr auto;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.8rem;
+}
+
+.survivor-chart li span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.survivor-chart li i {
+  height: 8px;
+  overflow: hidden;
+  border-radius: 4px;
+  background: rgb(255 255 255 / 10%);
+}
+
+.survivor-chart li b {
+  display: block;
+  height: 100%;
+  border-radius: 4px;
+}
+
+.survivor-chart li em {
+  font-style: normal;
+  font-weight: 700;
+  font-size: 0.74rem;
+}
+
+.survivor-chart svg {
+  width: 100%;
+  height: auto;
+}
+
+.survivor-chart svg text {
+  fill: currentColor;
+  font-size: 9px;
+  opacity: 0.8;
+}
+
+.survivor-chart-grid {
+  stroke: rgb(255 255 255 / 25%);
+  stroke-width: 1;
+}
+
+.survivor-chart-area {
+  fill: rgb(255 107 114 / 18%);
+}
+
+.survivor-chart-kills {
+  fill: none;
+  stroke: #ff6b72;
+  stroke-width: 2;
+  stroke-linejoin: round;
+}
+
+.survivor-chart-level {
+  fill: none;
+  stroke: #7be6ff;
+  stroke-width: 1.5;
+  stroke-dasharray: 4 3;
+}
+
+.survivor-chart svg .survivor-chart-level-label {
+  fill: #7be6ff;
+}
