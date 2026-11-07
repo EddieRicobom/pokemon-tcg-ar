@@ -24,8 +24,13 @@ export const SV_TEAM_SIZE = 3;
 /** Maior equipe que a arena aceita: os 6 da luta da Arena. */
 export const SV_MAX_TEAM = 6;
 
-export const SV_ARENA_W = 320;
-export const SV_ARENA_H = 480;
+/** O campo inteiro. A tela mostra só um pedaço dele (`SV_VIEW_*`), e a câmera segue quem joga. */
+export const SV_ARENA_W = 640;
+export const SV_ARENA_H = 960;
+export const SV_VIEW_W = 320;
+export const SV_VIEW_H = 480;
+/** Distância da largada até o meio do campo: os dois lados começam vendo um ao outro. */
+export const SV_START_OFFSET = 100;
 export const SV_MON_RADIUS = 18;
 export const SV_SHOT_RADIUS = 6;
 export const SV_SHOT_SPEED = 250;
@@ -351,7 +356,18 @@ export type ArenaEvent =
   | { k: 'pulse'; side: ArenaSide; radius: number }
   | { k: 'blink'; side: ArenaSide; x0: number; y0: number; x1: number; y1: number };
 
-const startPosition = (side: ArenaSide): { x: number; y: number } => ({ x: SV_ARENA_W / 2, y: side === 0 ? SV_ARENA_H - 90 : 90 });
+const startPosition = (side: ArenaSide): { x: number; y: number } => ({ x: SV_ARENA_W / 2, y: SV_ARENA_H / 2 + (side === 0 ? SV_START_OFFSET : -SV_START_OFFSET) });
+
+/** Canto do pedaço do campo que a tela mostra: centrado em (x, y), sem passar da borda do campo. */
+export function arenaCamera(x: number, y: number): { x: number; y: number } {
+  return { x: clamp(x - SV_VIEW_W / 2, 0, SV_ARENA_W - SV_VIEW_W), y: clamp(y - SV_VIEW_H / 2, 0, SV_ARENA_H - SV_VIEW_H) };
+}
+
+/** Seta na borda da tela para quem está fora dela (posição já na tela); null quando dá para ver. */
+export function offscreenPointer(x: number, y: number, margin = 18): { x: number; y: number; angle: number } | null {
+  if (x >= 0 && x <= SV_VIEW_W && y >= 0 && y <= SV_VIEW_H) return null;
+  return { x: clamp(x, margin, SV_VIEW_W - margin), y: clamp(y, margin, SV_VIEW_H - margin), angle: Math.atan2(y - SV_VIEW_H / 2, x - SV_VIEW_W / 2) };
+}
 
 function teamState(side: ArenaSide, specs: readonly SvMonSpec[]): ArenaTeamState {
   const { x, y } = startPosition(side);

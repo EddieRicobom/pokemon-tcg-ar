@@ -172,6 +172,7 @@ Todas as opções do menu da Arena usam a mesma luta: a arena em tempo real do f
 - **Rival** (`arena-bot.ts`): usa os mesmos controles de uma pessoa e não tem sorteio. A equipe são 6 Pokémon com 10 cartas automáticas (`arenaRivalTeam`); uma lista menor se repete até 6. Na Liga, `power` multiplica vida e dano e acelera a reação; nas corridas, o rival fica mais forte a cada vitória.
 - **Contra o jogo**, `SurvivalHostLink` roda localmente com `LOCAL_TRANSPORT` e o bot. **Contra um amigo**, o `PvpLobby game="box"` conecta, cada um prepara a equipe e a luta roda no anfitrião, com as mensagens `sv-*`.
 - **Resultado** (`app/arena-fight-result.ts`): a Liga grava o resultado e marca o próximo líder; as demais somam vitórias às cartas e rendem as moedas do dia. PvP não grava nada. As equipes têm tempo proporcional ao tamanho (`suddenDeathMs`, `maxMs`).
+- **Campo**: 640×960 unidades, o dobro da tela em cada direção (`SV_VIEW_W`, `SV_VIEW_H`). A câmera segue o seu Pokémon (`arenaCamera`) e uma seta na borda aponta para o rival fora da tela (`offscreenPointer`). Vale também para o fim do PvP do Survivor.
 - **Limitação**: o efeito «saltar» (encadear em outro alvo) não faz nada na arena, porque só há um alvo em campo.
 
 ### O menu único da Arena (`src/views/ArenaView.vue`, `src/core/arena-menu.ts`, rota `#/arena`)
