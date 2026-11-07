@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createArenaBot } from './arena-bot';
+import type { ArenaBotTraits } from './arena-bot';
+import { DIGITAL_ARENA_FINALISTS } from './endless-arena';
 import { ARENA_LEVEL_UPS, ARENA_TEAM_SIZE, arenaIdleUpgrades, arenaRivalTeam, arenaSpecOf, autoFinishArenaPrep, bestArenaCard, createArenaPrep, pickArenaCard } from './arena-prep';
 import { aliveCount, applyArenaSnapshot, createArena, NO_INPUT, snapshotArena, stepArena } from './survivor-pvp';
 import { parseSurvivalMessage } from '../pvp/survival-wire';
@@ -189,4 +191,39 @@ describe('luta contra um amigo', () => {
     expect(guest.sides[0].mons[0]!.attackType).toBe(host.sides[0].mons[0]!.attackType);
     expect(guest.sides[0].mons[0]!.altOn).toBe(true);
   });
+});
+
+/** Lutas entre rivais com a mesma equipe, cada um jogando uma vez de cada lado: só a cabeça do rival muda. */
+function mirror(skillA: number, traitsA: Partial<ArenaBotTraits>, skillB: number, traitsB: Partial<ArenaBotTraits>, N = 6) {
+  const pool = [...DIGITAL_ARENA_FINALISTS];
+  let wins = 0; let total = 0;
+  for (let g = 0; g < N; g++) {
+    const team = arenaRivalTeam(Array.from({ length: 6 }, (_, i) => pool[(g * 13 + i * 7) % pool.length]!), 1, g + 1);
+    // Mesma equipe dos dois lados e cada lado joga uma vez embaixo: só a cabeça do rival muda.
+    for (const flipSides of [false, true]) {
+      const s = createArena(team, team);
+      const a = createArenaBot(flipSides ? 1 : 0, skillA, traitsA);
+      const b = createArenaBot(flipSides ? 0 : 1, skillB, traitsB);
+      for (let t = 0; s.winner === null && t < 900_000; t += 33) stepArena(s, flipSides ? [b(s, 33), a(s, 33)] : [a(s, 33), b(s, 33)], 33);
+      if (s.winner === (flipSides ? 1 : 0)) wins++;
+      total += s.timeMs;
+    }
+  }
+  return { wins, games: N * 2, avgMs: total / (N * 2) };
+}
+
+
+describe('equilíbrio do rival', () => {
+  it('o rival mais esperto ganha a maioria das lutas em espelho', () => {
+    const { wins, games, avgMs } = mirror(1, {}, 0.2, {});
+    expect(wins).toBeGreaterThan(games / 2);
+    // Nem relâmpago nem maratona: dá tempo de trocar, desviar e usar o escudo.
+    expect(avgMs).toBeGreaterThan(60_000);
+    expect(avgMs).toBeLessThan(240_000);
+  }, 60_000);
+
+  it('trocar de Pokémon pelo tipo rende vitórias', () => {
+    const { wins, games } = mirror(0.6, { switching: false }, 0.6, {});
+    expect(wins).toBeLessThan(games / 2);
+  }, 60_000);
 });
