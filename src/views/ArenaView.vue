@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from 'vue';
 import { loadArenaMembers } from '../app/arena-members';
+import { readArenaRecords } from '../app/arena-records';
 import type { ArenaMember } from '../app/arena-members';
 import { league, pendingChallenge } from '../app/league-store';
 import { routeFlags, routeHref } from '../app/route';
@@ -37,6 +38,9 @@ const membersError = ref('');
 const selectedChallenge = computed(() => (pendingChallenge.value ? challengeById(pendingChallenge.value) : null));
 const leaderLocked = computed(() => !!selectedChallenge.value && statusOf(league.value, selectedChallenge.value) === 'locked');
 const fight = ref<ArenaFightSetup | null>(null);
+/** Recordes das corridas, relidos quando a luta fecha. */
+const records = ref(readArenaRecords());
+watch(fight, (open) => { if (!open) records.value = readArenaRecords(); });
 
 const noDex = computed(() => members.value.filter((m) => m.dexId === undefined));
 const plan = computed(() => arenaPlan({
@@ -178,6 +182,7 @@ onMounted(() => {
           >
             <strong>{{ ENDLESS_ARENA_LABELS[m].title }}</strong>
             <small>{{ ENDLESS_ARENA_LABELS[m].tutorial }}</small>
+            <small v-if="records[m]" class="arena-record">🏆 Recorde: {{ records[m]!.score }} pontos · {{ records[m]!.wins }} vitórias</small>
           </button>
         </div>
         <p class="hint">Os adversários usam espécies em estágio final e treinadores sorteados, e ficam mais fortes a cada vitória.</p>

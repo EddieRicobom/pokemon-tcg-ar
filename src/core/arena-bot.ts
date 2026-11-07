@@ -1,5 +1,5 @@
 import { typeEffectiveness } from './battle';
-import { canGuard, canSwapAttack, canSwitch, NO_INPUT, SV_ARENA_H, SV_ARENA_W, SV_MON_RADIUS } from './survivor-pvp';
+import { canGuard, canSwapAttack, NO_INPUT, SV_ARENA_H, SV_ARENA_W, SV_MON_RADIUS } from './survivor-pvp';
 import type { ArenaInput, ArenaMon, ArenaSide, ArenaState } from './survivor-pvp';
 
 /**

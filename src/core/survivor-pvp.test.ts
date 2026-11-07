@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  aliveCount, applyArenaSnapshot, canSwitch, createArena, guardBlockReason, NO_INPUT, arenaCamera, offscreenPointer, SV_ARENA_H, SV_ARENA_W, SV_START_OFFSET, SV_VIEW_H, SV_VIEW_W, SV_COUNTDOWN_MS, SV_ENTRY_SHIELD_MS, SV_GUARD_COOLDOWN_MS,
+  aliveCount, applyArenaSnapshot, canSwitch, createArena, guardBlockReason, NO_INPUT, arenaCamera, arenaCameraTarget, offscreenPointer, SV_ARENA_H, SV_ARENA_W, SV_START_OFFSET, SV_VIEW_H, SV_VIEW_W, SV_COUNTDOWN_MS, SV_ENTRY_SHIELD_MS, SV_GUARD_COOLDOWN_MS,
   SV_GUARD_MS, SV_MAX_MS, SV_SUDDEN_DEATH_MS, SV_SWITCH_COOLDOWN_MS, snapshotArena, stepArena, svMonFromRun, svRunScore, switchBlockReason,
 } from './survivor-pvp';
 import type { ArenaEvent, ArenaInput, ArenaState, SvMonSpec, SvRunResult } from './survivor-pvp';
@@ -443,5 +443,25 @@ describe('câmera da arena', () => {
     expect(arrow.x).toBeLessThan(SV_VIEW_W);
     expect(arrow.y).toBe(SV_VIEW_H / 2);
     expect(arrow.angle).toBeCloseTo(0);
+  });
+  it('a câmera puxa para o lado do rival sem perder quem joga', () => {
+    const me = { x: SV_ARENA_W / 2, y: SV_ARENA_H / 2 };
+    const centered = arenaCamera(me.x, me.y);
+    const toward = arenaCameraTarget(me, { x: me.x, y: me.y - 400 });
+    expect(toward.y).toBeLessThan(centered.y);
+    expect(me.y - toward.y).toBeLessThan(SV_VIEW_H);
+    expect(me.y - toward.y).toBeGreaterThan(0);
+  });
+});
+
+describe('placar da luta', () => {
+  it('conta o dano e os nocautes de quem atacou', () => {
+    const s = createArena([mon('a', { power: 60, fireMs: 300, projectileSpeed: 600 })], [mon('b', { maxHp: 50, moveCategory: 'trilha', fireMs: 60_000 })]);
+    s.countdownMs = 0;
+    s.sides[1].y = s.sides[0].y - 120;
+    s.sides[1].x = s.sides[0].x;
+    for (let t = 0; t < 3000 && s.winner === null; t += 20) stepArena(s, [NO_INPUT, NO_INPUT], 20);
+    expect(s.sides[0].mons[0]!.dealt).toBeGreaterThan(0);
+    expect(s.sides[0].mons[0]!.kos).toBe(1);
   });
 });

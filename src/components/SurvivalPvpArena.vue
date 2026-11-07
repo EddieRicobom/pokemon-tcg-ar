@@ -3,7 +3,7 @@ import { onBeforeUnmount, onMounted, reactive, ref, shallowRef } from 'vue';
 import { pokemonSpriteUrl } from '../ar/sprite-url';
 import { TYPE_COLORS, TYPE_LABELS_PT } from '../core/pokemon-data';
 import {
-  aliveCount, arenaCamera, attackSwapBlockReason, guardBlockReason, offscreenPointer, SV_ARENA_H, SV_ARENA_W, SV_ATTACK_SWAP_CD_MS, SV_GUARD_COOLDOWN_MS, SV_MON_RADIUS, SV_SWITCH_COOLDOWN_MS, SV_VIEW_H, SV_VIEW_W, switchBlockReason,
+  aliveCount, arenaCameraTarget, attackSwapBlockReason, guardBlockReason, offscreenPointer, SV_ARENA_H, SV_ARENA_W, SV_ATTACK_SWAP_CD_MS, SV_GUARD_COOLDOWN_MS, SV_MON_RADIUS, SV_SWITCH_COOLDOWN_MS, SV_VIEW_H, SV_VIEW_W, switchBlockReason,
 } from '../core/survivor-pvp';
 import { SURVIVOR_CONE_HALF_ANGLE, survivorOrbiterHitRadius, survivorOrbiters } from '../core/survivor-shapes';
 import type { ArenaEvent, ArenaSide, ArenaState, ArenaTeamState, ArenaWinner } from '../core/survivor-pvp';
@@ -52,6 +52,10 @@ interface Unit {
   guard: boolean;
   /** Efeitos do golpe do rival em andamento. */
   status: string;
+  /** Acabou de levar um golpe (pisca). */
+  hit: boolean;
+  /** O rival está à direita: o sprite, que olha para a esquerda, vira para ele. */
+  faceRight: boolean;
 }
 interface Orb {
   key: string;
@@ -63,7 +67,9 @@ interface Orb {
 }
 interface Fx {
   id: number;
-  kind: 'cone' | 'pulse' | 'blink';
+  kind: 'cone' | 'pulse' | 'blink' | 'dmg';
+  /** Número do dano (só no `dmg`). */
+  text?: string;
   mine: boolean;
   color: string;
   style: Record<string, string>;
@@ -118,11 +124,17 @@ const floorStyle = shallowRef<Record<string, string>>({});
 const pointer = shallowRef<{ x: number; y: number; angle: number } | null>(null);
 /** Canto do campo que a tela mostra agora. */
 let camera = { x: 0, y: 0 };
+let cameraAt = 0;
+let cameraReady = false;
+/** Quando cada lado levou o último golpe (para a piscada). */
+const hitAt: [number, number] = [-Infinity, -Infinity];
 const broken = ref<number[]>([]);
 const hurt = ref(false);
 const stale = ref(false);
 const toasts = ref<{ id: number; text: string; tone: 'good' | 'bad' | 'info' }[]>([]);
 const result = ref<{ title: string; detail: string } | null>(null);
+/** Placar de cada Pokémon seu no fim (só onde a luta rodou; o convidado do PvP não recebe esses números). */
+const scoreboard = ref<{ name: string; dexId: number; shiny: boolean; dealt: number; kos: number; mvp: boolean; fainted: boolean }[]>([]);
 const arenaEl = ref<HTMLElement | null>(null);
 const joy = reactive({ active: false, ox: 0, oy: 0, kx: 0, ky: 0 });
 
@@ -184,9 +196,9 @@ function requestAttackSwap(): void {
 }
 
 /** Efeito curto na arena (corte do cone, pulso da aura, rastro do teleporte): some sozinho. */
-function addFx(kind: Fx['kind'], mine: boolean, color: string, style: Record<string, string>, ms = 380): void {
+function addFx(kind: Fx['kind'], mine: boolean, color: string, style: Record<string, string>, ms = 380, text?: string): void {
   const id = ++fxId;
-  fx.value = [...fx.value.slice(-8), { id, kind, mine, color, style }];
+  fx.value = [...fx.value.slice(-12), { id, kind, mine, color, style, ...(text ? { text } : {}) }];
   setTimeout(() => (fx.value = fx.value.filter((f) => f.id !== id)), ms);
 }
 
@@ -201,6 +213,8 @@ function handleEvents(events: ArenaEvent[]): void {
   for (const e of events) {
     const mons = state.sides[e.side].mons;
     if (e.k === 'hit') {
+      hitAt[e.side] = performance.now();
+      showDamage(e.side, e.damage, e.mult);
       if (e.side === mySide) {
         hurt.value = true;
         if (hurtTimer) clearTimeout(hurtTimer);
@@ -230,6 +244,15 @@ function handleEvents(events: ArenaEvent[]): void {
       showFx(e);
     }
   }
+}
+
+/** Número do dano subindo de quem levou o golpe: amarelo no super efetivo, cinza no pouco efetivo. */
+function showDamage(side: ArenaSide, damage: number, mult: number): void {
+  const team = state.sides[side];
+  const p = toView(team.x, team.y);
+  const color = mult === 0 ? '#9aa3b2' : mult > 1 ? '#ffd166' : mult < 1 ? '#c7ccd6' : '#ffffff';
+  const jitter = ((fxId * 37) % 9) - 4;
+  addFx('dmg', side !== mySide, color, { left: `${((p.x + jitter) / SV_VIEW_W) * 100}%`, top: `${((p.y - 26) / SV_VIEW_H) * 100}%` }, 700, mult === 0 ? '0' : String(damage));
 }
 
 /** Efeitos de golpe de quem ataca: o desenho usa a geometria real (cone, raio da aura, caminho do teleporte). */
@@ -278,7 +301,12 @@ function buildScene(now: number): void {
     }
     : (guestLink as SurvivalGuestLink).view(now);
   const me = toField(view.sides[mySide].x, view.sides[mySide].y);
-  camera = arenaCamera(me.x, me.y);
+  // A câmera desliza até o alvo em vez de pular: segue quem joga e puxa um pouco para o rival.
+  const target = arenaCameraTarget(me, toField(view.sides[foeSide].x, view.sides[foeSide].y));
+  const follow = cameraReady ? 1 - Math.exp(-Math.min(100, now - cameraAt) / 140) : 1;
+  camera = { x: camera.x + (target.x - camera.x) * follow, y: camera.y + (target.y - camera.y) * follow };
+  cameraAt = now;
+  cameraReady = true;
   floorStyle.value = { transform: `translate(${(-camera.x / SV_ARENA_W) * 100}%, ${(-camera.y / SV_ARENA_H) * 100}%)` };
   const foeAt = toView(view.sides[foeSide].x, view.sides[foeSide].y);
   pointer.value = offscreenPointer(foeAt.x, foeAt.y);
@@ -289,7 +317,8 @@ function buildScene(now: number): void {
     if (!mon || mon.hp <= 0) continue;
     const p = toView(view.sides[side].x, view.sides[side].y);
     const status = `${team.burnMs > 0 ? '🔥' : ''}${team.slowMs > 0 ? '🐌' : ''}${team.stunMs > 0 ? '💫' : ''}`;
-    out.push({ key: side === mySide ? 'me' : 'foe', mine: side === mySide, x: (p.x / SV_VIEW_W) * 100, y: (p.y / SV_VIEW_H) * 100, dexId: mon.dexId, shiny: mon.shiny, name: mon.name, hpPct: Math.round((100 * mon.hp) / mon.maxHp), shield: team.shieldMs > 0, guard: team.guardMs > 0, status });
+    const other = toView(view.sides[side === mySide ? foeSide : mySide].x, view.sides[side === mySide ? foeSide : mySide].y);
+    out.push({ hit: now - hitAt[side] < 140, faceRight: other.x > p.x + 2, key: side === mySide ? 'me' : 'foe', mine: side === mySide, x: (p.x / SV_VIEW_W) * 100, y: (p.y / SV_VIEW_H) * 100, dexId: mon.dexId, shiny: mon.shiny, name: mon.name, hpPct: Math.round((100 * mon.hp) / mon.maxHp), shield: team.shieldMs > 0, guard: team.guardMs > 0, status });
   }
   units.value = out;
   // Orbitais e faixa da Trilha: as mesmas posições que decidem o dano.
@@ -361,6 +390,11 @@ function buildHud(): void {
 function finish(): void {
   if (result.value || resultTimer) return;
   if (state.winner !== null) emit('finished', state.winner, state.sides[mySide].mons.map((m) => Math.max(0, m.hp)));
+  if (hostLink) {
+    const mons = state.sides[mySide].mons;
+    const best = Math.max(0, ...mons.map((m) => m.dealt ?? 0));
+    scoreboard.value = mons.map((m) => ({ name: m.name, dexId: m.dexId, shiny: m.shiny, dealt: Math.round(m.dealt ?? 0), kos: m.kos ?? 0, mvp: best > 0 && (m.dealt ?? 0) === best, fainted: m.hp <= 0 }));
+  }
   resultTimer = setTimeout(() => {
     const mine = aliveCount(state.sides[mySide]);
     const foe = aliveCount(state.sides[foeSide]);
@@ -539,7 +573,7 @@ onBeforeUnmount(() => {
         :style="{ left: `${o.x}%`, top: `${o.y}%`, width: o.size, color: o.color }"
         aria-hidden="true"
       ></span>
-      <div v-for="u in units" :key="u.key" class="svp-unit" :class="{ mine: u.mine, shield: u.shield, guard: u.guard }" :style="unitStyle(u)">
+      <div v-for="u in units" :key="u.key" class="svp-unit" :class="{ mine: u.mine, shield: u.shield, guard: u.guard, hit: u.hit, 'face-right': u.faceRight }" :style="unitStyle(u)">
         <span class="svp-bubble" aria-hidden="true"></span>
         <span class="svp-ring"></span>
         <span v-if="u.status" class="svp-status" aria-hidden="true">{{ u.status }}</span>
@@ -555,7 +589,7 @@ onBeforeUnmount(() => {
         :class="[f.kind, { mine: f.mine }]"
         :style="{ ...f.style, color: f.color }"
         aria-hidden="true"
-      ></span>
+      >{{ f.text }}</span>
 
       <div v-if="joy.active" class="svp-joy" :style="{ left: `${joy.ox}px`, top: `${joy.oy}px` }" aria-hidden="true">
         <span class="knob" :style="{ transform: `translate(${joy.kx}px, ${joy.ky}px)` }"></span>
@@ -631,6 +665,13 @@ onBeforeUnmount(() => {
       <div class="svp-card">
         <h3>{{ result ? result.title : 'O amigo saiu da partida' }}</h3>
         <p>{{ result ? result.detail : 'A conexão fechou antes do fim da luta. Nenhum vencedor foi registrado.' }}</p>
+        <ul v-if="result && scoreboard.length" class="svp-score">
+          <li v-for="row in scoreboard" :key="row.name + row.dexId" :class="{ mvp: row.mvp, down: row.fainted }">
+            <img v-if="!broken.includes(row.dexId)" :src="pokemonSpriteUrl(row.dexId, row.shiny)" alt="" @error="markBroken(row.dexId)" />
+            <span>{{ row.name }}<small v-if="row.mvp">Destaque</small></span>
+            <em>{{ row.dealt }} de dano · {{ row.kos }} {{ row.kos === 1 ? 'nocaute' : 'nocautes' }}</em>
+          </li>
+        </ul>
         <slot v-if="result" name="result"></slot>
         <button type="button" class="primary" @click="emit('leave')">{{ leaveLabel }}</button>
       </div>
@@ -911,6 +952,86 @@ onBeforeUnmount(() => {
   background: linear-gradient(90deg, color-mix(in srgb, currentColor 80%, transparent), transparent);
   clip-path: polygon(0 50%, 100% 0, 100% 100%);
   animation: svp-fx-fade 0.3s ease-out forwards;
+}
+
+.svp-fx.dmg {
+  transform: translate(-50%, -50%);
+  font-size: 5.4cqw;
+  font-weight: 900;
+  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.75), 0 0 6px rgba(0, 0, 0, 0.6);
+  white-space: nowrap;
+  animation: svp-dmg-rise 0.7s ease-out forwards;
+}
+
+@keyframes svp-dmg-rise {
+  0% { opacity: 0; margin-top: 4cqw; }
+  15% { opacity: 1; }
+  100% { opacity: 0; margin-top: -6cqw; }
+}
+
+.svp-unit.hit .svp-sprite {
+  filter: brightness(2.4) saturate(0.4);
+}
+
+.svp-unit.face-right .svp-sprite {
+  transform: translate(-50%, -62%) scaleX(-1);
+}
+
+.svp-score {
+  display: grid;
+  gap: 4px;
+  margin: 0 0 8px;
+  padding: 0;
+  list-style: none;
+  text-align: left;
+}
+
+.svp-score li {
+  display: grid;
+  grid-template-columns: 32px 1fr;
+  grid-template-rows: auto auto;
+  column-gap: 8px;
+  align-items: center;
+  padding: 3px 6px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.svp-score li.mvp {
+  background: rgba(255, 209, 102, 0.16);
+  box-shadow: inset 0 0 0 1px rgba(255, 209, 102, 0.6);
+}
+
+.svp-score li.down {
+  opacity: 0.65;
+}
+
+.svp-score img {
+  grid-row: span 2;
+  width: 32px;
+  height: 32px;
+  object-fit: contain;
+}
+
+.svp-score span {
+  font-weight: 800;
+  font-size: 0.85rem;
+}
+
+.svp-score small {
+  margin-left: 6px;
+  color: #ffd166;
+  font-size: 0.7rem;
+}
+
+.svp-score em {
+  font-size: 0.75rem;
+  font-style: normal;
+  opacity: 0.85;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .svp-fx.dmg { animation-duration: 0.01s; }
 }
 
 .svp-fx.blink {
