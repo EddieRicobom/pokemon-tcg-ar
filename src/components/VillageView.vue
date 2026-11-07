@@ -104,6 +104,7 @@ import type { Dir } from '../core/village/actors';
 import { stickDirs, stickVector } from '../core/village/joystick';
 import type { PokemonType } from '../core/pokemon-data';
 import { paintItemIcon } from '../village/item-art';
+import { craftMany, craftMissing, maxCraftable, recipeLines } from '../core/village/crafting';
 import { VillageGame } from '../village/village-game';
 import type { VillageMon } from '../village/village-game';
 import { SoundEngine } from '../box/sound';
@@ -975,7 +976,9 @@ const inventoryList = computed(() => browseItems(
 const craftList = computed(() => browseItems(
   CRAFT_IDS.flatMap((id) => {
     const item = itemDef(id);
-    return item ? [{ ...item, ready: canAfford(state, RECIPES[id] ?? {}) }] : [];
+    if (!item) return [];
+    const lines = recipeLines(state, id);
+    return [{ ...item, quantity: count(state, id), ready: canAfford(state, RECIPES[id] ?? {}), lines, max: maxCraftable(state, id), makeable: lines.some((l) => !l.ok) && lines.every((l) => l.ok || l.makeable) }];
   }),
   { query: craftQuery.value, kind: craftKind.value, availability: craftAvailability.value, sort: craftSort.value },
 ));
@@ -3824,11 +3827,22 @@ onBeforeUnmount(() => {
             <label>Organizar <select v-model="craftSort" aria-label="Organizar receitas de fabricação"><option value="catalogo">Catálogo</option><option value="nome">Nome (A–Z)</option><option value="categoria">Categoria</option><option value="prontas">Prontas primeiro</option></select></label>
           </div>
           <p v-if="craftList.length === 0" class="hint">Nenhuma receita corresponde aos filtros.</p>
-          <ul class="item-grid">
-            <li v-for="i in craftList" :key="i.id">
+          <ul class="item-grid craft-list">
+            <li v-for="i in craftList" :key="i.id" :class="{ ready: i.ready }">
               <img :src="icon(i.id)" alt="" width="40" height="40" />
-              <span>{{ i.name }}<small>{{ describeCost(state, RECIPES[i.id]!) }}</small></span>
-              <button type="button" @click="act(craft(state, i.id))">Fazer</button>
+              <span>
+                {{ i.name }}<small v-if="i.quantity">Você tem {{ i.quantity }}</small>
+                <span class="craft-needs" :aria-label="`Ingredientes: ${describeCost(state, RECIPES[i.id]!)}`">
+                  <b v-for="l in i.lines" :key="l.item" :class="{ ok: l.ok, makeable: l.makeable }" :title="l.makeable ? `Dá para fabricar ${l.name}` : l.name">
+                    <img :src="icon(l.item)" alt="" width="18" height="18" />{{ l.name }} {{ Math.min(l.have, l.need) }}/{{ l.need }}
+                  </b>
+                </span>
+              </span>
+              <span class="craft-actions">
+                <button type="button" :disabled="i.max < 1" @click="act(craft(state, i.id))">Fazer</button>
+                <button v-if="i.max > 1" type="button" class="small" @click="act(craftMany(state, i.id, i.max))">Fazer {{ Math.min(i.max, 999) }}</button>
+                <button v-else-if="i.makeable" type="button" class="small" @click="act(craftMissing(state, i.id))">Fazer o que falta</button>
+              </span>
             </li>
           </ul>
         </div>
