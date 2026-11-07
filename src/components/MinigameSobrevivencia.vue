@@ -401,6 +401,12 @@ const selectedPreparation = ref<SurvivorPreparationId>('classica');
 // ----------------------------------------------------------------------------- Vila na corrida (Survival e BONK)
 // Dojô, sorte do Carteiro e marmita entram pelo mesmo `beginRun`, então valem nos dois modos. Nada é inventado: se a
 // Vila não puder ser lida, a corrida sai pura (PURE_LOADOUT).
+const ADAPTIVE_PREF_KEY = 'tcg-ar-survivor-adaptive-v1';
+/** Desafio que se adapta à força do Pokémon: ligado por padrão, a pessoa desliga na seleção. */
+const adaptiveWanted = ref((() => { try { return localStorage.getItem(ADAPTIVE_PREF_KEY) !== '0'; } catch { return true; } })());
+watch(adaptiveWanted, (value) => {
+  try { localStorage.setItem(ADAPTIVE_PREF_KEY, value ? '1' : '0'); } catch { /* armazenamento indisponível */ }
+});
 const PURE_PREF_KEY = 'tcg-ar-survivor-pure-v1';
 function readPurePref(): boolean {
   try { return localStorage.getItem(PURE_PREF_KEY) === '1'; } catch { return false; }
@@ -665,6 +671,15 @@ const specialModalOpen = computed(() => {
   return phase === 'arrival' || phase === 'choice' || phase === 'branch-arrival' || phase === 'branch-choice';
 });
 const shadowCutsceneOpen = computed(() => state.value?.shadowEncounter.phase === 'arrival');
+/** Pontos do gráfico do resumo: derrotas (ou nível) contra o tempo, na área de 20..290 × 18..90. */
+function timelinePoints(sum: SurvivorSummary, key: 'kills' | 'level', area = false): string {
+  const line = sum.timeline ?? [];
+  const lastMs = Math.max(1, line[line.length - 1]?.ms ?? 1);
+  const top = Math.max(1, ...line.map((p) => p[key]));
+  const pts = line.map((p) => `${(20 + (p.ms / lastMs) * 270).toFixed(1)},${(90 - (p[key] / top) * 72).toFixed(1)}`);
+  return area ? ['20,90', ...pts, '290,90'].join(' ') : pts.join(' ');
+}
+
 const fieldEventHud = computed(() => {
   const event = state.value?.fieldEvent;
   const player = state.value?.player;
@@ -675,6 +690,15 @@ const fieldEventHud = computed(() => {
   const direction = Math.abs(dx) > Math.abs(dy) ? (dx < 0 ? '←' : '→') : (dy < 0 ? '↑' : '↓');
   const label = event.kind === 'resonance' ? '✦ Ressonância' : '⚔ Caçada';
   return `${label} ${direction} · ${Math.ceil(event.remainingMs / 1000)}s`;
+});
+const thiefHud = computed(() => {
+  const s = state.value;
+  const thief = s?.thief ? s.enemies.find((e) => e.id === s.thief!.enemyId) : null;
+  if (!s || !thief) return null;
+  const dx = thief.x - s.player.x;
+  const dy = thief.y - s.player.y;
+  const direction = Math.abs(dx) > Math.abs(dy) ? (dx < 0 ? '←' : '→') : (dy < 0 ? '↑' : '↓');
+  return `🐾 Ladrão ${direction} · ${Math.ceil((s.thief?.leftMs ?? 0) / 1000)}s`;
 });
 const specialBranchOptions = computed(() => state.value?.special.selected ? SURVIVOR_SPECIAL_BRANCHES[state.value.special.selected] : []);
 const specialBlocked = computed(() => !state.value || state.value.over || paused.value || shadowCutsceneOpen.value || !!pendingUpgrade.value || !!evolving.value || state.value.special.phase !== 'ready');
@@ -1469,6 +1493,17 @@ function drawEnemy(e: SurvivorEnemy): void {
   ctx.save();
   ctx.translate(shake, 0);
   const sprite = e.dexId === undefined ? null : (enemySprites.get(e.dexId) ?? null);
+  if (e.thief) {
+    // Ladrão: brilho dourado pulsando, para achar no meio da multidão.
+    ctx.save();
+    ctx.globalAlpha = 0.55 + 0.35 * Math.sin(performance.now() / 160);
+    ctx.strokeStyle = '#ffd84a';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(e.x, e.y, 20, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  }
   // Grau: elite com anel dourado, chefão (do treinador) com anel vermelho — ajuda a reconhecer na correria.
   if (e.grade !== 'comum') {
     ctx.strokeStyle = e.digitalThreat ? '#d35cff' : e.grade === 'chefao' ? '#e8453c' : '#ffd84a';
@@ -1756,7 +1791,8 @@ function drawBonkPointers(c: CanvasRenderingContext2D, s: SurvivorState, physics
   c.globalAlpha = 0.85;
   let near = 0;
   for (const e of s.enemies) {
-    if (e.boss || e.grade !== 'comum') pointAt(e.x, e.y, e.grade === 'elite' ? '#ffd84a' : '#ff3b2f', 9);
+    if (e.thief) pointAt(e.x, e.y, '#ffd84a', 11);
+    else if (e.boss || e.grade !== 'comum') pointAt(e.x, e.y, e.grade === 'elite' ? '#ffd84a' : '#ff3b2f', 9);
     else if (near < 4 && Math.hypot(e.x - s.player.x, e.y - s.player.y) < 150) {
       near++;
       pointAt(e.x, e.y, '#ffffff', 6);
@@ -3122,6 +3158,13 @@ function loop(ts: number): void {
         playSound('survivor-pickup');
         showArtifactNotice(ev.kind);
       }
+      else if (ev.type === 'thiefSpawn') {
+        playSound('survivor-level');
+        say(`🐾 Um Meowth ladrão apareceu! Pegue em ${Math.round(ev.leftMs / 1000)} s para ganhar moedas.`, 4200);
+      }
+      else if (ev.type === 'thiefCaught') say(`🪙 Ladrão pego! +${ev.coins} moedas no fim da corrida.`, 3600);
+      else if (ev.type === 'thiefEscaped') say('🐾 O ladrão fugiu com o tesouro.', 3000);
+      else if (ev.type === 'levelBonus') say(`✨ ${ev.text}`, 3000);
       else if (ev.type === 'fieldEventSpawn') {
         playSound(ev.kind === 'hunt' ? 'survivor-boss' : 'survivor-level');
         say(ev.kind === 'hunt'
@@ -3478,7 +3521,7 @@ async function beginRun(dexId: number, name: string, picked?: PokemonType, infin
     // A Mega só entra se o fragmento saiu mesmo da mochila; ele volta se a corrida for abandonada logo no começo.
     runOmegaShardTaken = mega !== null && !pureWanted.value && takeRunOmegaShard();
     const runMega = runOmegaShardTaken ? mega : null;
-    state.value = createSurvivorState(runSeed, { ...(props.pvpRun ? { noHeld: true } : {}), kindCount: REGIONAL_KIND_COUNT, enemyDexId: regionalEnemyDexId, move, profile, secondMove, ...(hypotheticalSecondaryType ? { hypotheticalSecondaryType } : {}), supportCandidates, dexId, evolutions: evolutionsFor, infinite, bonk, preparation, typeAffinityChoices, fast, loadout: runLoadout, ...(runMega ? { mega: runMega } : {}) });
+    state.value = createSurvivorState(runSeed, { ...(props.pvpRun ? { noHeld: true } : {}), kindCount: REGIONAL_KIND_COUNT, enemyDexId: regionalEnemyDexId, move, profile, secondMove, ...(hypotheticalSecondaryType ? { hypotheticalSecondaryType } : {}), supportCandidates, dexId, evolutions: evolutionsFor, infinite, bonk, preparation, typeAffinityChoices, fast, loadout: runLoadout, ...(runMega ? { mega: runMega } : {}), adaptive: adaptiveWanted.value && !props.pvpRun });
     initialPlayerSpeed = Math.max(1, state.value.player.speed);
     footDust.strength = 0; footDust.ratio = 0; footDust.puffs.length = 0;
     megaWasActive = state.value.player.mega?.active === true;
@@ -3831,6 +3874,8 @@ onBeforeUnmount(() => {
             <span v-if="state.shadowEncounter.phase === 'available'" class="chip survivor-shadow-chip" title="Ache a Pokébola Sombria para iniciar o confronto opcional">◉ {{ state.shadowEncounter.name }} aguarda</span>
             <span v-else-if="state.shadowEncounter.phase === 'battle'" class="chip survivor-shadow-chip" title="Lendário sombrio em combate">🔥 {{ state.shadowEncounter.name }}</span>
             <span v-if="state.shadowTrustStones > 0" class="chip survivor-shadow-chip" :title="`${state.shadowTrustStones} Pedra(s) da Confiança assegurada(s); entram no inventário ao concluir a corrida`">💠 {{ state.shadowTrustStones }} Pedra{{ state.shadowTrustStones === 1 ? '' : 's' }} assegurada{{ state.shadowTrustStones === 1 ? '' : 's' }}</span>
+            <span v-if="thiefHud" class="chip survivor-thief-chip" title="Meowth ladrão: pegue antes que fuja para ganhar moedas">{{ thiefHud }}</span>
+            <span v-if="state.adaptive" class="chip" :title="`Desafio adaptável: inimigos comuns com ${Math.round(state.adaptive.value * 100)}% da força de sempre`">🎚 {{ Math.round(state.adaptive.value * 100) }}%</span>
             <span v-if="fieldEventHud" class="chip survivor-field-chip" :class="{ hunt: state.fieldEvent?.kind === 'hunt' }" :title="state.fieldEvent?.phase === 'hunt' ? 'A caçada já começou; derrote os dois inimigos elite marcados.' : 'Encontro opcional de campo: siga a seta antes que a baliza desapareça.'">{{ fieldEventHud }}</span>
             <span v-if="pvpRun" class="chip survivor-pvp-chip" role="status" title="PvP: esta run rende um Pokémon para a sua equipe 3x3">⚔ Run {{ pvpRun.index + 1 }}/{{ pvpRun.total }} · ⏳ {{ formatTime(Math.max(0, pvpRun.limitMs - state.elapsedMs)) }}</span>
             <span class="chip survivor-run-stats" :title="`${state.kills} inimigos derrotados${state.fast ? ' · Ritmo acelerado' : ''}`">{{ state.fast ? '⚡ ' : '' }}⏱ {{ formatTime(state.elapsedMs) }} · ☠ {{ state.kills }}</span>
@@ -4045,6 +4090,10 @@ onBeforeUnmount(() => {
             <p v-else class="note">Conclua desafios em corridas reais para liberar preparações: 3 objetivos distintos liberam Passo leve; 6, Mira calculada; 9, Ímã de campo; 12, Mira de longo alcance.</p>
             <section class="survivor-preparations survivor-tower-perks" aria-label="O que a Vila entrega">
               <strong>Da Vila para a Torre</strong>
+              <label class="survivor-pure-toggle">
+                <input v-model="adaptiveWanted" type="checkbox" />
+                <span><strong>Desafio adaptável</strong><small>Começa fácil e endurece conforme o Pokémon fica forte; recua quando a vida está baixa. Moedas e recordes não mudam.</small></span>
+              </label>
               <label class="survivor-pure-toggle">
                 <input v-model="pureWanted" type="checkbox" />
                 <span><strong>Corrida pura</strong><small>Sem Dojô, sem sorte do Carteiro e sem marmita. Conta num recorde separado.</small></span>
@@ -4316,6 +4365,31 @@ onBeforeUnmount(() => {
               <div><strong>{{ summary.kills }}</strong><small>Derrotas</small></div>
               <div><strong>{{ summary.wave }}</strong><small>Onda</small></div>
             </div>
+            <section v-if="summary.damageBySource?.length" class="survivor-chart" aria-label="Dano por golpe">
+              <strong>Quem causou o dano</strong>
+              <ul>
+                <li v-for="row in summary.damageBySource" :key="row.name">
+                  <span>{{ row.name }}</span>
+                  <i><b :style="{ width: `${Math.round((row.damage / summary.damageBySource[0]!.damage) * 100)}%`, background: row.color }"></b></i>
+                  <em>{{ row.damage.toLocaleString('pt-BR') }} · {{ Math.round((row.damage / summary.damageBySource.reduce((n, r) => n + r.damage, 0)) * 100) }}%</em>
+                </li>
+              </ul>
+            </section>
+            <section v-if="(summary.timeline?.length ?? 0) > 1" class="survivor-chart" aria-label="Derrotas ao longo da corrida">
+              <strong>Derrotas e nível ao longo da corrida</strong>
+              <svg viewBox="0 0 300 110" role="img" :aria-label="`${summary.kills} derrotas em ${formatTime(summary.survivedMs)}, até o nível ${summary.level}`">
+                <polyline class="survivor-chart-grid" points="20,90 290,90" />
+                <polygon class="survivor-chart-area" :points="timelinePoints(summary, 'kills', true)" />
+                <polyline class="survivor-chart-kills" :points="timelinePoints(summary, 'kills')" />
+                <polyline class="survivor-chart-level" :points="timelinePoints(summary, 'level')" />
+                <text x="20" y="104">0:00</text>
+                <text x="290" y="104" text-anchor="end">{{ formatTime(summary.survivedMs) }}</text>
+                <text x="22" y="12">☠ {{ summary.kills }}</text>
+                <text x="290" y="12" text-anchor="end" class="survivor-chart-level-label">Nv {{ summary.level }}</text>
+              </svg>
+            </section>
+            <p v-if="summary.thievesCaught" class="survivor-cleared" role="status">🐾 {{ summary.thievesCaught === 1 ? 'Um ladrão pego' : `${summary.thievesCaught} ladrões pegos` }} nesta corrida.</p>
+            <p v-if="summary.adaptive" class="note">Desafio adaptável no fim: {{ Math.round(summary.adaptive * 100) }}% da força de sempre.</p>
             <p v-if="summary.finalHit" class="note" role="status">
               Golpe final: {{ summary.finalHit.shadowBoss ? 'lendário sombrio' : summary.finalHit.boss || summary.finalHit.grade === 'chefao' ? 'chefão' : summary.finalHit.grade === 'elite' ? 'inimigo de treinador' : 'inimigo' }}{{ summary.finalHit.dexId ? ` (${speciesName(summary.finalHit.dexId) || `Pokémon nº ${summary.finalHit.dexId}`})` : '' }} · {{ summary.finalHit.kind }} · {{ summary.finalHit.damage }} de dano (vida antes: {{ Math.ceil(summary.finalHit.hpBefore) }}).
             </p>
