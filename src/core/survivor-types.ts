@@ -236,6 +236,9 @@ export interface SurvivorEnemy {
   heldLastHitMs?: number;
   /** Orbe Adamante: parado no tempo até zerar. */
   timeFrozenMs?: number;
+  /** Papel no grupo do Perigo digital (`core/survivor-digital-squad.ts`) e a recarga da próxima arrancada. */
+  digitalRole?: 0 | 1 | 2;
+  engageCdMs?: number;
   /** Ladrão de tesouro: foge de você e não ataca (`core/survivor-extras.ts`). */
   thief?: boolean;
   /** Laço do Destino: grupo de inimigos ligados e quanto tempo a corrente ainda dura. */
@@ -507,6 +510,9 @@ export interface SurvivorState {
   shadowBallsSpawned: number;
   /** Pedras asseguradas ao derrotar lendários; entram no inventário quando a corrida termina. */
   shadowTrustStones: number;
+  /** Velocidade de quem joga no último passo (o grupo do Perigo digital mira à frente dela). */
+  playerVx?: number;
+  playerVy?: number;
   /** Ladrão de tesouro em campo e quando aparece o próximo. */
   thief?: { enemyId: number; leftMs: number } | null;
   /** Tempo jogado de verdade, que agenda o ladrão, e quando ele volta. */

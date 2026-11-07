@@ -130,3 +130,13 @@ Brilhos e faíscas seguem a opção «efeitos detalhados». O Modo Rotom esconde
 - **Desafio adaptável** (opção «Desafio adaptável» na escolha da corrida, ligada por padrão e desligada no PvP): começa em 85% da força de sempre e sobe com as cartas pegas e as evoluções, até 160%. Com menos de 35% de vida, ele recua. Anda no máximo 4% por segundo. Mexe na vida, no dano e na quantidade só dos inimigos comuns; treinadores, chefões e as recompensas não mudam. O chip 🎚 mostra o valor.
 - **Bônus sem cartas**: quando não sobra nenhuma carta para oferecer, o nível dá na hora um bônus sorteado: cura de 30% (só se faltar vida), +5% de dano, +3% de velocidade ou +8 de vida máxima. Um aviso diz qual.
 - **Resumo com gráficos**: no fim aparecem o dano que cada golpe tirou da vida dos inimigos (barras, sem contar o que passou de zero) e um gráfico de derrotas e nível ao longo da corrida, com uma amostra a cada 30 s. O resumo também mostra os ladrões pegos e o desafio adaptável no fim.
+
+## Perigo digital: um time que joga sério (`core/survivor-digital-squad.ts`)
+
+Os 3 Pokémon chamados pelo Perigo digital jogam como um time, cada um com um papel:
+
+- **Linha de frente:** vai para onde você vai estar, cortando caminho.
+- **Atirador:** fica na faixa de tiro, recua se você chega perto e solta dois tiros, um onde você vai estar e outro onde você está.
+- **Assassino:** intercepta pela frente do seu movimento.
+
+Os três saem só do caminho do golpe que vai acertá-los, para o lado certo, e recuam com menos de 30% de vida. Toda arrancada tem um aviso vermelho curto (0,26 s). Nos testes (`survivor-digital-squad.test.ts`, mesmas sementes e o mesmo grupo sem tática), eles causam 33% mais dano e aguentam cerca de 2,7× mais tempo de pé. Vida, dano e velocidade continuam os de antes (1,5×, 1,25× e 1,2× de um elite); só mudou o jeito de jogar.

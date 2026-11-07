@@ -3203,7 +3203,7 @@ function loop(ts: number): void {
         }
       }
       else if (ev.type === 'trainerSpawn') {
-        say(ev.trigger === 'digital-danger' ? 'AMEAÇA DIGITAL! Golpes bloqueiam toda cura por 8 segundos!' : ev.final ? 'CHEFAO FINAL! 6 Pokemon!' : 'Um treinador! 3 Pokemon mais fortes.');
+        say(ev.trigger === 'digital-danger' ? 'AMEAÇA DIGITAL! Um time de 3 que cerca, desvia e mira à frente. Golpes bloqueiam a cura por 8 s.' : ev.final ? 'CHEFAO FINAL! 6 Pokemon!' : 'Um treinador! 3 Pokemon mais fortes.');
         if (ev.trigger === 'digital-danger') playSound('survivor-boss');
         showTrainerPresentation(ev);
       }

@@ -37,6 +37,10 @@ import type { PokemonType } from './pokemon-data';
 export * from './survivor-types';
 import { createBonkObstacles } from './survivor-bonk';
 import {
+  DIGITAL_DASH_MS, DIGITAL_DODGE_RANGE, DIGITAL_SHOT_EVERY_MS, DIGITAL_TELEGRAPH_MS, dodgeStep, leadTarget, slotTarget, squadIntent,
+} from './survivor-digital-squad';
+import type { IncomingShot } from './survivor-digital-squad';
+import {
   ADAPTIVE_START, adaptiveMilestone, adaptiveTarget, applyLevelBonus, damageRanking, emptyRunStats, LEVEL_BONUS_TEXT, recordDamage, sampleTimeline, stepAdaptive,
   SURVIVOR_THIEF_DEX, SURVIVOR_THIEF_EVERY_MS, SURVIVOR_THIEF_FIRST_MS, SURVIVOR_THIEF_LIFE_MS, SURVIVOR_THIEF_SPEED, thiefFleeTarget, thiefReward,
 } from './survivor-extras';
@@ -580,7 +584,13 @@ function spawnTrainer(state: SurvivorState, count: number, final: boolean, event
     const id = spawnEnemy(state, false, grade, trainerId);
     if (trigger === 'digital-danger') {
       const enemy = state.enemies.find((entry) => entry.id === id);
-      if (enemy) { enemy.digitalThreat = true; enemy.maxHp = Math.round(enemy.maxHp * 1.5); enemy.hp = enemy.maxHp; enemy.damage = Math.round(enemy.damage * 1.25); enemy.speed *= 1.2; }
+      if (enemy) {
+        enemy.digitalThreat = true; enemy.maxHp = Math.round(enemy.maxHp * 1.5); enemy.hp = enemy.maxHp; enemy.damage = Math.round(enemy.damage * 1.25); enemy.speed *= 1.2;
+        // Cada um tem um papel: linha de frente, atirador e assassino (`core/survivor-digital-squad.ts`).
+        enemy.digitalRole = (i % 3) as 0 | 1 | 2;
+        enemy.specialTimerMs = 900 + i * 300;
+        enemy.engageCdMs = 1200 + i * 400;
+      }
     }
   }
   events.push({ type: 'trainerSpawn', count, final, trainerId, ...(trigger ? { trigger } : {}) });
@@ -2795,6 +2805,58 @@ function spawnHostileProjectile(state: SurvivorState, enemy: SurvivorEnemy, targ
   });
 }
 
+/**
+ * O grupo do Perigo digital: desvia dos seus golpes, arranca (com aviso curto) quando o time entra junto, cerca você em
+ * triângulo e o atirador mira onde você vai estar. As regras de quem faz o quê ficam em `core/survivor-digital-squad.ts`.
+ */
+function digitalSquadTarget(state: SurvivorState, e: SurvivorEnemy, dtMs: number): { x: number; y: number } {
+  const p = state.player;
+  const role = e.digitalRole ?? 0;
+  e.specialTimerMs = (e.specialTimerMs ?? 0) - dtMs;
+  e.engageCdMs = Math.max(0, (e.engageCdMs ?? 0) - dtMs);
+  // Aviso e arrancada: o mesmo vermelho da investida, mais curto.
+  if ((e.chargeMs ?? 0) > 0) {
+    e.chargeMs = Math.max(0, (e.chargeMs ?? 0) - dtMs);
+    if (e.chargeMs === 0) e.dashMs = DIGITAL_DASH_MS;
+    else return { x: e.x, y: e.y };
+  }
+  if ((e.dashMs ?? 0) > 0) {
+    e.dashMs = Math.max(0, (e.dashMs ?? 0) - dtMs);
+    return { x: p.x, y: p.y };
+  }
+  const shots: IncomingShot[] = [];
+  for (const proj of state.projectiles) if (Math.abs(proj.x - e.x) < DIGITAL_DODGE_RANGE && Math.abs(proj.y - e.y) < DIGITAL_DODGE_RANGE) shots.push({ x: proj.x, y: proj.y, vx: proj.vx, vy: proj.vy, size: proj.size ?? 4 });
+  const dodge = dodgeStep(e, shots);
+  const distance = Math.hypot(e.x - p.x, e.y - p.y) || 1;
+  // O atirador mira onde você vai estar, não onde está.
+  if (role === 1 && e.specialTimerMs <= 0 && distance <= 460) {
+    const aim = leadTarget(e, p, { x: state.playerVx ?? 0, y: state.playerVy ?? 0 }, BALANCE.hostileProjectileSpeed);
+    // Dois tiros: um onde você vai estar e outro onde está. Desviar para um lado só não basta.
+    spawnHostileProjectile(state, e, { ...p, x: aim.x, y: aim.y }, 0.75);
+    spawnHostileProjectile(state, e, p, 0.5);
+    e.specialTimerMs = DIGITAL_SHOT_EVERY_MS;
+  }
+  if (dodge) return { x: e.x + dodge.x * 90, y: e.y + dodge.y * 90 };
+  const intent = squadIntent({ x: e.x, y: e.y, role, hp: e.hp, maxHp: e.maxHp }, { x: p.x, y: p.y, hpRatio: p.hp / Math.max(1, p.maxHp) }, state.elapsedMs);
+  if (intent === 'retreat' || intent === 'kite') return { x: e.x + ((e.x - p.x) / distance) * 200, y: e.y + ((e.y - p.y) / distance) * 200 };
+  if (role === 1) {
+    // Atirador: fica na faixa de tiro, de lado para você, sem deixar você encostar.
+    const squad = state.enemies.filter((other) => other.trainerId === e.trainerId && other.hp > 0 && other.digitalRole !== undefined);
+    const leader = squad.find((other) => other.digitalRole === 0) ?? e;
+    return slotTarget(p, Math.atan2(leader.y - p.y, leader.x - p.x), 1);
+  }
+  // Linha de frente e assassino cortam caminho: vão para onde você vai estar, não para onde está.
+  const velocity = { x: state.playerVx ?? 0, y: state.playerVy ?? 0 };
+  const intercept = leadTarget(e, p, velocity, Math.max(60, e.speed * (role === 2 ? 1 : 1.4)));
+  const dashRange = role === 2 ? 260 : 200;
+  if (e.engageCdMs === 0 && distance < dashRange && (intent === 'engage' || role === 2 || distance < 140)) {
+    e.chargeMs = DIGITAL_TELEGRAPH_MS;
+    e.engageCdMs = role === 2 ? 1800 : 2300;
+    return { x: e.x, y: e.y };
+  }
+  return intercept;
+}
+
 function updateEnemyBehavior(state: SurvivorState, enemy: SurvivorEnemy, dtMs: number): { x: number; y: number } {
   const p = state.player;
   const archetype = enemy.archetype ?? 'perseguidor';
@@ -3202,6 +3264,8 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
     if (Math.abs(ux) > 0.01) p.facing = ux < 0 ? -1 : 1;
     p.aimAngle = Math.atan2(uy, ux);
   }
+  state.playerVx = dt > 0 ? (p.x - beforeMoveX) / dt : 0;
+  state.playerVy = dt > 0 ? (p.y - beforeMoveY) / dt : 0;
   // No BONK a frente é a câmera.
   if (input.aimAngle !== undefined && Number.isFinite(input.aimAngle)) p.aimAngle = input.aimAngle;
   // Todo quadro, não só no ataque: o guia do leque e o sprite já apontam para quem vai levar o golpe.
@@ -3285,7 +3349,7 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
     if ((e.orbitHitMs ?? 0) > 0) e.orbitHitMs = Math.max(0, (e.orbitHitMs ?? 0) - dtMs);
     // Em estase, a IA não decide cura, proteção, investida ou novos tiros.
     // O restante do quadro ainda reduz efeitos temporários de forma previsível.
-    const target = timeStopped ? { x: e.x, y: e.y } : e.thief ? thiefFleeTarget(e, p, { w: ARENA_W, h: ARENA_H }) : updateEnemyBehavior(state, e, dtMs);
+    const target = timeStopped ? { x: e.x, y: e.y } : e.thief ? thiefFleeTarget(e, p, { w: ARENA_W, h: ARENA_H }) : e.digitalThreat && e.digitalRole !== undefined ? digitalSquadTarget(state, e, dtMs) : updateEnemyBehavior(state, e, dtMs);
     const dx = target.x - e.x;
     const dy = target.y - e.y;
     const d = Math.hypot(dx, dy) || 1;
