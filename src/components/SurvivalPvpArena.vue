@@ -3,7 +3,7 @@ import { onBeforeUnmount, onMounted, reactive, ref, shallowRef } from 'vue';
 import { pokemonSpriteUrl } from '../ar/sprite-url';
 import { TYPE_COLORS, TYPE_LABELS_PT } from '../core/pokemon-data';
 import {
-  aliveCount, attackSwapBlockReason, guardBlockReason, SV_ARENA_H, SV_ARENA_W, SV_ATTACK_SWAP_CD_MS, SV_GUARD_COOLDOWN_MS, SV_MON_RADIUS, SV_SWITCH_COOLDOWN_MS, switchBlockReason,
+  aliveCount, arenaCamera, attackSwapBlockReason, guardBlockReason, offscreenPointer, SV_ARENA_H, SV_ARENA_W, SV_ATTACK_SWAP_CD_MS, SV_GUARD_COOLDOWN_MS, SV_MON_RADIUS, SV_SWITCH_COOLDOWN_MS, SV_VIEW_H, SV_VIEW_W, switchBlockReason,
 } from '../core/survivor-pvp';
 import { SURVIVOR_CONE_HALF_ANGLE, survivorOrbiterHitRadius, survivorOrbiters } from '../core/survivor-shapes';
 import type { ArenaEvent, ArenaSide, ArenaState, ArenaTeamState, ArenaWinner } from '../core/survivor-pvp';
@@ -114,6 +114,10 @@ const trailDots = shallowRef<Orb[]>([]);
 const fx = shallowRef<Fx[]>([]);
 const bullets = shallowRef<Bullet[]>([]);
 const markers = shallowRef<Marker[]>([]);
+const floorStyle = shallowRef<Record<string, string>>({});
+const pointer = shallowRef<{ x: number; y: number; angle: number } | null>(null);
+/** Canto do campo que a tela mostra agora. */
+let camera = { x: 0, y: 0 };
 const broken = ref<number[]>([]);
 const hurt = ref(false);
 const stale = ref(false);
@@ -234,15 +238,15 @@ function showFx(e: Extract<ArenaEvent, { k: 'cone' | 'pulse' | 'blink' }>): void
   const mon = team.mons[team.active];
   const color = mon ? TYPE_COLORS[mon.attackType] : '#fff';
   const mine = e.side === mySide;
-  const cqw = (length: number): string => `${(length / SV_ARENA_W) * 100}cqw`;
+  const cqw = (length: number): string => `${(length / SV_VIEW_W) * 100}cqw`;
   if (e.k === 'pulse') {
     const p = toView(team.x, team.y);
-    addFx('pulse', mine, color, { left: `${(p.x / SV_ARENA_W) * 100}%`, top: `${(p.y / SV_ARENA_H) * 100}%`, width: cqw(e.radius * 2) });
+    addFx('pulse', mine, color, { left: `${(p.x / SV_VIEW_W) * 100}%`, top: `${(p.y / SV_VIEW_H) * 100}%`, width: cqw(e.radius * 2) });
   } else if (e.k === 'cone') {
     const p = toView(team.x, team.y);
     const angle = flip ? e.angle + Math.PI : e.angle;
     addFx('cone', mine, color, {
-      left: `${(p.x / SV_ARENA_W) * 100}%`, top: `${(p.y / SV_ARENA_H) * 100}%`, width: cqw(e.range),
+      left: `${(p.x / SV_VIEW_W) * 100}%`, top: `${(p.y / SV_VIEW_H) * 100}%`, width: cqw(e.range),
       height: cqw(2 * e.range * Math.tan(SURVIVOR_CONE_HALF_ANGLE)), transform: `translate(0, -50%) rotate(${angle}rad)`,
     }, 300);
   } else {
@@ -250,14 +254,19 @@ function showFx(e: Extract<ArenaEvent, { k: 'cone' | 'pulse' | 'blink' }>): void
     const b = toView(e.x1, e.y1);
     const len = Math.hypot(b.x - a.x, b.y - a.y);
     addFx('blink', mine, color, {
-      left: `${(a.x / SV_ARENA_W) * 100}%`, top: `${(a.y / SV_ARENA_H) * 100}%`, width: cqw(len),
+      left: `${(a.x / SV_VIEW_W) * 100}%`, top: `${(a.y / SV_VIEW_H) * 100}%`, width: cqw(len),
       transform: `translate(0, -50%) rotate(${Math.atan2(b.y - a.y, b.x - a.x)}rad)`,
     }, 350);
   }
 }
 
+/** No campo, do ponto de vista de quem joga (o convidado vê girado). */
+const toField = (x: number, y: number): { x: number; y: number } => (flip ? { x: SV_ARENA_W - x, y: SV_ARENA_H - y } : { x, y });
+
+/** Do campo para a tela: a câmera segue o seu Pokémon. */
 function toView(x: number, y: number): { x: number; y: number } {
-  return flip ? { x: SV_ARENA_W - x, y: SV_ARENA_H - y } : { x, y };
+  const p = toField(x, y);
+  return { x: p.x - camera.x, y: p.y - camera.y };
 }
 
 function buildScene(now: number): void {
@@ -268,6 +277,11 @@ function buildScene(now: number): void {
       markers: state.markers.map((m) => ({ id: m.id, side: m.side, x: m.x, y: m.y, radius: m.radius, type: m.type, leftMs: m.leftMs })),
     }
     : (guestLink as SurvivalGuestLink).view(now);
+  const me = toField(view.sides[mySide].x, view.sides[mySide].y);
+  camera = arenaCamera(me.x, me.y);
+  floorStyle.value = { transform: `translate(${(-camera.x / SV_ARENA_W) * 100}%, ${(-camera.y / SV_ARENA_H) * 100}%)` };
+  const foeAt = toView(view.sides[foeSide].x, view.sides[foeSide].y);
+  pointer.value = offscreenPointer(foeAt.x, foeAt.y);
   const out: Unit[] = [];
   for (const side of [mySide, foeSide] as const) {
     const team = state.sides[side];
@@ -275,7 +289,7 @@ function buildScene(now: number): void {
     if (!mon || mon.hp <= 0) continue;
     const p = toView(view.sides[side].x, view.sides[side].y);
     const status = `${team.burnMs > 0 ? '🔥' : ''}${team.slowMs > 0 ? '🐌' : ''}${team.stunMs > 0 ? '💫' : ''}`;
-    out.push({ key: side === mySide ? 'me' : 'foe', mine: side === mySide, x: (p.x / SV_ARENA_W) * 100, y: (p.y / SV_ARENA_H) * 100, dexId: mon.dexId, shiny: mon.shiny, name: mon.name, hpPct: Math.round((100 * mon.hp) / mon.maxHp), shield: team.shieldMs > 0, guard: team.guardMs > 0, status });
+    out.push({ key: side === mySide ? 'me' : 'foe', mine: side === mySide, x: (p.x / SV_VIEW_W) * 100, y: (p.y / SV_VIEW_H) * 100, dexId: mon.dexId, shiny: mon.shiny, name: mon.name, hpPct: Math.round((100 * mon.hp) / mon.maxHp), shield: team.shieldMs > 0, guard: team.guardMs > 0, status });
   }
   units.value = out;
   // Orbitais e faixa da Trilha: as mesmas posições que decidem o dano.
@@ -289,17 +303,17 @@ function buildScene(now: number): void {
     const color = TYPE_COLORS[mon.attackType];
     if (mon.moveCategory === 'orbit') {
       const shape = { x: view.sides[side].x, y: view.sides[side].y, shots: Math.max(1, mon.shots ?? 1), attackRadius: mon.attackRadius ?? SV_MON_RADIUS * 2, orbitAngle: team.orbitAngle };
-      const size = `${((survivorOrbiterHitRadius(shape) * 1.4) / SV_ARENA_W) * 100}%`;
+      const size = `${((survivorOrbiterHitRadius(shape) * 1.4) / SV_VIEW_W) * 100}%`;
       survivorOrbiters(shape).forEach((o, i) => {
         const p = toView(o.x, o.y);
-        orbOut.push({ key: `${side}-o${i}`, mine, x: (p.x / SV_ARENA_W) * 100, y: (p.y / SV_ARENA_H) * 100, color, size });
+        orbOut.push({ key: `${side}-o${i}`, mine, x: (p.x / SV_VIEW_W) * 100, y: (p.y / SV_VIEW_H) * 100, color, size });
       });
     }
     if (mon.moveCategory === 'trilha') {
-      const size = `${((Math.min(mon.attackRadius ?? SV_MON_RADIUS * 2, 36) * 2) / SV_ARENA_W) * 100}%`;
+      const size = `${((Math.min(mon.attackRadius ?? SV_MON_RADIUS * 2, 36) * 2) / SV_VIEW_W) * 100}%`;
       team.trail.forEach((t, i) => {
         const p = toView(t.x, t.y);
-        dots.push({ key: `${side}-t${i}`, mine, x: (p.x / SV_ARENA_W) * 100, y: (p.y / SV_ARENA_H) * 100, color, size });
+        dots.push({ key: `${side}-t${i}`, mine, x: (p.x / SV_VIEW_W) * 100, y: (p.y / SV_VIEW_H) * 100, color, size });
       });
     }
   }
@@ -307,11 +321,11 @@ function buildScene(now: number): void {
   trailDots.value = dots;
   bullets.value = view.shots.map((s) => {
     const p = toView(s.x, s.y);
-    return { id: s.id, mine: s.side === mySide, x: (p.x / SV_ARENA_W) * 100, y: (p.y / SV_ARENA_H) * 100, color: TYPE_COLORS[s.type], size: `${Math.max(2.5, (s.radius * 2 / SV_ARENA_W) * 100)}%` };
+    return { id: s.id, mine: s.side === mySide, x: (p.x / SV_VIEW_W) * 100, y: (p.y / SV_VIEW_H) * 100, color: TYPE_COLORS[s.type], size: `${Math.max(2.5, (s.radius * 2 / SV_VIEW_W) * 100)}%` };
   });
   markers.value = view.markers.map((m) => {
     const p = toView(m.x, m.y);
-    return { id: m.id, mine: m.side === mySide, x: (p.x / SV_ARENA_W) * 100, y: (p.y / SV_ARENA_H) * 100, color: TYPE_COLORS[m.type], size: `${(m.radius * 2 / SV_ARENA_W) * 100}%`, leftMs: m.leftMs };
+    return { id: m.id, mine: m.side === mySide, x: (p.x / SV_VIEW_W) * 100, y: (p.y / SV_VIEW_H) * 100, color: TYPE_COLORS[m.type], size: `${(m.radius * 2 / SV_VIEW_W) * 100}%`, leftMs: m.leftMs };
   });
 }
 
@@ -472,7 +486,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <section class="svp" :class="{ six: hud.mine.length > 3 }" aria-label="Arena da luta">
+  <section class="svp" :class="{ six: hud.mine.length > 3 }" :style="{ '--svp-field-scale': SV_ARENA_W / SV_VIEW_W }" aria-label="Arena da luta">
     <header class="svp-top">
       <ul class="svp-team" :aria-label="`Equipe de ${friendName}`">
         <li v-for="r in hud.foe" :key="r.index" class="svp-pip" :class="{ active: r.active, down: r.fainted }" :aria-label="`${r.name}: ${r.fainted ? 'fora de combate' : r.active ? 'em campo' : 'na reserva'}, ${r.hpPct}% de vida`">
@@ -493,6 +507,7 @@ onBeforeUnmount(() => {
       @pointerup="joyUp"
       @pointercancel="joyUp"
     >
+      <div class="svp-floor" :style="floorStyle" aria-hidden="true"></div>
       <span
         v-for="b in bullets"
         :key="b.id"
@@ -545,6 +560,13 @@ onBeforeUnmount(() => {
       <div v-if="joy.active" class="svp-joy" :style="{ left: `${joy.ox}px`, top: `${joy.oy}px` }" aria-hidden="true">
         <span class="knob" :style="{ transform: `translate(${joy.kx}px, ${joy.ky}px)` }"></span>
       </div>
+
+      <span
+        v-if="pointer"
+        class="svp-pointer"
+        :style="{ left: `${(pointer.x / SV_VIEW_W) * 100}%`, top: `${(pointer.y / SV_VIEW_H) * 100}%`, transform: `translate(-50%, -50%) rotate(${pointer.angle}rad)` }"
+        aria-hidden="true"
+      >➤</span>
 
       <p v-if="hud.count > 0" class="svp-count" aria-hidden="true">{{ hud.count }}</p>
       <p v-if="hud.hint" class="svp-hint" role="status">{{ hud.hint }}</p>
@@ -729,6 +751,17 @@ onBeforeUnmount(() => {
   container-type: inline-size;
   border-radius: var(--radius-sm);
   border: 2px solid var(--line);
+  background: #1f4130;
+}
+
+/* O campo inteiro, maior que a tela: anda ao contrário do Pokémon, e a borda dele é a parede da arena. */
+.svp-floor {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: calc(var(--svp-field-scale) * 100%);
+  height: calc(var(--svp-field-scale) * 100%);
+  pointer-events: none;
   /* Estádio: gramado listrado, linha do meio, círculo central e uma luz da cor de cada lado. */
   background:
     radial-gradient(circle at 50% 50%, transparent 0 17.6%, rgba(255, 255, 255, 0.5) 17.6% 18.4%, transparent 18.4%),
@@ -741,8 +774,8 @@ onBeforeUnmount(() => {
 }
 
 /* Áreas de cada lado, como num campo de verdade. */
-.svp-arena::before,
-.svp-arena::after {
+.svp-floor::before,
+.svp-floor::after {
   content: '';
   position: absolute;
   left: 22%;
@@ -752,20 +785,31 @@ onBeforeUnmount(() => {
   pointer-events: none;
 }
 
-.svp-arena::before {
-  top: -2px;
+.svp-floor::before {
+  top: 0;
   border-top: 0;
   border-radius: 0 0 14px 14px;
 }
 
-.svp-arena::after {
-  bottom: -2px;
+.svp-floor::after {
+  bottom: 0;
   border-bottom: 0;
   border-radius: 14px 14px 0 0;
 }
 
 .svp-arena.hurt {
-  box-shadow: inset 0 0 0 4px rgba(224, 82, 79, 0.75), inset 0 0 46px rgba(0, 0, 0, 0.55);
+  outline: 4px solid rgba(224, 82, 79, 0.75);
+  outline-offset: -4px;
+}
+
+.svp-pointer {
+  position: absolute;
+  z-index: 3;
+  color: #ff6b63;
+  font-size: 7cqw;
+  line-height: 1;
+  text-shadow: 0 0 4px rgba(0, 0, 0, 0.8);
+  pointer-events: none;
 }
 
 .svp-unit {

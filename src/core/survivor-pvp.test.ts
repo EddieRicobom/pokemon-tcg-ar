@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  aliveCount, applyArenaSnapshot, canSwitch, createArena, guardBlockReason, NO_INPUT, SV_ARENA_H, SV_ARENA_W, SV_COUNTDOWN_MS, SV_ENTRY_SHIELD_MS, SV_GUARD_COOLDOWN_MS,
+  aliveCount, applyArenaSnapshot, canSwitch, createArena, guardBlockReason, NO_INPUT, arenaCamera, offscreenPointer, SV_ARENA_H, SV_ARENA_W, SV_START_OFFSET, SV_VIEW_H, SV_VIEW_W, SV_COUNTDOWN_MS, SV_ENTRY_SHIELD_MS, SV_GUARD_COOLDOWN_MS,
   SV_GUARD_MS, SV_MAX_MS, SV_SUDDEN_DEATH_MS, SV_SWITCH_COOLDOWN_MS, snapshotArena, stepArena, svMonFromRun, svRunScore, switchBlockReason,
 } from './survivor-pvp';
 import type { ArenaEvent, ArenaInput, ArenaState, SvMonSpec, SvRunResult } from './survivor-pvp';
@@ -82,7 +82,7 @@ describe('survival pvp: a arena', () => {
     const d = createArena([mon('a')], [mon('x')]);
     begin(d);
     stepArena(d, [{ dx: 1, dy: 1, switchTo: -1 }, NO_INPUT], 50);
-    expect(Math.hypot(d.sides[0].x - SV_ARENA_W / 2, d.sides[0].y - (SV_ARENA_H - 90))).toBeCloseTo(straight, 6);
+    expect(Math.hypot(d.sides[0].x - SV_ARENA_W / 2, d.sides[0].y - (SV_ARENA_H / 2 + SV_START_OFFSET))).toBeCloseTo(straight, 6);
     run60(s, 10_000, { dx: 1, dy: 0, switchTo: -1 });
     expect(s.sides[0].x).toBeLessThanOrEqual(SV_ARENA_W);
   });
@@ -308,7 +308,9 @@ describe('survival pvp: escudo', () => {
 });
 
 describe('survival pvp: golpes iguais aos da corrida', () => {
+  /** Quem joga fica em y = 390 e o rival, na mesma coluna, em `foeY`. */
   const place = (s: ArenaState, foeY: number): void => {
+    s.sides[0].y = 390;
     s.sides[1].y = foeY;
   };
   const events = (s: ArenaState, ms: number): ArenaEvent[] => {
@@ -329,6 +331,7 @@ describe('survival pvp: golpes iguais aos da corrida', () => {
     expect(foeLost(near)).toBeGreaterThan(0);
     const far = createArena([mon('a', { moveCategory: 'cone', attackRange: 200, fireMs: 400 })], [mon('x', idle)]);
     begin(far);
+    place(far, 90);
     events(far, 800);
     expect(foeLost(far)).toBe(0);
   });
@@ -414,5 +417,31 @@ describe('survival pvp: golpes iguais aos da corrida', () => {
     place(s, 300);
     events(s, 1500);
     expect(foeLost(s)).toBe(20);
+  });
+});
+
+describe('câmera da arena', () => {
+  it('o campo é maior que a tela', () => {
+    expect(SV_ARENA_W).toBeGreaterThan(SV_VIEW_W);
+    expect(SV_ARENA_H).toBeGreaterThan(SV_VIEW_H);
+  });
+
+  it('os dois lados começam vendo um ao outro', () => {
+    const s = createArena([], []);
+    expect(Math.abs(s.sides[0].y - s.sides[1].y)).toBeLessThan(SV_VIEW_H / 2);
+  });
+
+  it('segue quem joga e para na borda do campo', () => {
+    expect(arenaCamera(SV_ARENA_W / 2, SV_ARENA_H / 2)).toEqual({ x: (SV_ARENA_W - SV_VIEW_W) / 2, y: (SV_ARENA_H - SV_VIEW_H) / 2 });
+    expect(arenaCamera(0, 0)).toEqual({ x: 0, y: 0 });
+    expect(arenaCamera(SV_ARENA_W, SV_ARENA_H)).toEqual({ x: SV_ARENA_W - SV_VIEW_W, y: SV_ARENA_H - SV_VIEW_H });
+  });
+
+  it('a seta só aparece para quem está fora da tela e fica dentro dela', () => {
+    expect(offscreenPointer(100, 100)).toBeNull();
+    const arrow = offscreenPointer(SV_VIEW_W + 300, SV_VIEW_H / 2)!;
+    expect(arrow.x).toBeLessThan(SV_VIEW_W);
+    expect(arrow.y).toBe(SV_VIEW_H / 2);
+    expect(arrow.angle).toBeCloseTo(0);
   });
 });
