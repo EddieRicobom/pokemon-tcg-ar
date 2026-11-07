@@ -1513,69 +1513,6 @@ button.link {
   min-width: 0;
 }
 
-.team-grid {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(82px, 1fr));
-  gap: 8px;
-}
-
-.team-card {
-  position: relative;
-  width: 100%;
-  min-height: 0;
-  height: 100%;
-  padding: 8px 6px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 3px;
-  text-align: center;
-  font-size: 0.8rem;
-  line-height: 1.2;
-  border-radius: var(--radius-sm);
-}
-
-.team-card small {
-  font-weight: 400;
-  color: var(--muted);
-  font-size: 0.7rem;
-}
-
-.team-card img {
-  border-radius: 4px;
-  object-fit: cover;
-}
-
-.team-card.picked {
-  border-color: var(--gold);
-  box-shadow: 0 0 0 2px var(--gold) inset;
-}
-
-.team-slot {
-  position: absolute;
-  top: 4px;
-  right: 4px;
-  min-width: 20px;
-  height: 20px;
-  border-radius: 10px;
-  display: grid;
-  place-items: center;
-  background: var(--gold);
-  color: #1b1b1b;
-  font-weight: 800;
-  font-size: 0.75rem;
-}
-
-.team-noimg {
-  width: 48px;
-  height: 67px;
-  border-radius: 4px;
-  background: var(--surface);
-}
-
 /* ---------- Cartas: equipe, filtros e grade ---------- */
 .team-strip {
   margin: 12px 0;
@@ -4152,11 +4089,6 @@ body.no-scroll .reward-toasts {
 /* Carta shiny nas listas: contorno dourado. */
 .grid-card.is-shiny,
 .card-row.is-shiny,
-.team-card.is-shiny {
-  border-color: var(--gold);
-  box-shadow: 0 0 0.8rem rgb(255 203 5 / 0.35);
-}
-
 .shiny-news {
   color: var(--gold);
   font-weight: 600;

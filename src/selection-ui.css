@@ -14,10 +14,6 @@
 .selection-tabs { display:flex; flex-wrap:wrap; gap:8px; margin:12px 0; }
 .selection-tabs button { flex:1; min-height:44px; border:1px solid var(--line); background:var(--surface-2); color:var(--text); border-radius:10px; }
 .selection-tabs button[aria-pressed='true'] { border-color:var(--accent); background:color-mix(in srgb,var(--accent) 18%,var(--surface)); font-weight:800; }
-.team-picker .team-grid { grid-template-columns:repeat(auto-fill,minmax(125px,1fr)); gap:10px; }
-.team-picker .team-card { padding:14px 10px 10px; border-radius:14px; gap:6px; min-height:165px; }
-.team-picker .team-card small:last-of-type { display:block; width:100%; padding:8px 4px; border-radius:8px; background:var(--surface-2); color:var(--text); font-weight:700; }
-.team-picker .team-card.picked small:last-of-type { color:var(--gold); }
 .selection-caption { color:var(--muted); font-size:.85rem; margin:8px 0 12px; }
 .opponent-picker { grid-column:1/-1; border-top:1px solid var(--line); padding-top:14px; }
 .opponent-picker h3 { margin:0 0 10px; font-size:1rem; }

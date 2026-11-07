@@ -180,7 +180,7 @@ Todas as opções do menu da Arena usam a mesma luta: a arena em tempo real do f
 Tudo que antes ficava espalhado (entrar no palco e só depois configurar) agora se decide **antes de entrar**, numa tela só com quatro passos e um botão principal sempre à vista no pé da tela:
 
 1. **O que fazer** (`ARENA_CHOICES`): **Luta 6×6**, **Liga e desafios**, **Corridas 6×6** e **PvP com um amigo**. O pedido do endereço vale mais que um desafio guardado; sem pedido, o desafio abre na Liga.
-2. **Equipe** (`TeamPicker`): exatamente 6 Pokémon, com número da Pokédex.
+2. **Equipe** (`TeamPicker`): exatamente 6 Pokémon, com número da Pokédex, numa grade estilo Box com as vagas da equipe em cima. O toque coloca ou tira o Pokémon e mostra a ficha embaixo da grade (`core/box-summary.ts`: tipos, atributos base e os dois ataques).
 3. **Opções da opção**: líder da Liga (`LeagueCard`, que não sai da tela quando está embutido) ou tipo de corrida.
 4. **Entrar**: um resumo do que vai acontecer, o motivo de ainda não poder (o próximo toque) e o botão grande. `arenaPlan` (`core/arena-menu.ts`, testada) calcula `ready`, o bloqueio, o resumo, o texto do botão e o passo atual; a tela não decide regra nenhuma sozinha. Uma linha «Agora: …» no topo (`role="status"`) repete o que tocar.
 
