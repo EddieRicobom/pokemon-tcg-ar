@@ -4,6 +4,7 @@ import PvpLobby from './PvpLobby.vue';
 import SurvivalPvpArena from './SurvivalPvpArena.vue';
 import { pokemonSpriteUrl } from '../ar/sprite-url';
 import { finishLeagueFight, finishTeamFight } from '../app/arena-fight-result';
+import { readArenaRecords, saveArenaRun } from '../app/arena-records';
 import type { ArenaMember } from '../app/arena-members';
 import { pendingChallenge } from '../app/league-store';
 import { profile } from '../app/profile-store';
@@ -214,7 +215,13 @@ function onFinished(winner: ArenaWinner, hpLeft: number[]): void {
   if (run.value) {
     run.value = resolveEndlessBattle(run.value, team.value, { winningTeam: winner === 'draw' ? null : winner, hpLeft });
     const label = ENDLESS_ARENA_LABELS[run.value.mode].title;
-    notes.value = [`${label}: ${run.value.wins} vitória${run.value.wins === 1 ? '' : 's'} · ${run.value.score} pontos.`, ...notes.value];
+    const before = readArenaRecords()[run.value.mode];
+    const record = run.value.stopped && saveArenaRun(run.value.mode, { score: run.value.score, wins: run.value.wins });
+    notes.value = [
+      `${label}: ${run.value.wins} vitória${run.value.wins === 1 ? '' : 's'} · ${run.value.score} pontos.`,
+      record ? '🏆 Novo recorde!' : before ? `Recorde: ${before.score} pontos (${before.wins} vitórias).` : '',
+      ...notes.value,
+    ].filter(Boolean);
   }
 }
 
@@ -232,7 +239,10 @@ function challengeNext(): void {
 }
 
 function leave(): void {
-  if (run.value) run.value = abandonEndlessArena(run.value);
+  if (run.value && !run.value.stopped) {
+    run.value = abandonEndlessArena(run.value);
+    saveArenaRun(run.value.mode, { score: run.value.score, wins: run.value.wins });
+  }
   peer?.close();
   emit('close');
 }

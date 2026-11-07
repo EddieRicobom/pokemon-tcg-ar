@@ -17,6 +17,11 @@ import type { SurvivorPlayer, SurvivorUpgradeOption } from './survivor-types';
 
 export const ARENA_TEAM_SIZE = SV_MAX_TEAM;
 export const ARENA_LEVEL_UPS = 10;
+/**
+ * A luta 6x6 dá mais vida a cada Pokémon do que o fim do PvP do Survivor: com a vida da corrida, cada um caía em uns 10 s
+ * e não sobrava tempo para trocar, desviar e usar o escudo (medido em lutas entre rivais, ver `arena-prep.test.ts`).
+ */
+export const ARENA_HP_FACTOR = 1.7;
 const OFFER_SIZE = 3;
 
 export interface ArenaPrepMember {
@@ -128,7 +133,7 @@ export function arenaSpecOf(prep: ArenaPrep): SvMonSpec {
     id: member.id, dexId: member.dexId, name: member.name, shiny: member.shiny, types: survivorAttackOf(member.dexId).types, attackType: p.move.type,
     survivedMs: 0, kills: 0, level: p.level, defeated: false, combat,
   }, member.id);
-  return { ...spec, alt: secondAttack(prep) };
+  return { ...spec, maxHp: Math.round(clampTo(spec.maxHp * ARENA_HP_FACTOR, SV_LIMITS.maxHp)), alt: secondAttack(prep) };
 }
 
 /**

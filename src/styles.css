@@ -8516,3 +8516,104 @@ body.no-scroll .reward-toasts {
 .survivor-stage.btn-pilha .survivor-auto-charge {
   bottom: calc(var(--sv-sp-b) + var(--sv-sp) * var(--sv-s) * 1.82 + var(--sv-ju) * var(--sv-s) + var(--sv-gap) * 2 + 5px + env(safe-area-inset-bottom));
 }
+
+/* Fabricar: cada ingrediente com ícone e quantidade, verde quando tem, dourado quando dá para fabricar o que falta. */
+.craft-list li.ready {
+  border-color: rgb(111 191 82 / 45%);
+}
+
+.craft-needs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 3px;
+}
+
+.craft-needs b,
+.craft-needs .craft-need {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 6px 1px 2px;
+  border-radius: 999px;
+  border: 1px solid rgb(224 82 79 / 55%);
+  background: rgb(224 82 79 / 12%);
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.craft-needs b.ok,
+.craft-needs .craft-need.ok {
+  border-color: rgb(111 191 82 / 55%);
+  background: rgb(111 191 82 / 14%);
+}
+
+.craft-needs b.makeable,
+.craft-needs .craft-need.makeable {
+  border-color: rgb(255 209 102 / 60%);
+  background: rgb(255 209 102 / 14%);
+}
+
+.craft-needs img {
+  width: 18px;
+  height: 18px;
+  image-rendering: pixelated;
+}
+
+.craft-actions {
+  display: grid;
+  gap: 4px;
+  justify-items: stretch;
+}
+
+.craft-needs .craft-need {
+  min-height: 0;
+  color: inherit;
+  cursor: pointer;
+}
+
+/* O que as melhorias da Vila pedem, em cima das receitas. */
+.craft-goals {
+  margin-bottom: 10px;
+  padding: 8px 10px;
+  border: 1px solid rgb(255 209 102 / 35%);
+  border-radius: 12px;
+  background: rgb(255 209 102 / 6%);
+}
+
+.craft-goals summary {
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.craft-goals ul {
+  display: grid;
+  gap: 8px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.craft-goals li {
+  display: grid;
+  gap: 4px;
+  padding: 6px 8px;
+  border-radius: 10px;
+  background: rgb(255 255 255 / 5%);
+}
+
+.craft-goals li.ready {
+  box-shadow: inset 0 0 0 1px rgb(111 191 82 / 55%);
+}
+
+.craft-goals li > button {
+  justify-self: start;
+}
+
+.craft-goals .hint {
+  margin: 0;
+}
+
+.craft-for {
+  color: #ffd166;
+}

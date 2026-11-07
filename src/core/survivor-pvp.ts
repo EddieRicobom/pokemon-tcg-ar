@@ -237,6 +237,9 @@ export interface ArenaMon extends SvMonSpec {
   hp: number;
   /** Está usando o segundo ataque. */
   altOn?: boolean;
+  /** Dano que já causou e quantos derrubou nesta luta (só no anfitrião; não vai no instantâneo). */
+  dealt?: number;
+  kos?: number;
 }
 
 export interface ArenaTrailPoint {
@@ -361,6 +364,12 @@ const startPosition = (side: ArenaSide): { x: number; y: number } => ({ x: SV_AR
 /** Canto do pedaço do campo que a tela mostra: centrado em (x, y), sem passar da borda do campo. */
 export function arenaCamera(x: number, y: number): { x: number; y: number } {
   return { x: clamp(x - SV_VIEW_W / 2, 0, SV_ARENA_W - SV_VIEW_W), y: clamp(y - SV_VIEW_H / 2, 0, SV_ARENA_H - SV_VIEW_H) };
+}
+
+/** Quem joga fica no centro da câmera, puxada um pouco para o rival: os dois cabem na tela mais vezes. */
+export function arenaCameraTarget(me: { x: number; y: number }, foe: { x: number; y: number }): { x: number; y: number } {
+  const lead = (d: number, max: number): number => clamp(d * 0.35, -max, max);
+  return arenaCamera(me.x + lead(foe.x - me.x, SV_VIEW_W * 0.25), me.y + lead(foe.y - me.y, SV_VIEW_H * 0.25));
 }
 
 /** Seta na borda da tela para quem está fora dela (posição já na tela); null quando dá para ver. */
@@ -575,6 +584,10 @@ function hitActive(target: ArenaTeamState, side: ArenaSide, type: PokemonType, d
   const dealt = mult === 0 ? 0 : Math.max(1, Math.round(damage * mult));
   events.push({ k: 'hit', side, damage: dealt, mult });
   damageActive(target, side, dealt, events);
+  if (source) {
+    source.mon.dealt = (source.mon.dealt ?? 0) + dealt;
+    if (defender.hp <= 0) source.mon.kos = (source.mon.kos ?? 0) + 1;
+  }
   if (dealt > 0 && defender.hp > 0) applyEffect(effect, source, target, dealt);
 }
 

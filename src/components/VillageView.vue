@@ -104,6 +104,8 @@ import type { Dir } from '../core/village/actors';
 import { stickDirs, stickVector } from '../core/village/joystick';
 import type { PokemonType } from '../core/pokemon-data';
 import { paintItemIcon } from '../village/item-art';
+import { craftMany, craftMissing, craftMissingFor, goalsByItem, maxCraftable, recipeLines, villageGoals } from '../core/village/crafting';
+import { dojoOpen } from '../core/village/dojo';
 import { VillageGame } from '../village/village-game';
 import type { VillageMon } from '../village/village-game';
 import { SoundEngine } from '../box/sound';
@@ -975,10 +977,24 @@ const inventoryList = computed(() => browseItems(
 const craftList = computed(() => browseItems(
   CRAFT_IDS.flatMap((id) => {
     const item = itemDef(id);
-    return item ? [{ ...item, ready: canAfford(state, RECIPES[id] ?? {}) }] : [];
+    if (!item) return [];
+    const lines = recipeLines(state, id);
+    return [{ ...item, quantity: count(state, id), ready: canAfford(state, RECIPES[id] ?? {}), lines, max: maxCraftable(state, id), makeable: lines.some((l) => !l.ok) && lines.every((l) => l.ok || l.makeable) }];
   }),
   { query: craftQuery.value, kind: craftKind.value, availability: craftAvailability.value, sort: craftSort.value },
 ));
+/** O que as próximas melhorias da Vila pedem, para o Fabricar mostrar em cima das receitas. */
+const villageGoalList = computed(() => {
+  void state.inventory;
+  return villageGoals(state, { homeLots: [...new Set(homes.values())], dojoOpen: dojoOpen(mons.value.length) });
+});
+const goalsForItem = computed(() => goalsByItem(villageGoalList.value));
+/** Toque num material da melhoria: a lista de receitas mostra a receita dele. */
+function findRecipe(name: string): void {
+  craftQuery.value = name;
+  craftKind.value = 'todos';
+  craftAvailability.value = 'todos';
+}
 const cookList = computed(() => browseItems(
   COOK_IDS.flatMap((id) => {
     const item = itemDef(id);
@@ -3817,6 +3833,23 @@ onBeforeUnmount(() => {
         </div>
 
         <div v-else-if="tab === 'fabricar'">
+          <details v-if="villageGoalList.length > 0" class="craft-goals" open>
+            <summary>Para as melhorias da Vila · {{ villageGoalList.filter((g) => g.ready).length }} de {{ villageGoalList.length }} com tudo</summary>
+            <ul>
+              <li v-for="g in villageGoalList" :key="g.id" :class="{ ready: g.ready }">
+                <strong><span aria-hidden="true">{{ g.icon }}</span> {{ g.title }}</strong>
+                <small>{{ g.where }}{{ g.coins > 0 ? ` · ${g.coins} moedas` : '' }}</small>
+                <span class="craft-needs">
+                  <button v-for="l in g.lines" :key="l.item" type="button" class="craft-need" :class="{ ok: l.ok, makeable: l.makeable }" :title="`Ver a receita de ${l.name}`" @click="findRecipe(l.name)">
+                    <img :src="icon(l.item)" alt="" width="18" height="18" />{{ l.name }} {{ Math.min(l.have, l.need) }}/{{ l.need }}
+                  </button>
+                </span>
+                <p v-if="g.ready" class="hint">Materiais prontos: faça a melhoria em {{ g.where }}.</p>
+                <button v-else-if="g.makeable" type="button" class="small" @click="act(craftMissingFor(state, Object.fromEntries(g.lines.map((l) => [l.item, l.need])), g.title))">Fazer o que falta</button>
+                <p v-else class="hint">Faltam materiais de coleta: {{ g.lines.filter((l) => !l.ok && !l.makeable).map((l) => `${l.need - l.have}× ${l.name}`).join(', ') }}.</p>
+              </li>
+            </ul>
+          </details>
           <div class="item-browser-controls" aria-label="Organizar receitas de fabricação">
             <input v-model="craftQuery" type="search" placeholder="Buscar receita" aria-label="Buscar receita para fabricar" />
             <label>Categoria <select v-model="craftKind" aria-label="Filtrar receitas por categoria"><option value="todos">Todas</option><option value="material">Materiais</option><option value="furniture">Móveis</option><option value="accessory">Acessórios</option></select></label>
@@ -3824,11 +3857,23 @@ onBeforeUnmount(() => {
             <label>Organizar <select v-model="craftSort" aria-label="Organizar receitas de fabricação"><option value="catalogo">Catálogo</option><option value="nome">Nome (A–Z)</option><option value="categoria">Categoria</option><option value="prontas">Prontas primeiro</option></select></label>
           </div>
           <p v-if="craftList.length === 0" class="hint">Nenhuma receita corresponde aos filtros.</p>
-          <ul class="item-grid">
-            <li v-for="i in craftList" :key="i.id">
+          <ul class="item-grid craft-list">
+            <li v-for="i in craftList" :key="i.id" :class="{ ready: i.ready }">
               <img :src="icon(i.id)" alt="" width="40" height="40" />
-              <span>{{ i.name }}<small>{{ describeCost(state, RECIPES[i.id]!) }}</small></span>
-              <button type="button" @click="act(craft(state, i.id))">Fazer</button>
+              <span>
+                {{ i.name }}<small v-if="i.quantity">Você tem {{ i.quantity }}</small>
+                <small v-if="goalsForItem.get(i.id)" class="craft-for">Para: {{ goalsForItem.get(i.id)!.join(', ') }}</small>
+                <span class="craft-needs" :aria-label="`Ingredientes: ${describeCost(state, RECIPES[i.id]!)}`">
+                  <b v-for="l in i.lines" :key="l.item" :class="{ ok: l.ok, makeable: l.makeable }" :title="l.makeable ? `Dá para fabricar ${l.name}` : l.name">
+                    <img :src="icon(l.item)" alt="" width="18" height="18" />{{ l.name }} {{ Math.min(l.have, l.need) }}/{{ l.need }}
+                  </b>
+                </span>
+              </span>
+              <span class="craft-actions">
+                <button type="button" :disabled="i.max < 1" @click="act(craft(state, i.id))">Fazer</button>
+                <button v-if="i.max > 1" type="button" class="small" @click="act(craftMany(state, i.id, i.max))">Fazer {{ Math.min(i.max, 999) }}</button>
+                <button v-else-if="i.makeable" type="button" class="small" @click="act(craftMissing(state, i.id))">Fazer o que falta</button>
+              </span>
             </li>
           </ul>
         </div>
