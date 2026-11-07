@@ -9,6 +9,13 @@ import { SURVIVOR_CONE_HALF_ANGLE, survivorOrbiterHitRadius, survivorOrbiters } 
 import type { ArenaEvent, ArenaSide, ArenaState, ArenaTeamState, ArenaWinner } from '../core/survivor-pvp';
 import { SurvivalGuestLink, SurvivalHostLink } from '../pvp/survival-link';
 import type { ArenaView } from '../pvp/survival-link';
+import { effectiveVisual } from '../app/visual-settings';
+import { addImpact, screenFlash, shakeOffset, stepImpacts } from '../core/arena-impacts';
+import type { ArenaImpact } from '../core/arena-impacts';
+import type { SurvivorFx } from '../core/survivor-types';
+import { drawArenaImpact } from '../village/arena-impact-art';
+import { drawElementFx, drawElementProjectile } from '../village/survivor-attack-art';
+import type { WorldToScreen } from '../village/survivor-attack-art';
 
 /**
  * A arena em tempo real: o fim do PvP do Survivor (3x3) e a luta 6x6 do menu da Arena, contra um amigo ou um rival do jogo.
@@ -74,14 +81,6 @@ interface Fx {
   color: string;
   style: Record<string, string>;
 }
-interface Bullet {
-  id: number;
-  mine: boolean;
-  x: number;
-  y: number;
-  color: string;
-  size: string;
-}
 interface Marker {
   id: number;
   mine: boolean;
@@ -118,7 +117,17 @@ const units = shallowRef<Unit[]>([]);
 const orbs = shallowRef<Orb[]>([]);
 const trailDots = shallowRef<Orb[]>([]);
 const fx = shallowRef<Fx[]>([]);
-const bullets = shallowRef<Bullet[]>([]);
+const fxCanvas = ref<HTMLCanvasElement | null>(null);
+/** Cone e pulso desenhados com a arte da Torre (`drawElementFx`), no campo. */
+let canvasFx: SurvivorFx[] = [];
+let impacts: ArenaImpact[] = [];
+/** Onde cada golpe estava no quadro anterior: o rastro sai daí (o convidado não recebe a velocidade). */
+let lastShotPos = new Map<number, { x: number; y: number }>();
+let lastView: ArenaView | null = null;
+let impactSeed = 1;
+const shakeStyle = shallowRef<Record<string, string>>({});
+const flashOpacity = ref(0);
+const reducedMotion = typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 const markers = shallowRef<Marker[]>([]);
 const floorStyle = shallowRef<Record<string, string>>({});
 const pointer = shallowRef<{ x: number; y: number; angle: number } | null>(null);
@@ -214,6 +223,10 @@ function handleEvents(events: ArenaEvent[]): void {
     const mons = state.sides[e.side].mons;
     if (e.k === 'hit') {
       hitAt[e.side] = performance.now();
+      const defender = state.sides[e.side];
+      const attacker = state.sides[e.side === 0 ? 1 : 0];
+      const color = TYPE_COLORS[attacker.mons[attacker.active]?.attackType ?? 'normal'];
+      if (e.damage > 0) impacts = addImpact(impacts, e.mult > 1 ? 'super' : 'hit', defender.x, defender.y, [color, '#ffffff'], impactSeed++);
       showDamage(e.side, e.damage, e.mult);
       if (e.side === mySide) {
         hurt.value = true;
@@ -231,6 +244,9 @@ function handleEvents(events: ArenaEvent[]): void {
       const name = mons[e.index]?.name ?? 'Pokémon';
       if (e.side === mySide) toast(e.forced ? `Entrou ${name}` : `Você trocou para ${name}`, 'info', 1800, `sw:${name}`);
       else toast(`${props.friendName} trocou para ${name}`, 'info', 1800, `fsw:${name}`);
+    } else if (e.k === 'clash') {
+      impacts = addImpact(impacts, 'clash', e.x, e.y, [TYPE_COLORS[e.a], TYPE_COLORS[e.b]], impactSeed++);
+      toast('Choque de golpes!', 'info', 1100, 'clash');
     } else if (e.k === 'attack') {
       if (e.side === mySide) {
         const mon = mons[e.index];
@@ -262,16 +278,12 @@ function showFx(e: Extract<ArenaEvent, { k: 'cone' | 'pulse' | 'blink' }>): void
   const color = mon ? TYPE_COLORS[mon.attackType] : '#fff';
   const mine = e.side === mySide;
   const cqw = (length: number): string => `${(length / SV_VIEW_W) * 100}cqw`;
-  if (e.k === 'pulse') {
-    const p = toView(team.x, team.y);
-    addFx('pulse', mine, color, { left: `${(p.x / SV_VIEW_W) * 100}%`, top: `${(p.y / SV_VIEW_H) * 100}%`, width: cqw(e.radius * 2) });
-  } else if (e.k === 'cone') {
-    const p = toView(team.x, team.y);
-    const angle = flip ? e.angle + Math.PI : e.angle;
-    addFx('cone', mine, color, {
-      left: `${(p.x / SV_VIEW_W) * 100}%`, top: `${(p.y / SV_VIEW_H) * 100}%`, width: cqw(e.range),
-      height: cqw(2 * e.range * Math.tan(SURVIVOR_CONE_HALF_ANGLE)), transform: `translate(0, -50%) rotate(${angle}rad)`,
-    }, 300);
+  if (e.k === 'pulse' || e.k === 'cone') {
+    canvasFx = [...canvasFx.slice(-10), {
+      kind: e.k, x: team.x, y: team.y, r: e.k === 'pulse' ? e.radius : e.range, color, ageMs: 0, lifeMs: e.k === 'pulse' ? 360 : 300,
+      ...(mon ? { moveType: mon.attackType } : {}),
+      ...(e.k === 'cone' ? { angle: e.angle, spread: SURVIVOR_CONE_HALF_ANGLE } : {}),
+    }];
   } else {
     const a = toView(e.x0, e.y0);
     const b = toView(e.x1, e.y1);
@@ -348,10 +360,7 @@ function buildScene(now: number): void {
   }
   orbs.value = orbOut;
   trailDots.value = dots;
-  bullets.value = view.shots.map((s) => {
-    const p = toView(s.x, s.y);
-    return { id: s.id, mine: s.side === mySide, x: (p.x / SV_VIEW_W) * 100, y: (p.y / SV_VIEW_H) * 100, color: TYPE_COLORS[s.type], size: `${Math.max(2.5, (s.radius * 2 / SV_VIEW_W) * 100)}%` };
-  });
+  lastView = view;
   markers.value = view.markers.map((m) => {
     const p = toView(m.x, m.y);
     return { id: m.id, mine: m.side === mySide, x: (p.x / SV_VIEW_W) * 100, y: (p.y / SV_VIEW_H) * 100, color: TYPE_COLORS[m.type], size: `${(m.radius * 2 / SV_VIEW_W) * 100}%`, leftMs: m.leftMs };
@@ -428,6 +437,7 @@ function frame(ts: number): void {
   }
   if (events.length) handleEvents(events);
   buildScene(ts);
+  drawCanvas(ts, dt);
   if (events.length || ts - lastHud > 90) {
     lastHud = ts;
     buildHud();
@@ -499,6 +509,56 @@ function onBlur(): void {
 
 const unitStyle = (u: Unit): Record<string, string> => ({ left: `${u.x}%`, top: `${u.y}%` });
 
+/** Golpes no ar, cone, pulso e impactos, desenhados no canvas com a mesma arte da Torre. */
+function drawCanvas(now: number, dt: number): void {
+  const canvas = fxCanvas.value;
+  const ctx = canvas?.getContext('2d');
+  if (!canvas || !ctx) return;
+  const cssW = canvas.clientWidth;
+  const cssH = canvas.clientHeight;
+  if (cssW === 0 || cssH === 0) return;
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  if (canvas.width !== Math.round(cssW * dpr) || canvas.height !== Math.round(cssH * dpr)) {
+    canvas.width = Math.round(cssW * dpr);
+    canvas.height = Math.round(cssH * dpr);
+  }
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, cssW, cssH);
+  const scale = cssW / SV_VIEW_W;
+  const map: WorldToScreen = (x, y, z = 0) => {
+    const p = toView(x, y);
+    return { x: p.x * scale, y: (p.y - z * 0.5) * scale, s: scale };
+  };
+  const strong = effectiveVisual.value.impactFx && !reducedMotion;
+  const detailed = !reducedMotion;
+  const seen = new Map<number, { x: number; y: number }>();
+  for (const shot of lastView?.shots ?? []) {
+    const head = map(shot.x, shot.y, 8);
+    const before = lastShotPos.get(shot.id);
+    seen.set(shot.id, { x: shot.x, y: shot.y });
+    if (!head) continue;
+    const back = before ? map(before.x, before.y, 8) : null;
+    // O rastro esticado mostra a direção mesmo de um quadro para o outro.
+    const tail = back && (back.x !== head.x || back.y !== head.y)
+      ? { x: head.x + (back.x - head.x) * 5, y: head.y + (back.y - head.y) * 5, s: scale }
+      : { x: head.x, y: head.y + 6, s: scale };
+    drawElementProjectile(ctx, shot.type, head, tail, Math.max(2, Math.min(16, shot.radius * scale * 1.15)), 1, now, detailed, shot.id);
+  }
+  lastShotPos = seen;
+  canvasFx = canvasFx.filter((f) => (f.ageMs += dt) < f.lifeMs);
+  for (const f of canvasFx) drawElementFx(ctx, f, map, now, detailed);
+  impacts = stepImpacts(impacts, dt);
+  if (strong || impacts.some((i) => i.kind !== 'hit')) {
+    for (const impact of impacts) {
+      const at = map(impact.x, impact.y, 10);
+      if (at) drawArenaImpact(ctx, impact, at, strong);
+    }
+  }
+  const shake = shakeOffset(strong ? impacts : [], now, reducedMotion);
+  shakeStyle.value = shake.x || shake.y ? { transform: `translate(${shake.x.toFixed(1)}px, ${shake.y.toFixed(1)}px)` } : {};
+  flashOpacity.value = strong ? screenFlash(impacts) : 0;
+}
+
 onMounted(() => {
   window.addEventListener('keydown', onKey);
   window.addEventListener('keyup', onKey);
@@ -536,19 +596,15 @@ onBeforeUnmount(() => {
       ref="arenaEl"
       class="svp-arena"
       :class="{ hurt }"
+      :style="shakeStyle"
       @pointerdown="joyDown"
       @pointermove="joyMove"
       @pointerup="joyUp"
       @pointercancel="joyUp"
     >
       <div class="svp-floor" :style="floorStyle" aria-hidden="true"></div>
-      <span
-        v-for="b in bullets"
-        :key="b.id"
-        class="svp-shot"
-        :class="{ mine: b.mine }"
-        :style="{ left: `${b.x}%`, top: `${b.y}%`, background: b.color, width: b.size }"
-      ></span>
+      <canvas ref="fxCanvas" class="svp-canvas" aria-hidden="true"></canvas>
+      <span v-if="flashOpacity > 0" class="svp-flash" :style="{ opacity: flashOpacity }" aria-hidden="true"></span>
       <span
         v-for="d in trailDots"
         :key="d.key"
@@ -841,6 +897,22 @@ onBeforeUnmount(() => {
 .svp-arena.hurt {
   outline: 4px solid rgba(224, 82, 79, 0.75);
   outline-offset: -4px;
+}
+
+.svp-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.svp-flash {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  background: #ffffff;
+  pointer-events: none;
 }
 
 .svp-pointer {

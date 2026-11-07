@@ -351,6 +351,8 @@ export type ArenaEvent =
   | { k: 'switch'; side: ArenaSide; index: number; forced: boolean }
   /** `side` trocou o ataque do Pokémon em campo. */
   | { k: 'attack'; side: ArenaSide; index: number }
+  /** Dois golpes de lados diferentes se chocaram no ar e se anularam. `side` é o dono do primeiro. */
+  | { k: 'clash'; side: ArenaSide; x: number; y: number; a: PokemonType; b: PokemonType }
   /** `side` = quem se protegeu. */
   | { k: 'guard'; side: ArenaSide }
   /** `side` = quem foi atacado e não levou o dano por causa do escudo. */
@@ -739,6 +741,34 @@ function stepTrail(state: ArenaState, side: ArenaSide, moved: number, dt: number
   }
 }
 
+/**
+ * Golpes de lados diferentes que se encostam no ar se chocam, como num cabo de força: o mais forte segue, com o dano do
+ * mais fraco descontado, e o mais fraco some. Força parecida (diferença menor que 10%) anula os dois. Quem atravessa
+ * perde uma perfuração em vez de sumir. No máximo um choque por golpe por quadro.
+ */
+function resolveClashes(shots: ArenaShot[], events: ArenaEvent[]): ArenaShot[] {
+  const gone = new Set<ArenaShot>();
+  for (let i = 0; i < shots.length; i++) {
+    const a = shots[i]!;
+    if (gone.has(a)) continue;
+    for (let j = i + 1; j < shots.length; j++) {
+      const b = shots[j]!;
+      if (b.side === a.side || gone.has(b) || Math.hypot(a.x - b.x, a.y - b.y) > a.radius + b.radius) continue;
+      const tie = Math.abs(a.damage - b.damage) < Math.max(a.damage, b.damage) * 0.1;
+      const losers = tie ? [a, b] : [a.damage < b.damage ? a : b];
+      const winner = tie ? null : a.damage < b.damage ? b : a;
+      if (winner) winner.damage = Math.max(1, winner.damage - Math.min(a.damage, b.damage));
+      for (const shot of losers) {
+        if (shot.pierce > 0) shot.pierce--;
+        else gone.add(shot);
+      }
+      events.push({ k: 'clash', side: a.side, x: round1n((a.x + b.x) / 2), y: round1n((a.y + b.y) / 2), a: a.type, b: b.type });
+      break;
+    }
+  }
+  return gone.size ? shots.filter((shot) => !gone.has(shot)) : shots;
+}
+
 function decideWinner(state: ArenaState): ArenaWinner | null {
   const a = aliveCount(state.sides[0]);
   const b = aliveCount(state.sides[1]);
@@ -878,7 +908,7 @@ export function stepArena(state: ArenaState, inputs: readonly [ArenaInput | unde
     }
     kept.push(shot);
   }
-  state.shots = kept;
+  state.shots = resolveClashes(kept, events);
 
   if (state.timeMs > state.suddenDeathMs) {
     for (const side of [0, 1] as const) {

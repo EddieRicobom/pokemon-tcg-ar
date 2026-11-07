@@ -98,9 +98,9 @@ describe('survival pvp: a arena', () => {
   });
 
   it('o golpe acerta, tira vida e respeita a vantagem de tipo', () => {
-    const neutral = createArena([mon('a')], [mon('x', { types: ['normal'] })]);
-    const weak = createArena([mon('a', { attackType: 'fire' })], [mon('x', { types: ['grass'] })]);
-    const immune = createArena([mon('a', { attackType: 'normal' })], [mon('x', { types: ['ghost'] })]);
+    const neutral = createArena([mon('a')], [mon('x', { types: ['normal'], fireMs: 60_000 })]);
+    const weak = createArena([mon('a', { attackType: 'fire' })], [mon('x', { types: ['grass'], fireMs: 60_000 })]);
+    const immune = createArena([mon('a', { attackType: 'normal' })], [mon('x', { types: ['ghost'], fireMs: 60_000 })]);
     for (const s of [neutral, weak, immune]) {
       begin(s);
       run60(s, 3000);
@@ -175,7 +175,7 @@ describe('survival pvp: a arena', () => {
 
   it('quem entra fica protegido por um instante', () => {
     const make = (): ArenaState => {
-      const s = createArena([mon('a'), mon('b')], [mon('x', { fireMs: 450, power: 30 })]);
+      const s = createArena([mon('a', { fireMs: 60_000 }), mon('b', { fireMs: 60_000 })], [mon('x', { fireMs: 450, power: 30 })]);
       s.sides[1].y = s.sides[0].y - 50; // colados: o golpe chega quase na hora
       begin(s);
       return s;
@@ -463,5 +463,32 @@ describe('placar da luta', () => {
     for (let t = 0; t < 3000 && s.winner === null; t += 20) stepArena(s, [NO_INPUT, NO_INPUT], 20);
     expect(s.sides[0].mons[0]!.dealt).toBeGreaterThan(0);
     expect(s.sides[0].mons[0]!.kos).toBe(1);
+  });
+});
+
+describe('choque de golpes', () => {
+  it('dois tiros de lados diferentes se anulam no ar e avisam onde', () => {
+    const s = createArena([mon('a', { fireMs: 60_000 })], [mon('b', { fireMs: 60_000 })]);
+    s.countdownMs = 0;
+    s.shots = [
+      { id: 1, side: 0, x: 300, y: 500, vx: 0, vy: -200, damage: 10, type: 'fire', ageMs: 0, radius: 6, pierce: 0, lifeMs: 2000 },
+      { id: 2, side: 1, x: 300, y: 490, vx: 0, vy: 200, damage: 10, type: 'water', ageMs: 0, radius: 6, pierce: 0, lifeMs: 2000 },
+    ];
+    const events = stepArena(s, [NO_INPUT, NO_INPUT], 16);
+    expect(s.shots).toHaveLength(0);
+    expect(events).toContainEqual(expect.objectContaining({ k: 'clash', a: 'fire', b: 'water' }));
+  });
+
+  it('quem atravessa perde uma perfuração e segue; tiros do mesmo lado não se chocam', () => {
+    const s = createArena([mon('a', { fireMs: 60_000 })], [mon('b', { fireMs: 60_000 })]);
+    s.countdownMs = 0;
+    s.shots = [
+      { id: 1, side: 0, x: 300, y: 500, vx: 0, vy: -200, damage: 10, type: 'fire', ageMs: 0, radius: 6, pierce: 1, lifeMs: 2000 },
+      { id: 2, side: 1, x: 300, y: 490, vx: 0, vy: 200, damage: 10, type: 'water', ageMs: 0, radius: 6, pierce: 0, lifeMs: 2000 },
+      { id: 3, side: 0, x: 100, y: 100, vx: 0, vy: 0, damage: 10, type: 'fire', ageMs: 0, radius: 6, pierce: 0, lifeMs: 2000 },
+      { id: 4, side: 0, x: 104, y: 100, vx: 0, vy: 0, damage: 10, type: 'fire', ageMs: 0, radius: 6, pierce: 0, lifeMs: 2000 },
+    ];
+    stepArena(s, [NO_INPUT, NO_INPUT], 16);
+    expect(s.shots.map((shot) => [shot.id, shot.pierce])).toEqual([[1, 0], [3, 0], [4, 0]]);
   });
 });

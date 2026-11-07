@@ -16,7 +16,9 @@ function run(state: ArenaState, bot?: ReturnType<typeof createArenaBot>, ms = 40
 }
 
 const dummy = (id: string, over: Partial<SvMonSpec> = {}): SvMonSpec => ({
-  id, name: id, dexId: 25, shiny: false, types: ['normal'], attackType: 'normal', maxHp: 1000, power: 20, speed: 120, fireMs: 500, score: 0, estimated: false, ...over,
+  id, name: id, dexId: 25, shiny: false, types: ['normal'], attackType: 'normal', maxHp: 1000, power: 20, speed: 120, fireMs: 500, score: 0, estimated: false,
+  // O alvo não revida: os testes medem o golpe de quem ataca, e tiros de força igual se anulam no ar.
+  ...(id === 'alvo' ? { fireMs: 60_000 } : {}), ...over,
 });
 
 const FORMS: readonly MoveCategory[] = ['projetil', 'aura', 'area', 'cone', 'orbit', 'foco', 'rapido', 'teleporte', 'trilha'];

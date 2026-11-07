@@ -175,6 +175,7 @@ function parseEvents(v: unknown): ArenaEvent[] | null {
     else if (e.k === 'telegraph' && isNum(e.x, 0, SV_ARENA_W) && isNum(e.y, 0, SV_ARENA_H) && isNum(e.radius, 18, 160) && isType(e.type)) out.push({ k: 'telegraph', side: e.side, x: e.x, y: e.y, radius: e.radius, type: e.type });
     else if (e.k === 'faint' && isInt(e.index, 0, SV_MAX_TEAM - 1)) out.push({ k: 'faint', side: e.side, index: e.index });
     else if (e.k === 'switch' && isInt(e.index, 0, SV_MAX_TEAM - 1) && typeof e.forced === 'boolean') out.push({ k: 'switch', side: e.side, index: e.index, forced: e.forced });
+    else if (e.k === 'clash' && isNum(e.x, -100, SV_ARENA_W + 100) && isNum(e.y, -100, SV_ARENA_H + 100) && isType(e.a) && isType(e.b)) out.push({ k: 'clash', side: e.side, x: e.x, y: e.y, a: e.a, b: e.b });
     else if (e.k === 'attack' && isInt(e.index, 0, SV_MAX_TEAM - 1)) out.push({ k: 'attack', side: e.side, index: e.index });
     else if (e.k === 'guard') out.push({ k: 'guard', side: e.side });
     else if (e.k === 'block') out.push({ k: 'block', side: e.side });
