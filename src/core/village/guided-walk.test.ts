@@ -1,9 +1,19 @@
 import { describe, expect, it } from 'vitest';
-import { guidedWalkArrived, guidedWalkProgress } from './guided-walk';
+import { GUIDED_WALK_FRIENDSHIP, guidedWalkArrived, guidedWalkProgress, rewardGuidedWalk } from './guided-walk';
+import { emptyVillage, friendOf } from './life';
 
 const destination = { x: 10, y: 10 };
 
 describe('passeio guiado', () => {
+  it('rende amizade só no primeiro passeio do dia com cada morador', () => {
+    const state = emptyVillage(1, { x: 0, y: 0 });
+    expect(rewardGuidedWalk(state, 'a', '2026-11-08')).toBe(GUIDED_WALK_FRIENDSHIP);
+    expect(rewardGuidedWalk(state, 'a', '2026-11-08')).toBeNull();
+    expect(friendOf(state, 'a').points).toBe(GUIDED_WALK_FRIENDSHIP);
+    expect(rewardGuidedWalk(state, 'b', '2026-11-08')).toBe(GUIDED_WALK_FRIENDSHIP);
+    expect(rewardGuidedWalk(state, 'a', '2026-11-09')).toBe(GUIDED_WALK_FRIENDSHIP);
+  });
+
   it('só conclui quando jogador e companheiro chegam ao destino', () => {
     const player = { x: 10, y: 10, t: 1 };
     expect(guidedWalkArrived(player, undefined, destination)).toBe(false);

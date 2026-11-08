@@ -71,8 +71,23 @@ export function normalizeRequests(raw: unknown): { day: string; items: VillageRe
 }
 
 export function ensureRequests(state: VillageState, day: string, residents: readonly { id: string; name: string }[]): VillageRequest[] {
-  if (state.requests.day !== day || state.requests.items.length !== 3) state.requests = { day, items: makeRequests(state, day, residents), story: state.requests.story ?? [] };
+  if (state.requests.day !== day || state.requests.items.length !== 3) {
+    const bonusDay = state.requests.bonusDay;
+    state.requests = { day, items: makeRequests(state, day, residents), story: state.requests.story ?? [], ...(bonusDay ? { bonusDay } : {}) };
+  }
   return state.requests.items;
+}
+
+/** Bônus por fechar os três pedidos do dia no mural (uma vez por dia). */
+export const BOARD_BONUS_COINS = 40;
+
+/** Devolve as moedas do bônus quando os três pedidos de hoje acabaram de ser concluídos; 0 se falta algum ou já pagou. */
+export function claimBoardBonus(state: VillageState, day: string): number {
+  const board = state.requests;
+  if (board.day !== day || board.bonusDay === day || board.items.length !== 3) return 0;
+  if (!board.items.every((request) => request.done && request.day === day)) return 0;
+  board.bonusDay = day;
+  return BOARD_BONUS_COINS;
 }
 
 export function requestStatus(state: VillageState, request: VillageRequest, day: string): { ready: boolean; text: string } {

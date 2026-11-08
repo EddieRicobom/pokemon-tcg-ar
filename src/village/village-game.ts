@@ -1,5 +1,6 @@
 import { VILLAGE_DIORAMA_BANDS, VILLAGE_DIORAMA_FLOOR_INTERVAL_MS, VILLAGE_DIORAMA_SCENE_FPS, VILLAGE_DIORAMA_TEXTURE_SCALE, villageDioramaBand, villageDioramaBandBounds, villageDioramaFps } from '../core/village/ar-diorama';
-import { drawWaterFx, drawFountainFx, drawSunRays, drawSoftShadow, drawSparkle } from './ambient-art';
+import { drawWaterFx, drawFountainFx, drawGlow, drawRainbow, drawSunRays, drawSoftShadow, drawSparkle } from './ambient-art';
+import { GREETING_COOLDOWN_MS, RAINBOW_MS, rainbowAlpha, residentGreeting } from '../core/village/ambience';
 import { GAME_BUILDINGS } from './game-buildings-art';
 import { BenchVisits, benchesFor } from '../core/village/benches';
 import { CafeService } from '../core/village/cafe';
@@ -229,6 +230,13 @@ export class VillageGame {
   metallic: () => boolean = () => true;
   /** Canvas de trabalho do brilho (um só, reaproveitado: o brilho é desenhado na hora, quadro a quadro). */
   private sheenCanvas: HTMLCanvasElement | null = null;
+  private vignette: { ctx: CanvasRenderingContext2D; w: number; h: number; fill: CanvasGradient } | null = null;
+  /** Quando o arco-íris apareceu (depois de uma chuva forte); null = céu normal. */
+  private rainbowAt: number | null = null;
+  private rainWasHeavy = false;
+  /** Próxima olhada em quem está perto para acenar, e quando cada morador pode acenar de novo. */
+  private nextGreetingAt = 0;
+  private readonly greetedUntil = new Map<string, number>();
 
   private renderFps(): number {
     const configured = this.maxFps();
@@ -1349,7 +1357,12 @@ export class VillageGame {
       if (Math.abs(m.x - p.x) > 10 || Math.abs(m.y - p.y) > 9) this.motes.splice(i, 1);
     }
     // Folhas e pétalas ao vento (dia, sem chuva).
-    if (now > this.nextLeaf && this.weather.rain < 0.2) {
+    if (this.weather.rain > 0.4) this.rainWasHeavy = true;
+    else if (this.rainWasHeavy && this.weather.rain < 0.1) {
+      this.rainWasHeavy = false;
+      this.rainbowAt = now;
+    }
+    if (this.ambientFx() && !this.reducedMotion?.matches && now > this.nextLeaf && this.weather.rain < 0.2) {
       this.nextLeaf = now + 900 + this.rng() * 1500;
       this.particles.push({ kind: 'leaf', x: p.x + (this.rng() - 0.3) * 14, y: p.y - 8, vx: 0.5 + this.weather.windX * 2 + this.rng() * 0.4, vy: 0.9 + this.rng() * 0.5, born: now, life: 9000, color: ['#6cc85c', '#f8a8c8', '#e8b060', '#8ad878'][Math.floor(this.rng() * 4)] });
     }
@@ -1392,6 +1405,7 @@ export class VillageGame {
         }
       }
     }
+    this.updateGreetings(now);
     // De vez em quando alguém mostra uma emoção.
     if (now > this.nextEmote && this.villagers.size > 0 && !this.scene) {
       this.nextEmote = now + 4000 + this.rng() * 6000;
@@ -1404,6 +1418,30 @@ export class VillageGame {
     }
   }
 
+  /** Quem tem algo a oferecer hoje acena quando você passa perto (um por vez, para não virar confusão de balões). */
+  private updateGreetings(now: number): void {
+    if (now < this.nextGreetingAt || this.scene) return;
+    this.nextGreetingAt = now + 700;
+    const day = this.localDay();
+    const p = this.player;
+    for (const [id, w] of this.villagers) {
+      if (this.asleep.has(id) || this.state.follower === id || this.bubbles.has(id)) continue;
+      if (Math.abs(w.x - p.x) + Math.abs(w.y - p.y) > 3 || now < (this.greetedUntil.get(id) ?? 0)) continue;
+      const emote = residentGreeting(this.state.friends[id], day);
+      if (!emote) continue;
+      this.greetedUntil.set(id, now + GREETING_COOLDOWN_MS);
+      this.bubble(id, emote, 1500);
+      this.bounce.set(id, now);
+      return;
+    }
+  }
+
+  /** O item coletado sobe do bloco onde saiu, com o ícone da mochila; pequeno e curto, então não precisa de opção. */
+  floatItem(x: number, y: number, item: string, qty: number): void {
+    const still = !!this.reducedMotion?.matches;
+    this.particles.push({ kind: 'item', x: x + 0.3, y: y - 0.1, vx: 0, vy: still ? 0 : -0.9, born: performance.now(), life: 1250, item, ...(qty > 1 ? { label: `+${qty}` } : {}) });
+  }
+
   resize(width: number, height: number): void {
     if (this.diorama) return;
     // Três vezes a densidade pinta mais de nove vezes os pixels de um celular
@@ -1412,8 +1450,11 @@ export class VillageGame {
     // em uma carga desnecessária para a GPU. No 2D-HD, 1,25× é suficiente para
     // pixel art e corta de forma grande a área que precisa ser redesenhada.
     const dpr = hd2dPixelRatio(window.devicePixelRatio || 1, this.hd2d() && !this.diorama && !this.reducedMotion?.matches);
-    this.canvas.width = Math.round(width * dpr);
-    this.canvas.height = Math.round(height * dpr);
+    const pixelWidth = Math.round(width * dpr);
+    const pixelHeight = Math.round(height * dpr);
+    // Atribuir o tamanho apaga e realoca o canvas, mesmo com o mesmo valor (a barra do navegador dispara vários resize).
+    if (this.canvas.width !== pixelWidth) this.canvas.width = pixelWidth;
+    if (this.canvas.height !== pixelHeight) this.canvas.height = pixelHeight;
     this.scale = villageScale(width, height, dpr);
   }
 
@@ -1512,19 +1553,12 @@ export class VillageGame {
       ctx.fillRect(0, 0, W, H);
     }
     // Sombras das nuvens passando pelo chão.
-    if (layer !== 'props' && !night && wx.cloud < 0.95) {
+    if (layer !== 'props' && !night && wx.cloud < 0.95 && ambientFx) {
       const cover = 1 - wx.cloud * 0.5;
       for (let i = 0; i < 4; i++) {
         const bx = ((now / 1000) * (0.45 + wx.windX) + i * 23) % (this.map.w + 30) - 15;
         const by = 6 + i * 9 + Math.sin(now / 9000 + i) * 2;
-        const cx = sx(bx);
-        const cy = sy(by);
-        const r = (5 + (i % 2) * 2) * T;
-        const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
-        g.addColorStop(0, `rgba(10,20,50,${(0.16 * cover).toFixed(3)})`);
-        g.addColorStop(1, 'rgba(10,20,50,0)');
-        ctx.fillStyle = g;
-        ctx.fillRect(cx - r, cy - r, r * 2, r * 2);
+        drawGlow(ctx, sx(bx), sy(by), (5 + (i % 2) * 2) * T, '10,20,50', 0.16 * cover);
       }
     }
 
@@ -2344,13 +2378,24 @@ export class VillageGame {
         }
       } else if (q.kind === 'smoke') {
         // Baforada macia que cresce e some, com um leve tom quente perto da chaminé.
-        const r = (2 + age * 6) * scale;
-        const puff = ctx.createRadialGradient(x, y, 0, x, y, r);
-        const warm = Math.max(0, 1 - age * 2.5);
-        puff.addColorStop(0, `rgba(${235 + warm * 20 | 0},${232 + warm * 8 | 0},${236 - warm * 20 | 0},${((1 - age) * 0.55).toFixed(2)})`);
-        puff.addColorStop(1, 'rgba(225,225,235,0)');
-        ctx.fillStyle = puff;
-        ctx.fillRect(x - r, y - r, r * 2, r * 2);
+        drawGlow(ctx, x, y, (2 + age * 6) * scale, age < 0.3 ? '250,238,220' : '232,232,238', (1 - age) * 0.55);
+      } else if (q.kind === 'item') {
+        // O item de verdade (o mesmo ícone da mochila) sobe de onde saiu e some; a quantidade vem ao lado.
+        const size = Math.round(12 * scale);
+        const fade = Math.min(1, (1 - age) * 3);
+        ctx.globalAlpha = fade;
+        ctx.drawImage(this.sprite(`icon:${q.item}`, () => paintItemIcon(q.item ?? '')), x - size / 2, y - size / 2, size, size);
+        if (q.label) {
+          ctx.font = `700 ${Math.round(6 * scale)}px system-ui, sans-serif`;
+          ctx.textAlign = 'left';
+          ctx.textBaseline = 'middle';
+          ctx.lineWidth = Math.max(1, scale * 0.8);
+          ctx.strokeStyle = 'rgba(12,18,40,0.9)';
+          ctx.strokeText(q.label, x + size / 2 + scale, y);
+          ctx.fillStyle = '#fff6c9';
+          ctx.fillText(q.label, x + size / 2 + scale, y);
+        }
+        ctx.globalAlpha = 1;
       } else if (q.kind === 'poof') {
         ctx.fillStyle = `rgba(255,255,255,${((1 - age) * 0.8).toFixed(2)})`;
         for (let k = 0; k < 6; k++) {
@@ -2446,6 +2491,13 @@ export class VillageGame {
       ctx.globalAlpha = 1;
     }
 
+    // Arco-íris depois da chuva (some sozinho; desliga com os efeitos da Vila).
+    if (layer !== 'props' && ambientFx && this.rainbowAt !== null) {
+      const alpha = rainbowAlpha(now - this.rainbowAt) * (1 - wx.rain) * (1 - light.dark / 0.55);
+      if (alpha > 0.01) drawRainbow(ctx, W, H, alpha);
+      if (now - this.rainbowAt >= RAINBOW_MS) this.rainbowAt = null;
+    }
+
     // Dia e noite.
     if (layer !== 'props' && light.warm > 0) {
       ctx.fillStyle = `rgba(255,140,60,${(light.warm * 0.16).toFixed(3)})`;
@@ -2483,15 +2535,9 @@ export class VillageGame {
       }
       // 2) Halos: luz somada (lighter), fraca e curta, para o brilho parecer sair da janela e não da parede inteira.
       ctx.globalCompositeOperation = 'lighter';
-      const glow = (cx: number, cy: number, r: number, rgb: string, a: number) => {
-        const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
-        g.addColorStop(0, `rgba(${rgb},${a.toFixed(3)})`);
-        g.addColorStop(1, `rgba(${rgb},0)`);
-        ctx.fillStyle = g;
-        ctx.fillRect(cx - r, cy - r, r * 2, r * 2);
-      };
+      const glow = (cx: number, cy: number, r: number, rgb: string, a: number) => drawGlow(ctx, cx, cy, r, rgb, a);
+      const storm = this.lampStorm();
       for (const l of lamps) {
-        const storm = this.lampStorm();
         // Zapdos: todos os postes piscam de verdade (quedas curtas e irregulares), não só o balanço suave dos grandes.
         const flicker = storm
           ? (Math.sin(now / 37 + l.x * 7) > 0.82 || Math.sin(now / 173 + l.y * 3) > 0.9 ? 0.15 : 1)
@@ -2526,12 +2572,17 @@ export class VillageGame {
         ctx.fillStyle = mist;
         ctx.fillRect(0, H * 0.55, W, H * 0.45);
       }
-      // Vinheta: escurece de leve as bordas.
-      const vg = ctx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.35, W / 2, H / 2, Math.max(W, H) * 0.78);
-      vg.addColorStop(0, 'rgba(0,0,0,0)');
-      vg.addColorStop(1, 'rgba(0,0,0,0.28)');
-      ctx.fillStyle = vg;
-      ctx.fillRect(0, 0, W, H);
+      // Vinheta: escurece de leve as bordas. O gradiente só muda com o tamanho da tela; sem efeitos, não pinta a tela toda.
+      if (this.ambientFx()) {
+        if (this.vignette?.ctx !== ctx || this.vignette.w !== W || this.vignette.h !== H) {
+          const fill = ctx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.35, W / 2, H / 2, Math.max(W, H) * 0.78);
+          fill.addColorStop(0, 'rgba(0,0,0,0)');
+          fill.addColorStop(1, 'rgba(0,0,0,0.28)');
+          this.vignette = { ctx, w: W, h: H, fill };
+        }
+        ctx.fillStyle = this.vignette.fill;
+        ctx.fillRect(0, 0, W, H);
+      }
     }
 
     if (hd2d) {

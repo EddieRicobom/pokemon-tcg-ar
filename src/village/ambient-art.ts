@@ -109,18 +109,72 @@ export function drawSunRays(ctx: CanvasRenderingContext2D, width: number, height
 
 /** Sombra macia (gradiente radial) sob o Pokémon ou objeto, no lugar da elipse chapada. */
 export function drawSoftShadow(ctx: CanvasRenderingContext2D, cx: number, cy: number, rx: number, ry: number, alpha: number): void {
-  if (rx <= 0 || ry <= 0) return;
+  if (rx <= 0 || ry <= 0 || alpha <= 0) return;
+  // Um desenho por objeto da tela e por quadro: copiar um sprite pronto custa bem menos que criar um gradiente.
+  const sprite = (shadowSprite ??= radialSprite('8,12,28', [[0, 1], [0.6, 0.55], [1, 0]]));
+  if (sprite) stampSprite(ctx, sprite, cx - rx, cy - ry, rx * 2, ry * 2, alpha);
+}
+
+const GLOW_SPRITE_SIZE = 64;
+let shadowSprite: HTMLCanvasElement | null = null;
+const glowSprites = new Map<string, HTMLCanvasElement>();
+
+function radialSprite(rgb: string, stops: readonly (readonly [number, number])[]): HTMLCanvasElement | null {
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = GLOW_SPRITE_SIZE;
+  const g = canvas.getContext('2d');
+  if (!g) return null;
+  const center = GLOW_SPRITE_SIZE / 2;
+  const fill = g.createRadialGradient(center, center, 0, center, center, center);
+  for (const [at, alpha] of stops) fill.addColorStop(at, `rgba(${rgb},${alpha})`);
+  g.fillStyle = fill;
+  g.fillRect(0, 0, GLOW_SPRITE_SIZE, GLOW_SPRITE_SIZE);
+  return canvas;
+}
+
+function stampSprite(ctx: CanvasRenderingContext2D, sprite: HTMLCanvasElement, x: number, y: number, w: number, h: number, alpha: number): void {
+  const previousAlpha = ctx.globalAlpha;
+  const previousSmoothing = ctx.imageSmoothingEnabled;
+  ctx.globalAlpha = previousAlpha * Math.min(1, alpha);
+  ctx.imageSmoothingEnabled = true;
+  ctx.drawImage(sprite, x, y, w, h);
+  ctx.imageSmoothingEnabled = previousSmoothing;
+  ctx.globalAlpha = previousAlpha;
+}
+
+/**
+ * Halo redondo que vai de `alpha` no centro a zero na borda, com a cor `rgb` ("255,214,120"). Usa o modo de composição
+ * que já estiver no contexto. Os sprites ficam guardados por cor, sem gradiente novo a cada lâmpada e a cada quadro.
+ */
+export function drawGlow(ctx: CanvasRenderingContext2D, cx: number, cy: number, r: number, rgb: string, alpha: number): void {
+  if (r <= 0 || alpha <= 0.004 || cx + r < 0 || cy + r < 0 || cx - r > ctx.canvas.width || cy - r > ctx.canvas.height) return;
+  let sprite = glowSprites.get(rgb);
+  if (!sprite) {
+    const made = radialSprite(rgb, [[0, 1], [1, 0]]);
+    if (!made) return;
+    sprite = made;
+    glowSprites.set(rgb, made);
+  }
+  stampSprite(ctx, sprite, cx - r, cy - r, r * 2, r * 2, alpha);
+}
+
+const RAINBOW_COLORS = ['#ff5d5d', '#ffa64d', '#ffe66b', '#6fdc7c', '#63b8ff', '#a98bff'] as const;
+
+/** Arco-íris suave por cima da cena, ancorado num canto: seis traços, sem gradiente nem cópia da tela. */
+export function drawRainbow(ctx: CanvasRenderingContext2D, width: number, height: number, alpha: number): void {
+  if (alpha <= 0) return;
   ctx.save();
-  ctx.translate(cx, cy);
-  ctx.scale(1, ry / rx);
-  const g = ctx.createRadialGradient(0, 0, 0, 0, 0, rx);
-  g.addColorStop(0, `rgba(8,12,28,${alpha.toFixed(3)})`);
-  g.addColorStop(0.6, `rgba(8,12,28,${(alpha * 0.55).toFixed(3)})`);
-  g.addColorStop(1, 'rgba(8,12,28,0)');
-  ctx.fillStyle = g;
-  ctx.beginPath();
-  ctx.arc(0, 0, rx, 0, Math.PI * 2);
-  ctx.fill();
+  ctx.globalAlpha = Math.min(1, alpha) * 0.3;
+  ctx.lineCap = 'butt';
+  const band = Math.max(3, Math.min(width, height) * 0.022);
+  const outer = Math.max(width, height) * 0.74;
+  ctx.lineWidth = band;
+  RAINBOW_COLORS.forEach((color, index) => {
+    ctx.strokeStyle = color;
+    ctx.beginPath();
+    ctx.arc(width * 0.82, height * 1.02, outer - index * band, Math.PI * 1.02, Math.PI * 1.62);
+    ctx.stroke();
+  });
   ctx.restore();
 }
 
@@ -129,11 +183,7 @@ export function drawSparkle(ctx: CanvasRenderingContext2D, x: number, y: number,
   if (alpha <= 0.01) return;
   ctx.save();
   ctx.globalCompositeOperation = 'lighter';
-  const halo = ctx.createRadialGradient(x, y, 0, x, y, size * 2.2);
-  halo.addColorStop(0, `rgba(${rgb},${(alpha * 0.55).toFixed(3)})`);
-  halo.addColorStop(1, `rgba(${rgb},0)`);
-  ctx.fillStyle = halo;
-  ctx.fillRect(x - size * 2.2, y - size * 2.2, size * 4.4, size * 4.4);
+  drawGlow(ctx, x, y, size * 2.2, rgb, alpha * 0.55);
   ctx.fillStyle = `rgba(${rgb},${alpha.toFixed(3)})`;
   ctx.fillRect(Math.round(x - size), Math.round(y), Math.round(size * 2), Math.max(1, Math.round(size * 0.35)));
   ctx.fillRect(Math.round(x), Math.round(y - size), Math.max(1, Math.round(size * 0.35)), Math.round(size * 2));

@@ -129,7 +129,7 @@ export interface Mote {
 
 /** Partículas no mundo (em blocos): poeira, folhas, fumaça, emojis flutuando. */
 export interface Particle {
-  kind: 'dust' | 'leaf' | 'smoke' | 'emoji' | 'poof' | 'sparkle';
+  kind: 'dust' | 'leaf' | 'smoke' | 'emoji' | 'poof' | 'sparkle' | 'item';
   x: number;
   y: number;
   vx: number;
@@ -138,6 +138,9 @@ export interface Particle {
   life: number;
   emoji?: string;
   color?: string;
+  /** Em `item`: o id do catálogo (desenha o ícone da mochila) e a quantidade ("+2"). */
+  item?: string;
+  label?: string;
 }
 
 export interface Scene {
