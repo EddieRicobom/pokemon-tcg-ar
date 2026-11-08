@@ -90,7 +90,7 @@ function dateOf(ms: number): string {
     <ul class="dex-grid" aria-label="Espécies">
       <li v-for="t in tiles" :key="t.id">
         <button type="button" :class="{ seen: t.seen, on: selected === t.id }" :disabled="!t.seen" :aria-label="t.seen ? `${speciesName(t.id) || 'Pokémon'} nº ${t.id}` : `Espécie nº ${t.id} ainda não encontrada`" :aria-pressed="selected === t.id" @click="toggle(t.id)">
-          <img v-if="t.seen" :src="pokemonSpriteUrl(t.id)" alt="" loading="lazy" width="56" height="56" />
+          <img v-if="t.seen" :src="pokemonSpriteUrl(t.id)" alt="" loading="lazy" width="56" height="56" @error="($event.target as HTMLImageElement).style.visibility = 'hidden'" />
           <span v-else class="dex-unknown" aria-hidden="true">?</span>
           <small>{{ pad(t.id) }}</small>
         </button>

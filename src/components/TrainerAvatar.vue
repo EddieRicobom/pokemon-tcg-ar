@@ -15,7 +15,7 @@ function choose(id: string): void {
 <template>
   <div class="tr-avatar">
     <button type="button" class="tr-avatar-pic" :aria-label="`Seu treinador: ${trainerSprite(profile.sprite).label}. Trocar`" :aria-expanded="picking" @click="picking = !picking">
-      <img :src="trainerSpriteUrl(profile.sprite)" alt="" width="80" height="80" />
+      <img :src="trainerSpriteUrl(profile.sprite)" alt="" width="80" height="80" @error="($event.target as HTMLImageElement).style.visibility = 'hidden'" />
       <span>Trocar</span>
     </button>
     <label class="tr-avatar-name">
@@ -32,7 +32,7 @@ function choose(id: string): void {
         :class="{ on: profile.sprite === s.id }"
         @click="choose(s.id)"
       >
-        <img :src="trainerSpriteUrl(s.id)" alt="" width="56" height="56" loading="lazy" />
+        <img :src="trainerSpriteUrl(s.id)" alt="" width="56" height="56" loading="lazy" @error="($event.target as HTMLImageElement).style.visibility = 'hidden'" />
         <small>{{ s.label }}</small>
       </button>
     </div>
