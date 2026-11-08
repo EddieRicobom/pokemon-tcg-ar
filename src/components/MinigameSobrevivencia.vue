@@ -4348,7 +4348,7 @@ onBeforeUnmount(() => {
         </button>
 
         <button v-if="ready && state && !summary && !pickOptions && !pendingUpgrade && !evolving && !leaveConfirm && !specialModalOpen"
-          type="button" class="sv-supreme" :class="{ 'is-ready': state.supreme.meter >= 1 && !supremeBlocked, calm: !detailedSpecialEffects }"
+          v-show="!state.over" type="button" class="sv-supreme" :class="{ 'is-ready': state.supreme.meter >= 1 && !supremeBlocked, calm: !detailedSpecialEffects }"
           :style="{ '--special-color': state.player.move.color, '--supreme': `${state.supreme.meter * 100}%` }"
           :disabled="supremeBlocked || state.supreme.meter < 1"
           :aria-label="`Golpe Supremo ${supremeDef?.name}: ${state.supreme.meter >= 1 ? 'pronto; tecla F' : `${Math.floor(state.supreme.meter * 100)}% carregado`}`"
