@@ -116,8 +116,10 @@ const doneOf = (rows: { status: string }[]): number => rows.filter((r) => r.stat
 .l-meta { display: flex; flex-wrap: wrap; gap: 0.2rem 0.6rem; }
 .l-type { white-space: nowrap; }
 .l-lock { font-style: italic; }
-.l-next { padding: 0.05rem 0.4rem; border-radius: 99px; background: var(--accent); color: #fff; font-size: 0.74rem; font-style: normal; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase; vertical-align: 0.1em; }
+.l-next { padding: 0.05rem 0.4rem; border-radius: 99px; background: var(--accent-fill); color: var(--on-accent); font-size: 0.74rem; font-style: normal; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase; vertical-align: 0.1em; }
 .league-list li.next { box-shadow: inset 0 0 0 2px var(--accent); }
+/* A classe global .locked é a cor do livro, feita para fundo claro; aqui o fundo é escuro. */
+.league-list li.locked { color: var(--muted); }
 .l-status { white-space: nowrap; }
 @media (max-width: 340px) { .league-regions { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 </style>
