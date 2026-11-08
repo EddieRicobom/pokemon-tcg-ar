@@ -8564,7 +8564,7 @@ body.no-scroll .reward-toasts {
   padding: 5px 9px 4px;
   border: 3px solid #555b58;
   border-radius: 5px 5px 12px 5px;
-  background: #f5f3dc;
+  background: linear-gradient(180deg, #fffef0, #efefd7);
   box-shadow: inset 0 0 0 2px #c4c7b6, 3px 3px 0 #303839;
   color: #252d30;
 }
@@ -8575,12 +8575,12 @@ body.no-scroll .reward-toasts {
 .survivor-hp .survivor-hp-label { margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .survivor-hp-row { display: flex; align-items: center; gap: 5px; margin-top: 3px; }
 .survivor-hp-row b { color: #dc9d33; font-size: .62rem; line-height: 1; }
-.survivor-hp-track { flex: 1; height: 8px; border: 2px solid #454e4b; border-radius: 4px; background: #313d3b; overflow: hidden; }
+.survivor-hp-track { flex: 1; min-width: 0; height: 8px; border: 2px solid #454e4b; border-radius: 4px; background: #313d3b; overflow: hidden; }
 .survivor-hp .survivor-hp-fill, .survivor-hp:not(.low) .survivor-hp-fill { position: static; height: 100%; background: #64c879; box-shadow: none; }
 .survivor-hp.medium .survivor-hp-fill { background: #e8c151; }
 .survivor-hp.low .survivor-hp-fill { background: #e76b5d; animation: none; }
 .survivor-hp .survivor-hp-value { display: block; margin: 2px 0 0; text-align: right; line-height: 1; }
-.survivor-xp-bar { height: 10px; border: 2px solid #555b58; border-radius: 2px; background: #303c3d; box-shadow: none; }
+.survivor-xp-bar { height: 10px; border: 2px solid #555b58; border-radius: 3px; background: #303c3d; box-shadow: 2px 2px 0 #303839; }
 .survivor-xp-fill { background: #62c4df; border-radius: 0; box-shadow: none; }
 .survivor-xp-bar span { font-size: .5rem; line-height: 10px; }
 .survivor-stats .chip, .survivor-stats .survivor-move-chip, .survivor-action-dock .chip, .survivor-info-panel .chip {
@@ -8588,10 +8588,10 @@ body.no-scroll .reward-toasts {
 }
 .survivor-stats .survivor-move-chip, .survivor-info-panel .survivor-move-chip { box-shadow: inset 3px 0 var(--move, #555b58), 2px 2px 0 #303839; }
 .survivor-stats .survivor-artifact-chip, .survivor-stats .survivor-bonk-chip { color: #252d30 !important; background: #f5f3dc !important; }
-.survivor-minimap { border: 3px solid #555b58; border-radius: 4px; background: rgba(235, 237, 213, .9); box-shadow: 3px 3px 0 #303839; }
+.survivor-minimap { border: 3px solid #555b58; border-radius: 5px; background: rgba(235, 237, 213, .94); box-shadow: inset 0 0 0 2px rgba(255, 255, 240, .6), 3px 3px 0 #303839; }
 .survivor-minimap-title { color: #252d30; }
 .survivor-minimap-viewport { border-color: #657971; }
-.survivor-danger-meter { border-radius: 3px; border: 2px solid #555b58; }
+.survivor-danger-meter { border-radius: 3px; border: 2px solid #555b58; box-shadow: 2px 2px 0 #303839; }
 @media (max-width: 480px) {
   .survivor-hp { height: auto; min-height: 59px; }
   .survivor-hp .survivor-hp-heading span, .survivor-hp .survivor-hp-value { font-size: .65rem; }
@@ -8611,6 +8611,19 @@ body.no-scroll .reward-toasts {
 .survivor-gameplay .survivor-xp-bar { height: 13px; }
 .survivor-gameplay .survivor-xp-bar span { font-size: .6rem; line-height: 9px; }
 .survivor-focus-actions button small { font-size: .62rem; }
+/* Os controles recebem a mesma moldura do HUD e mantêm destaque claro ao toque. */
+.survivor-gameplay .survivor-action-dock .chip:focus-visible,
+.survivor-gameplay .survivor-focus-actions button:focus-visible {
+  outline: 3px solid #ffe08a;
+  outline-offset: 2px;
+}
+.survivor-gameplay .survivor-action-dock .chip:active:not(:disabled) {
+  transform: translate(1px, 1px);
+  box-shadow: 1px 1px 0 #303839;
+}
+.survivor-gameplay .survivor-special-button.is-ready {
+  box-shadow: 3px 3px 0 #303839, 0 0 0 3px var(--special-color);
+}
 @media (max-width: 480px) {
   .survivor-minimap { top: calc(8px + env(safe-area-inset-top)); }
   .survivor-danger-meter { top: calc(88px + env(safe-area-inset-top)); }
@@ -8864,3 +8877,45 @@ body.no-scroll .reward-toasts {
 .survivor-chart svg .survivor-chart-level-label {
   fill: #7be6ff;
 }
+
+
+/* Pausa da Torre: mesma linguagem de molduras e cores do HUD. */
+.survivor-overlay > .survivor-pause-panel {
+  max-width: min(440px, calc(100% - 16px));
+  padding: 16px;
+  border: 3px solid #555b58;
+  border-radius: 8px 8px 18px 8px;
+  background: #f5f3dc;
+  box-shadow: inset 0 0 0 2px #c4c7b6, 5px 5px 0 #303839;
+  color: #252d30;
+  text-align: left;
+}
+.survivor-pause-header { margin-bottom: 12px; }
+.survivor-pause-header .survivor-pause-eyebrow { color: #657971; font-size: .65rem; font-weight: 900; letter-spacing: .12em; }
+.survivor-pause-header h2 { margin: 2px 0 3px; color: #252d30; }
+.survivor-pause-header p { margin: 0; color: #596662; font-size: .8rem; }
+.survivor-pause-panel .survivor-pause-resume { width: 100%; min-height: 44px; margin: 0 0 12px; }
+.survivor-pause-content { display: grid; gap: 10px; }
+.survivor-pause-panel .music-controls,
+.survivor-pause-panel .survivor-help,
+.survivor-pause-panel .survivor-button-prefs {
+  margin: 0;
+  padding: 10px;
+  border: 2px solid #b7bfae;
+  border-radius: 7px;
+  background: #fffef0;
+  color: #252d30;
+}
+.survivor-pause-panel .music-controls legend { padding: 0 4px; }
+.survivor-pause-panel .music-controls small,
+.survivor-pause-panel .survivor-button-prefs small,
+.survivor-pause-panel .note { color: #596662; }
+.survivor-pause-panel .note { margin: 0; font-size: .76rem; }
+.survivor-pause-panel .survivor-help summary { cursor: pointer; font-weight: 800; }
+.survivor-pause-panel .survivor-mode { margin: 0; }
+.survivor-pause-actions { display: flex; gap: 8px; margin-top: 10px; }
+.survivor-pause-panel .survivor-back, .survivor-pause-panel .survivor-exit { flex: 1; width: auto; margin: 0; color: #465c56; }
+.survivor-pause-panel .survivor-exit { color: #a43e39; }
+.survivor-pause-panel :focus-visible { outline: 3px solid #d89e35; outline-offset: 2px; }
+.survivor-pause-panel .survivor-mode button { min-height: 44px; padding: 6px; border: 2px solid #aeb8a8; border-radius: 5px; background: #eef0df; color: #252d30; }
+.survivor-pause-panel .survivor-mode button.active { border-color: #a97e28; background: #f8d879; }

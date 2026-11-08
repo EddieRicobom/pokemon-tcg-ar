@@ -467,7 +467,11 @@ function requestSpecial(): void {
   queuedSpecial = true;
 }
 
-/** Esquiva e Especial valem no toque, sem esperar o clique; `detail` 0 é o Enter ou espaço do teclado. */
+function pressAction(event: PointerEvent, action: () => void): void {
+  if (event.button === 0) action();
+}
+
+/** O toque já foi tratado no pointerdown. O clique sem ponteiro atende teclado e tecnologias assistivas. */
 function keyClick(event: MouseEvent, action: () => void): void {
   if (event.detail === 0) action();
 }
@@ -1200,11 +1204,11 @@ function frame(ts: number): void {
 }
 
 function joyDown(e: PointerEvent): void {
+  if (e.button !== 0 || joyId !== null || !arenaEl.value) return;
   wake();
-  if (e.button > 0 || joyId !== null || !arenaEl.value) return;
   const r = arenaEl.value.getBoundingClientRect();
   joyId = e.pointerId;
-  arenaEl.value.setPointerCapture(e.pointerId);
+  arenaEl.value.setPointerCapture?.(e.pointerId);
   joy.active = true;
   joy.ox = e.clientX - r.left;
   joy.oy = e.clientY - r.top;
@@ -1215,23 +1219,19 @@ function joyDown(e: PointerEvent): void {
 function joyMove(e: PointerEvent): void {
   if (e.pointerId !== joyId || !arenaEl.value) return;
   const r = arenaEl.value.getBoundingClientRect();
-  let dx = e.clientX - r.left - joy.ox;
-  let dy = e.clientY - r.top - joy.oy;
+  const dx = e.clientX - r.left - joy.ox;
+  const dy = e.clientY - r.top - joy.oy;
   const len = Math.hypot(dx, dy);
-  if (len > JOY_RADIUS) {
-    dx = (dx / len) * JOY_RADIUS;
-    dy = (dy / len) * JOY_RADIUS;
-  }
-  joy.kx = dx;
-  joy.ky = dy;
+  const scale = Math.max(JOY_RADIUS, len);
+  joy.kx = (dx / scale) * JOY_RADIUS;
+  joy.ky = (dy / scale) * JOY_RADIUS;
   // Uma pequena zona morta evita andar por tremida do dedo.
-  const mag = Math.min(1, len / JOY_RADIUS);
-  joyVx = mag < 0.12 ? 0 : (dx / (len || 1)) * mag;
-  joyVy = mag < 0.12 ? 0 : (dy / (len || 1)) * mag;
+  joyVx = len < JOY_RADIUS * 0.12 ? 0 : dx / scale;
+  joyVy = len < JOY_RADIUS * 0.12 ? 0 : dy / scale;
 }
 
-function joyUp(e: PointerEvent): void {
-  if (e.pointerId !== joyId) return;
+function joyUp(e?: PointerEvent): void {
+  if (e && e.pointerId !== joyId) return;
   joyId = null;
   joy.active = false;
   joyVx = 0;
@@ -1254,7 +1254,7 @@ function onKey(e: KeyboardEvent): void {
   if (down && !e.repeat && (e.key === 'q' || e.key === 'Q')) requestAttackSwap();
   if (down && !e.repeat && (e.key === 'f' || e.key === 'F' || e.key === 'Shift')) requestDodge();
   if (down && !e.repeat && (e.key === 'r' || e.key === 'R')) requestSpecial();
-  if (down && !e.repeat && (e.key === ' ' || e.key === 'e' || e.key === 'E')) {
+  if (down && !e.repeat && (e.key === 'e' || e.key === 'E' || (e.key === ' ' && !(document.activeElement instanceof HTMLButtonElement)))) {
     e.preventDefault();
     requestGuard();
   }
@@ -1263,10 +1263,7 @@ function onKey(e: KeyboardEvent): void {
 function onBlur(): void {
   keys.up = keys.down = keys.left = keys.right = false;
   // Sem isto, um dedo que estava arrastando quando o app perdeu o foco continuaria andando sozinho.
-  joyId = null;
-  joy.active = false;
-  joyVx = 0;
-  joyVy = 0;
+  joyUp();
 }
 
 const unitStyle = (u: Unit): Record<string, string> => ({ left: `${u.x}%`, top: `${u.y}%`, '--kx': u.kx, '--ky': u.ky, '--sw': String(u.sw) });
@@ -1318,6 +1315,7 @@ onBeforeUnmount(() => {
       @pointermove="joyMove"
       @pointerup="joyUp"
       @pointercancel="joyUp"
+      @lostpointercapture="joyUp"
     >
       <div ref="stageEl" class="svp-stage">
       <div class="svp-floor" :style="floorStyle" aria-hidden="true"></div>
@@ -1388,9 +1386,9 @@ onBeforeUnmount(() => {
         class="svp-guard"
         :class="{ on: hud.guardOn, wait: hud.guardPct > 0 && !hud.guardOn }"
         :aria-label="hud.guardOn ? 'Escudo ativo' : hud.guardPct > 0 ? `Escudo recarregando, ${hud.guardSec} segundos` : 'Escudo: toque para ficar imune por 2 segundos'"
-        @pointerdown.stop
+        @pointerdown.stop.prevent="pressAction($event, requestGuard)"
         aria-keyshortcuts="E Space"
-        @click="requestGuard"
+        @click="keyClick($event, requestGuard)"
       >
         <span class="svp-guard-icon" aria-hidden="true">🛡</span>
         <small>{{ hud.guardOn ? 'Ativo' : hud.guardPct > 0 ? `${hud.guardSec} s` : 'Escudo' }}</small>
@@ -1402,7 +1400,7 @@ onBeforeUnmount(() => {
         :class="{ wait: hud.dodgePct > 0 }"
         :aria-label="hud.dodgePct > 0 ? `Esquiva recarregando, ${hud.dodgeSec} segundos` : 'Esquiva: toque para arrancar e atravessar os golpes'"
         aria-keyshortcuts="F Shift"
-        @pointerdown.stop="requestDodge"
+        @pointerdown.stop.prevent="pressAction($event, requestDodge)"
         @click="keyClick($event, requestDodge)"
       >
         <span class="svp-guard-icon" aria-hidden="true">💨</span>
@@ -1417,7 +1415,7 @@ onBeforeUnmount(() => {
         :style="{ '--attack-color': hud.special.color }"
         :aria-label="hud.special.ready ? `Especial pronto: ${hud.special.label}. Toque para lançar` : `Especial carregando, ${hud.special.pct}%`"
         aria-keyshortcuts="R"
-        @pointerdown.stop="requestSpecial"
+        @pointerdown.stop.prevent="pressAction($event, requestSpecial)"
         @click="keyClick($event, requestSpecial)"
       >
         <span class="svp-fill" :style="{ height: `${hud.special.pct}%` }" aria-hidden="true"></span>
@@ -1431,10 +1429,10 @@ onBeforeUnmount(() => {
         :class="{ alt: hud.attack.alt, wait: hud.attack.pct > 0 }"
         :style="{ '--attack-color': hud.attack.color }"
         :aria-label="`Ataque em uso: ${hud.attack.now.typeLabel}, ${hud.attack.now.categoryLabel}, ${hud.attack.now.name}. Toque para trocar para ${hud.attack.next.typeLabel}, ${hud.attack.next.categoryLabel}, ${hud.attack.next.name}`"
-        @pointerdown.stop
+        @pointerdown.stop.prevent="pressAction($event, requestAttackSwap)"
         aria-keyshortcuts="Q"
         :aria-disabled="hud.attack.pct > 0"
-        @click="requestAttackSwap"
+        @click="keyClick($event, requestAttackSwap)"
       >
         <span class="svp-atk-pair" aria-hidden="true">
           <span class="svp-atk on" :style="{ '--c': TYPE_COLORS[hud.attack.now.type] }" :title="`${hud.attack.now.typeLabel} · ${hud.attack.now.categoryLabel}`">
@@ -1458,9 +1456,9 @@ onBeforeUnmount(() => {
           :class="{ active: r.active, down: r.fainted, wait: !r.active && !r.fainted && hud.switchPct > 0 }"
           :aria-pressed="r.active"
           :aria-label="`${r.index + 1}: ${r.name}, ${r.fainted ? 'fora de combate' : r.active ? 'em campo' : hud.switchPct > 0 ? `trocar em ${hud.switchSec} segundos` : 'toque para trocar'}, ${r.hpPct}% de vida`"
-          @pointerdown.stop
+          @pointerdown.stop.prevent="pressAction($event, () => requestSwitch(r.index))"
           :aria-keyshortcuts="String(r.index + 1)"
-          @click="requestSwitch(r.index)"
+          @click="keyClick($event, () => requestSwitch(r.index))"
         >
           <img v-if="!broken.includes(r.dexId)" :src="pokemonSpriteUrl(r.dexId, r.shiny)" alt="" @error="markBroken(r.dexId)" />
           <span v-else class="svp-fallback" aria-hidden="true">{{ r.name.slice(0, 2) }}</span>
@@ -2497,7 +2495,7 @@ onBeforeUnmount(() => {
   background: rgba(216, 184, 74, 0.18);
   color: var(--text);
   font: inherit;
-  touch-action: manipulation;
+  touch-action: none;
 }
 
 .svp-guard-icon {
@@ -2534,7 +2532,7 @@ onBeforeUnmount(() => {
   background: var(--surface-2);
   color: var(--text);
   font: inherit;
-  touch-action: manipulation;
+  touch-action: none;
 }
 
 .svp-swap.active {

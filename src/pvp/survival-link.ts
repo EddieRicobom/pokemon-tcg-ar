@@ -40,14 +40,23 @@ export class SurvivalHostLink {
   receive(msg: WireMessage): void {
     if (msg.t !== 'sv-input' || msg.seq <= this.lastSeq) return;
     this.lastSeq = msg.seq;
-    this.guestInput = inputOf(msg);
+    const input = inputOf(msg);
+    // A direção mais recente vence, mas um toque recebido só é consumido pelo próximo passo.
+    this.guestInput = {
+      ...input,
+      switchTo: input.switchTo >= 0 ? input.switchTo : this.guestInput.switchTo,
+      shield: input.shield || this.guestInput.shield,
+      swapAttack: input.swapAttack || this.guestInput.swapAttack,
+      dodge: input.dodge || this.guestInput.dodge,
+      special: input.special || this.guestInput.special,
+    };
   }
 
   /** Avança `dtMs` com a entrada local e manda o instantâneo quando chega a hora. Devolve o que aconteceu (para a tela do anfitrião). */
   step(dtMs: number, local: ArenaInput): ArenaEvent[] {
     if (this.bot) this.guestInput = this.bot(this.state, dtMs);
     const events = stepArena(this.state, [local, this.guestInput], dtMs);
-    // A troca pedida vale uma vez só: se foi recusada, o convidado vê o motivo na própria tela e pede de novo.
+    // Cada ação vale uma vez só. A direção continua até chegar outra.
     this.guestInput = { ...this.guestInput, switchTo: -1, shield: false, swapAttack: false, dodge: false, special: false };
     this.pending.push(...events);
     this.sinceSnapshot += Math.min(Math.max(dtMs, 0), 1000);
