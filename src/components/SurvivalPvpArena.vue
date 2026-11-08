@@ -2,12 +2,16 @@
 import { onBeforeUnmount, onMounted, reactive, ref, shallowRef } from 'vue';
 import AttackIcon from './AttackIcon.vue';
 import { pokemonSpriteUrl } from '../ar/sprite-url';
-import { effectiveVisual } from '../app/visual-settings';
+import { vibrate } from '../app/haptics';
+import { effectiveVisual, visual } from '../app/visual-settings';
+import { SoundEngine } from '../box/sound';
+import { impactFromFx } from '../core/survivor-impacts';
+import { ImpactSparks } from '../village/survivor-impact-art';
 import type { SurvivorFx } from '../core/survivor';
 import { MOVE_CATEGORY_LABELS_PT } from '../core/survivor-moves';
 import type { MoveCategory } from '../core/survivor-moves';
 import { TYPE_GLYPHS } from '../core/type-glyphs';
-import { drawElementAuraField, drawElementFx, drawElementOrbiter, drawElementProjectile, drawOrbitPath } from '../village/survivor-attack-art';
+import { drawConeGuide, drawElementAuraField, drawElementFx, drawElementOrbiter, drawElementProjectile, drawOrbitPath } from '../village/survivor-attack-art';
 import type { ScreenPoint } from '../village/survivor-attack-art';
 import { TYPE_COLORS, TYPE_LABELS_PT } from '../core/pokemon-data';
 import type { PokemonType } from '../core/pokemon-data';
@@ -65,20 +69,16 @@ interface Unit {
   hit: boolean;
   /** O rival está à direita: o sprite, que olha para a esquerda, vira para ele. */
   faceRight: boolean;
-}
-interface Orb {
-  key: string;
-  mine: boolean;
-  x: number;
-  y: number;
-  color: string;
-  size: string;
+  /** Acabou de entrar em campo (cresce do nada). */
+  enter: boolean;
 }
 interface Fx {
   id: number;
   kind: 'blink' | 'dmg';
   /** Número do dano (só no `dmg`). */
   text?: string;
+  /** Número de dano de golpe super efetivo: maior. */
+  big?: boolean;
   mine: boolean;
   color: string;
   style: Record<string, string>;
@@ -100,6 +100,8 @@ interface BeamMark {
 interface ArtFx {
   fx: SurvivorFx;
   born: number;
+  /** Altura do efeito (a cabeça do Pokémon, não o chão). */
+  z: number;
 }
 interface AttackFace {
   type: PokemonType;
@@ -108,15 +110,6 @@ interface AttackFace {
   category: MoveCategory;
   categoryLabel: string;
   name: string;
-}
-interface Marker {
-  id: number;
-  mine: boolean;
-  x: number;
-  y: number;
-  color: string;
-  size: string;
-  leftMs: number;
 }
 interface Hud {
   mine: Row[];
@@ -148,14 +141,36 @@ const clock = (ms: number): string => `${Math.floor(ms / 60000)}:${String(Math.f
 
 const hud = shallowRef<Hud>({ mine: [], foe: [], summary: '', hint: '', count: 0, switchPct: 0, switchSec: 0, guardPct: 0, guardSec: 0, guardOn: false, charge: null, attack: null });
 const units = shallowRef<Unit[]>([]);
-const trailDots = shallowRef<Orb[]>([]);
 const fx = shallowRef<Fx[]>([]);
 const artCanvas = ref<HTMLCanvasElement | null>(null);
 let artFx: ArtFx[] = [];
 let beamMarks: BeamMark[] = [];
+/** Teleportes recentes: o rastro de projéteis do elemento pelo caminho do salto. */
+let blinkMarks: { x0: number; y0: number; x1: number; y1: number; type: PokemonType; born: number }[] = [];
+const sparks = new ImpactSparks();
+const shotSeen = new Set<number>();
+const sound = new SoundEngine();
+const reduceMotion = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+/** Impactos e tremor obedecem à opção "Luz dos golpes/impactos", ao Modo Rotom e ao pedido do sistema por menos movimento. */
+const fxOn = (): boolean => effectiveVisual.value.impactFx && !reduceMotion;
+/** Instante do quadro atual: tudo que nasce e envelhece usa o mesmo relógio. */
+let frameNow = 0;
+const clockNow = (): number => frameNow || performance.now();
+/** Última cena montada: os efeitos nascem na posição que se vê, não na do estado cru (o convidado vê um pouco atrás). */
+let lastView: ArenaView | null = null;
+const posOf = (side: ArenaSide): { x: number; y: number } => lastView?.sides[side] ?? state.sides[side];
+const timers = new Set<ReturnType<typeof setTimeout>>();
+function later(fn: () => void, ms: number): void {
+  const t = setTimeout(() => {
+    timers.delete(t);
+    fn();
+  }, ms);
+  timers.add(t);
+}
+const enteredAt: [number, number] = [-Infinity, -Infinity];
+const shake = ref(false);
 /** Última posição e direção de cada disparo: o rastro da arte segue o caminho que ele fez. */
 const shotTrack = new Map<number, { x: number; y: number; dx: number; dy: number }>();
-const markers = shallowRef<Marker[]>([]);
 const floorStyle = shallowRef<Record<string, string>>({});
 const pointer = shallowRef<{ x: number; y: number; angle: number } | null>(null);
 /** Canto do campo que a tela mostra agora. */
@@ -166,6 +181,7 @@ let cameraReady = false;
 const hitAt: [number, number] = [-Infinity, -Infinity];
 const broken = ref<number[]>([]);
 const hurt = ref(false);
+
 const stale = ref(false);
 const toasts = ref<{ id: number; text: string; tone: 'good' | 'bad' | 'info' }[]>([]);
 const result = ref<{ title: string; detail: string } | null>(null);
@@ -201,10 +217,22 @@ function toast(text: string, tone: 'good' | 'bad' | 'info' = 'info', ms = 2200, 
   recentTips.set(key, now);
   const id = ++toastId;
   toasts.value = [...toasts.value.slice(-2), { id, text, tone }];
-  setTimeout(() => (toasts.value = toasts.value.filter((t) => t.id !== id)), ms);
+  later(() => (toasts.value = toasts.value.filter((t) => t.id !== id)), ms);
+}
+
+/** O navegador só libera o som depois de um toque: qualquer toque na arena serve. */
+function wake(): void {
+  sound.setEnabled(visual.sound);
+  sound.unlock();
+}
+
+function playSound(cue: 'survivor-hit' | 'survivor-critical' | 'survivor-hurt' | 'survivor-level' | 'survivor-gameover'): void {
+  sound.setEnabled(visual.sound);
+  sound.play({ kind: 'ui', cue });
 }
 
 function requestSwitch(index: number): void {
+  wake();
   const reason = switchBlockReason(state, mySide, index);
   if (reason) {
     toast(reason, 'info', 1800, `block:${reason}`);
@@ -214,6 +242,7 @@ function requestSwitch(index: number): void {
 }
 
 function requestGuard(): void {
+  wake();
   const reason = guardBlockReason(state, mySide);
   if (reason) {
     toast(reason, 'info', 1800, `guard:${reason}`);
@@ -223,6 +252,7 @@ function requestGuard(): void {
 }
 
 function requestAttackSwap(): void {
+  wake();
   const reason = attackSwapBlockReason(state, mySide);
   if (reason) {
     toast(reason, 'info', 1800, `attack:${reason}`);
@@ -232,10 +262,10 @@ function requestAttackSwap(): void {
 }
 
 /** Efeito curto na arena (corte do cone, pulso da aura, rastro do teleporte): some sozinho. */
-function addFx(kind: Fx['kind'], mine: boolean, color: string, style: Record<string, string>, ms = 380, text?: string): void {
+function addFx(kind: Fx['kind'], mine: boolean, color: string, style: Record<string, string>, ms = 380, text?: string, big = false): void {
   const id = ++fxId;
-  fx.value = [...fx.value.slice(-12), { id, kind, mine, color, style, ...(text ? { text } : {}) }];
-  setTimeout(() => (fx.value = fx.value.filter((f) => f.id !== id)), ms);
+  fx.value = [...fx.value.slice(-12), { id, kind, mine, color, style, ...(text ? { text } : {}), ...(big ? { big } : {}) }];
+  later(() => (fx.value = fx.value.filter((f) => f.id !== id)), ms);
 }
 
 function inputVector(): { dx: number; dy: number } {
@@ -249,15 +279,23 @@ function handleEvents(events: ArenaEvent[]): void {
   for (const e of events) {
     const mons = state.sides[e.side].mons;
     if (e.k === 'hit') {
-      hitAt[e.side] = performance.now();
+      hitAt[e.side] = clockNow();
       showDamage(e.side, e.damage, e.mult);
       const striker = state.sides[e.side === 0 ? 1 : 0];
       const strike = striker.mons[striker.active];
-      if (strike && e.damage > 0) addArtFx('blast', state.sides[e.side].x, state.sides[e.side].y, 34, strike.attackType, 420);
+      // O impacto cresce com o dano e fica na altura do corpo, como no Survivor; super efetivo dura mais.
+      if (strike && e.damage > 0 && fxOn()) addArtFx('blast', posOf(e.side).x, posOf(e.side).y, 22 + Math.min(34, e.damage * 0.5) + (e.mult > 1 ? 10 : 0), strike.attackType, e.mult > 1 ? 520 : 420, {}, 14);
+      playSound(e.side === mySide ? 'survivor-hurt' : e.mult > 1 ? 'survivor-critical' : 'survivor-hit');
       if (e.side === mySide) {
-        hurt.value = true;
-        if (hurtTimer) clearTimeout(hurtTimer);
-        hurtTimer = setTimeout(() => (hurt.value = false), 140);
+        vibrate({ kind: 'hit', strength: Math.min(1, e.damage / 40) }, visual.sound);
+        if (fxOn()) {
+          shake.value = false;
+          requestAnimationFrame(() => (shake.value = true));
+          later(() => (shake.value = false), 260);
+          hurt.value = true;
+          if (hurtTimer) clearTimeout(hurtTimer);
+          hurtTimer = setTimeout(() => (hurt.value = false), 140);
+        }
       } else if (e.mult === 0) toast('Não afeta o alvo…', 'info', 1800, 'imune');
       else if (e.mult > 1) toast('Super efetivo!', 'good', 1500, 'super');
       else if (e.mult < 1) toast('Pouco efetivo…', 'info', 1500, 'pouco');
@@ -265,9 +303,13 @@ function handleEvents(events: ArenaEvent[]): void {
       if (e.side !== mySide) toast('Área marcada: saia do círculo!', 'bad', 1600, `mark:${e.side}`);
     } else if (e.k === 'faint') {
       const name = mons[e.index]?.name ?? 'Pokémon';
+      playSound(e.side === mySide ? 'survivor-gameover' : 'survivor-level');
+      vibrate({ kind: 'out', mine: e.side === mySide }, visual.sound);
       toast(e.side === mySide ? `${name} desmaiou` : `${name} (${props.friendName}) desmaiou`, e.side === mySide ? 'bad' : 'good', 2600);
     } else if (e.k === 'switch') {
       const name = mons[e.index]?.name ?? 'Pokémon';
+      enteredAt[e.side] = clockNow();
+      if (fxOn()) addArtFx('pulse', posOf(e.side).x, posOf(e.side).y, 30, mons[e.index]?.attackType ?? 'normal', 380);
       if (e.side === mySide) toast(e.forced ? `Entrou ${name}` : `Você trocou para ${name}`, 'info', 1800, `sw:${name}`);
       else toast(`${props.friendName} trocou para ${name}`, 'info', 1800, `fsw:${name}`);
     } else if (e.k === 'attack') {
@@ -278,6 +320,8 @@ function handleEvents(events: ArenaEvent[]): void {
     } else if (e.k === 'guard') {
       toast(e.side === mySide ? 'Escudo ativo!' : `${props.friendName} ativou o escudo`, e.side === mySide ? 'good' : 'info', 1600, `guard:${e.side}`);
     } else if (e.k === 'block') {
+      playSound('survivor-hit');
+      vibrate({ kind: 'bumper' }, visual.sound);
       toast(e.side === mySide ? 'O escudo bloqueou o golpe!' : 'Golpe bloqueado pelo escudo', e.side === mySide ? 'good' : 'info', 1200, `block:${e.side}`);
     } else if (e.k === 'beam') {
       showBeam(e);
@@ -289,24 +333,27 @@ function handleEvents(events: ArenaEvent[]): void {
 
 /** Número do dano subindo de quem levou o golpe: amarelo no super efetivo, cinza no pouco efetivo. */
 function showDamage(side: ArenaSide, damage: number, mult: number): void {
-  const team = state.sides[side];
-  const p = toView(team.x, team.y);
+  const p = toView(posOf(side).x, posOf(side).y);
   const color = mult === 0 ? '#9aa3b2' : mult > 1 ? '#ffd166' : mult < 1 ? '#c7ccd6' : '#ffffff';
   const jitter = ((fxId * 37) % 9) - 4;
-  addFx('dmg', side !== mySide, color, { left: `${((p.x + jitter) / SV_VIEW_W) * 100}%`, top: `${((p.y - 26) / SV_VIEW_H) * 100}%` }, 700, mult === 0 ? '0' : String(damage));
+  addFx('dmg', side !== mySide, color, { left: `${((p.x + jitter) / SV_VIEW_W) * 100}%`, top: `${((p.y - 26) / SV_VIEW_H) * 100}%` }, 700, mult === 0 ? '0' : mult > 1 ? `${damage}!` : String(damage), mult > 1);
 }
 
 /** Marca na tela de arte: nasce agora e some sozinha quando passa a vida. */
-function addArtFx(kind: SurvivorFx['kind'], x: number, y: number, r: number, type: PokemonType, lifeMs: number, extra: Partial<SurvivorFx> = {}): void {
-  artFx = [...artFx.slice(-14), { born: performance.now(), fx: { kind, x, y, r, color: TYPE_COLORS[type], ageMs: 0, lifeMs, moveType: type, ...extra } }];
+function addArtFx(kind: SurvivorFx['kind'], x: number, y: number, r: number, type: PokemonType, lifeMs: number, extra: Partial<SurvivorFx> = {}, z = 0): void {
+  const fxMark: SurvivorFx = { kind, x, y, r, color: TYPE_COLORS[type], ageMs: 0, lifeMs, moveType: type, ...extra };
+  artFx = [...artFx.slice(-14), { born: clockNow(), fx: fxMark, z }];
+  if (fxOn() && kind !== 'pulse') pendingImpacts.push({ fx: fxMark, z });
 }
+/** Marcas que ainda vão soltar faíscas: a conversão para a tela acontece no desenho, onde a câmera é conhecida. */
+const pendingImpacts: { fx: SurvivorFx; z: number }[] = [];
 
 /** Foco: a linha marcada fica até o feixe sair; quando sai, vira um clarão curto. */
 function showBeam(e: Extract<ArenaEvent, { k: 'beam' }>): void {
   const team = state.sides[e.side];
   const type: PokemonType = team.mons[team.active]?.attackType ?? 'normal';
   const mine = e.side === mySide;
-  const now = performance.now();
+  const now = clockNow();
   if (e.leftMs > 0) {
     beamMarks = [...beamMarks.filter((b) => b.mine !== mine || b.fired), { mine, x0: e.x0, y0: e.y0, x1: e.x1, y1: e.y1, width: e.width, type, born: now, lifeMs: e.leftMs, fired: false }];
     if (!mine) toast('Feixe marcado: saia da linha!', 'bad', 1600, `beam:${e.side}`);
@@ -320,18 +367,10 @@ function showFx(e: Extract<ArenaEvent, { k: 'cone' | 'pulse' | 'blink' }>): void
   const team = state.sides[e.side];
   const mon = team.mons[team.active];
   const type: PokemonType = mon?.attackType ?? 'normal';
-  const color = TYPE_COLORS[type];
-  if (e.k === 'pulse') addArtFx('pulse', team.x, team.y, e.radius, type, 460);
-  else if (e.k === 'cone') addArtFx('cone', team.x, team.y, e.range, type, 420, { angle: e.angle, spread: SURVIVOR_CONE_HALF_ANGLE });
-  else {
-    const a = toView(e.x0, e.y0);
-    const b = toView(e.x1, e.y1);
-    const len = Math.hypot(b.x - a.x, b.y - a.y);
-    addFx('blink', e.side === mySide, color, {
-      left: `${(a.x / SV_VIEW_W) * 100}%`, top: `${(a.y / SV_VIEW_H) * 100}%`, width: `${(len / SV_VIEW_W) * 100}cqw`,
-      transform: `translate(0, -50%) rotate(${Math.atan2(b.y - a.y, b.x - a.x)}rad)`,
-    }, 350);
-  }
+  const at = posOf(e.side);
+  if (e.k === 'pulse') addArtFx('pulse', at.x, at.y, e.radius, type, 460);
+  else if (e.k === 'cone') addArtFx('cone', at.x, at.y, e.range, type, 420, { angle: e.angle, spread: SURVIVOR_CONE_HALF_ANGLE });
+  else blinkMarks = [...blinkMarks.slice(-4), { x0: e.x0, y0: e.y0, x1: e.x1, y1: e.y1, type, born: clockNow() }];
 }
 
 /** No campo, do ponto de vista de quem joga (o convidado vê girado). */
@@ -351,6 +390,7 @@ function buildScene(now: number): void {
       markers: state.markers.map((m) => ({ id: m.id, side: m.side, x: m.x, y: m.y, radius: m.radius, type: m.type, leftMs: m.leftMs })),
     }
     : (guestLink as SurvivalGuestLink).view(now);
+  lastView = view;
   const me = toField(view.sides[mySide].x, view.sides[mySide].y);
   // A câmera desliza até o alvo em vez de pular: segue quem joga e puxa um pouco para o rival.
   const target = arenaCameraTarget(me, toField(view.sides[foeSide].x, view.sides[foeSide].y));
@@ -369,41 +409,24 @@ function buildScene(now: number): void {
     const p = toView(view.sides[side].x, view.sides[side].y);
     const status = `${team.burnMs > 0 ? '🔥' : ''}${team.slowMs > 0 ? '🐌' : ''}${team.stunMs > 0 ? '💫' : ''}`;
     const other = toView(view.sides[side === mySide ? foeSide : mySide].x, view.sides[side === mySide ? foeSide : mySide].y);
-    out.push({ hit: now - hitAt[side] < 140, faceRight: other.x > p.x + 2, key: side === mySide ? 'me' : 'foe', mine: side === mySide, x: (p.x / SV_VIEW_W) * 100, y: (p.y / SV_VIEW_H) * 100, dexId: mon.dexId, shiny: mon.shiny, name: mon.name, hpPct: Math.round((100 * mon.hp) / mon.maxHp), shield: team.shieldMs > 0, guard: team.guardMs > 0, status });
+    out.push({ hit: fxOn() && now - hitAt[side] < 140, enter: now - enteredAt[side] < 420, faceRight: other.x > p.x + 2, key: side === mySide ? 'me' : 'foe', mine: side === mySide, x: (p.x / SV_VIEW_W) * 100, y: (p.y / SV_VIEW_H) * 100, dexId: mon.dexId, shiny: mon.shiny, name: mon.name, hpPct: Math.round((100 * mon.hp) / mon.maxHp), shield: team.shieldMs > 0, guard: team.guardMs > 0, status });
   }
   units.value = out;
-  // Faixa da Trilha: os mesmos pontos que decidem o dano.
-  const dots: Orb[] = [];
-  for (const side of [mySide, foeSide] as const) {
-    const team = state.sides[side];
-    const mon = team.mons[team.active];
-    if (!mon || mon.hp <= 0 || mon.moveCategory !== 'trilha') continue;
-    const color = TYPE_COLORS[mon.attackType];
-    const size = `${((Math.min(mon.attackRadius ?? SV_MON_RADIUS * 2, 36) * 2) / SV_VIEW_W) * 100}%`;
-    team.trail.forEach((t, i) => {
-      const p = toView(t.x, t.y);
-      dots.push({ key: `${side}-t${i}`, mine: side === mySide, x: (p.x / SV_VIEW_W) * 100, y: (p.y / SV_VIEW_H) * 100, color, size });
-    });
-  }
-  trailDots.value = dots;
-  markers.value = view.markers.map((m) => {
-    const p = toView(m.x, m.y);
-    return { id: m.id, mine: m.side === mySide, x: (p.x / SV_VIEW_W) * 100, y: (p.y / SV_VIEW_H) * 100, color: TYPE_COLORS[m.type], size: `${(m.radius * 2 / SV_VIEW_W) * 100}%`, leftMs: m.leftMs };
-  });
   drawArt(now, view);
 }
 
 /** Linha do Foco: faixa pulsando que enche até o disparo; o clarão do feixe é largo, claro e some rápido. */
-function drawBeam(ctx: CanvasRenderingContext2D, b: BeamMark, map: (x: number, y: number, z?: number) => ScreenPoint, k: number, now: number): void {
+function drawBeam(ctx: CanvasRenderingContext2D, b: BeamMark, map: (x: number, y: number, z?: number) => ScreenPoint, k: number, now: number, detailed: boolean): void {
   const a = map(b.x0, b.y0, 4);
   const e = map(b.x1, b.y1, 4);
   const len = Math.hypot(e.x - a.x, e.y - a.y);
   if (len < 1) return;
   const ux = (e.x - a.x) / len;
   const uy = (e.y - a.y) / len;
-  const half = b.width * k;
+  // A zona de dano é a largura mais o corpo do Pokémon: a linha desenhada mostra exatamente onde dói.
+  const half = (b.width + SV_MON_RADIUS) * k;
   const color = TYPE_COLORS[b.type];
-  const age = now - b.born;
+  const age = Math.max(0, now - b.born);
   const poly = (grow: number, w: number): void => {
     const cx = a.x + ux * len * grow;
     const cy = a.y + uy * len * grow;
@@ -425,9 +448,15 @@ function drawBeam(ctx: CanvasRenderingContext2D, b: BeamMark, map: (x: number, y
     ctx.fillStyle = '#ffffff';
     poly(1, half * 0.45 * (1 - t * 0.6));
     ctx.fill();
+    // Partículas do elemento ao longo do feixe, como o Foco do Survivor.
+    const n = Math.max(6, Math.round(len / 28));
+    for (let i = 0; i <= n; i++) {
+      const head = { x: a.x + ux * len * (i / n), y: a.y + uy * len * (i / n), s: k };
+      drawElementProjectile(ctx, b.type, head, { x: head.x - ux * 22, y: head.y - uy * 22, s: k }, Math.max(5, half * 0.55), 1 - t, now, detailed, i);
+    }
   } else {
     const fill = Math.min(1, age / b.lifeMs);
-    const pulse = 0.5 + 0.5 * Math.sin(now / 90);
+    const pulse = reduceMotion ? 0.5 : 0.5 + 0.5 * Math.sin(now / 90);
     ctx.globalAlpha = 0.14 + 0.1 * pulse;
     ctx.fillStyle = color;
     poly(1, half);
@@ -441,6 +470,13 @@ function drawBeam(ctx: CanvasRenderingContext2D, b: BeamMark, map: (x: number, y
     ctx.strokeStyle = b.mine ? '#ffffff' : '#ff6b63';
     poly(1, half);
     ctx.stroke();
+    // Energia correndo para a ponta enquanto carrega.
+    const n = Math.max(5, Math.round(len / 40));
+    for (let i = 0; i < n; i++) {
+      const f = ((i / n + now / 700) % 1) * Math.max(0.05, fill);
+      const head = { x: a.x + ux * len * f, y: a.y + uy * len * f, s: k };
+      drawElementProjectile(ctx, b.type, head, { x: head.x - ux * 12, y: head.y - uy * 12, s: k }, Math.max(3, half * 0.3), 0.8, now, detailed, i);
+    }
   }
   ctx.restore();
 }
@@ -471,7 +507,23 @@ function drawArt(now: number, view: ArenaView): void {
     const p = toView(x, y);
     return { x: p.x * k, y: p.y * k - z * k * 0.5, s: k };
   };
-  const detailed = !effectiveVisual.value.rotomMode;
+  const detailed = !effectiveVisual.value.rotomMode && !reduceMotion;
+  // Áreas marcadas: o campo do elemento com partículas girando e um pulso que fecha sobre o alvo.
+  for (const m of view.markers) {
+    const loop = (now % 700) / 700;
+    drawElementAuraField(ctx, { x: m.x, y: m.y, attackRadius: m.radius / 0.8 }, m.type, map, now, detailed);
+    drawElementFx(ctx, { kind: 'pulse', x: m.x, y: m.y, r: m.radius, color: TYPE_COLORS[m.type], ageMs: loop * 700, lifeMs: 700, moveType: m.type }, map, now, detailed);
+    const c = map(m.x, m.y);
+    ctx.save();
+    ctx.globalAlpha = 0.8;
+    ctx.setLineDash([6, 5]);
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = m.side === mySide ? '#ffffff' : '#ff6b63';
+    ctx.beginPath();
+    ctx.arc(c.x, c.y, m.radius * k, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  }
   for (const side of [mySide, foeSide] as const) {
     const team = state.sides[side];
     const mon = team.mons[team.active];
@@ -482,11 +534,58 @@ function drawArt(now: number, view: ArenaView): void {
       const shape = { ...at, shots: Math.max(1, mon.shots ?? 1), attackRadius: mon.attackRadius ?? SV_MON_RADIUS * 2, orbitAngle: team.orbitAngle };
       drawOrbitPath(ctx, shape, mon.attackType, map);
       for (let i = 0; i < shape.shots; i++) drawElementOrbiter(ctx, shape, mon.attackType, map, i, now, detailed);
+    } else if (mon.moveCategory === 'cone') {
+      const foeAt = view.sides[side === 0 ? 1 : 0];
+      drawConeGuide(ctx, { ...at, aimAngle: Math.atan2(foeAt.y - at.y, foeAt.x - at.x), facing: 1 }, mon.attackRange ?? 200, mon.attackType, map, 0.6);
+    } else if (mon.moveCategory === 'trilha' && team.trail.length > 1) {
+      // Faixa contínua que esmaece com a idade, com partículas do elemento, no lugar das bolinhas soltas.
+      const col = TYPE_COLORS[mon.attackType];
+      const r = Math.min(mon.attackRadius ?? SV_MON_RADIUS * 2, 36) * k;
+      ctx.save();
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.strokeStyle = col;
+      ctx.lineWidth = r * 1.35;
+      if (detailed) {
+        ctx.shadowColor = col;
+        ctx.shadowBlur = 10;
+      }
+      for (let i = 1; i < team.trail.length; i++) {
+        const from = map(team.trail[i - 1]!.x, team.trail[i - 1]!.y);
+        const to = map(team.trail[i]!.x, team.trail[i]!.y);
+        ctx.globalAlpha = 0.18 + 0.32 * (i / team.trail.length);
+        ctx.beginPath();
+        ctx.moveTo(from.x, from.y);
+        ctx.lineTo(to.x, to.y);
+        ctx.stroke();
+      }
+      ctx.restore();
+      team.trail.forEach((t, i) => {
+        if (i % 3 !== 0) return;
+        const p = map(t.x, t.y, 6);
+        drawElementProjectile(ctx, mon.attackType, p, { ...p, y: p.y + 4 }, 3.5, 0.7, now, detailed, i);
+      });
     }
   }
-  beamMarks = beamMarks.filter((b) => now - b.born < b.lifeMs + (b.fired ? 0 : 400));
-  for (const b of beamMarks) drawBeam(ctx, b, map, k, now);
-  const seen = new Set<number>();
+  if (beamMarks.some((b) => now - b.born >= b.lifeMs + (b.fired ? 0 : 60))) beamMarks = beamMarks.filter((b) => now - b.born < b.lifeMs + (b.fired ? 0 : 60));
+  for (const b of beamMarks) {
+    // Feixe cancelado (o dono trocou ou caiu): a linha some em vez de ficar enganando.
+    const owner = state.sides[b.mine ? mySide : foeSide];
+    if (!b.fired && (owner.mons[owner.active]?.hp ?? 0) <= 0) continue;
+    drawBeam(ctx, b, map, k, now, detailed);
+  }
+  // Teleporte: projéteis do elemento pelo caminho do salto, sumindo rápido.
+  if (blinkMarks.some((b) => now - b.born >= 350)) blinkMarks = blinkMarks.filter((b) => now - b.born < 350);
+  for (const b of blinkMarks) {
+    const t = Math.max(0, (now - b.born) / 350);
+    for (let i = 0; i < 7; i++) {
+      const f = i / 6;
+      const p = map(b.x0 + (b.x1 - b.x0) * f, b.y0 + (b.y1 - b.y0) * f, 10);
+      drawElementProjectile(ctx, b.type, p, { ...p, x: p.x - (b.x1 - b.x0) * k * 0.05 }, 5, (1 - t) * (0.4 + f * 0.6), now, detailed, i);
+    }
+  }
+  const seen = shotSeen;
+  seen.clear();
   for (const s of view.shots) {
     seen.add(s.id);
     const before = shotTrack.get(s.id);
@@ -498,12 +597,12 @@ function drawArt(now: number, view: ArenaView): void {
       dy = (s.y - before.y) / len;
     }
     shotTrack.set(s.id, { x: s.x, y: s.y, dx, dy });
-    const head = map(s.x, s.y, 10);
-    const tail = map(s.x - dx * 16, s.y - dy * 16, 10);
     const size = Math.max(3, Math.min(14, s.radius * k * 0.9));
+    const head = map(s.x, s.y, 18);
+    const tail = map(s.x - dx * (10 + size * 1.5), s.y - dy * (10 + size * 1.5), 18);
     ctx.save();
-    ctx.globalAlpha = 0.85;
-    ctx.lineWidth = 1.5;
+    ctx.globalAlpha = 0.6;
+    ctx.lineWidth = 1.2;
     ctx.strokeStyle = s.side === mySide ? '#ffffff' : '#e0524f';
     ctx.beginPath();
     ctx.arc(head.x, head.y, size * 1.5, 0, Math.PI * 2);
@@ -512,11 +611,21 @@ function drawArt(now: number, view: ArenaView): void {
     drawElementProjectile(ctx, s.type, head, tail, size, 1, now, detailed, s.id);
   }
   for (const id of shotTrack.keys()) if (!seen.has(id)) shotTrack.delete(id);
-  artFx = artFx.filter((a) => now - a.born < a.fx.lifeMs);
+  if (artFx.some((a) => now - a.born >= a.fx.lifeMs)) artFx = artFx.filter((a) => now - a.born < a.fx.lifeMs);
   for (const a of artFx) {
-    a.fx.ageMs = now - a.born;
-    drawElementFx(ctx, a.fx, map, now, detailed);
+    a.fx.ageMs = Math.max(0, now - a.born);
+    drawElementFx(ctx, a.fx, (x, y, z = 0) => map(x, y, z + a.z), now, detailed);
   }
+  // Faíscas do elemento: nascem no ponto do impacto já em coordenadas de tela e seguem sozinhas.
+  while (pendingImpacts.length > 0) {
+    const pending = pendingImpacts.pop()!;
+    const f = pending.fx;
+    const impact = impactFromFx(f, 0.7);
+    if (!impact) continue;
+    const c = map(f.x, f.y, pending.z);
+    sparks.burst({ ...impact, x: c.x, y: c.y, r: impact.r * k, length: impact.length * k, angle: flip ? impact.angle + Math.PI : impact.angle });
+  }
+  if (fxOn()) sparks.draw(ctx, now);
 }
 
 function buildHud(): void {
@@ -529,7 +638,7 @@ function buildHud(): void {
   else if (state.countdownMs > 0) hint = 'Arraste na arena para desviar dos golpes. Toque num dos seus Pokémon, embaixo, para trocar.';
   else if (sudden) hint = 'Morte súbita: quem está em campo perde vida sozinho.';
   else if (current?.moveCategory === 'trilha') hint = mine.trailMs > 0 ? 'Trilha ativa: passe por cima do rival.' : `Ande para encher a Trilha (${Math.floor(mine.trailCharge * 100)}%).`;
-  else if (current?.moveCategory === 'foco') hint = mine.focusCharge > 0 && !state.beams.some((b) => b.side === mySide) ? `Foco carregando (${Math.floor(mine.focusCharge * 100)}%): a linha é marcada antes do feixe.` : '';
+  else if (current?.moveCategory === 'foco') hint = mine.focusCharge > 0 && !beamMarks.some((b) => b.mine && !b.fired) ? `Foco carregando (${Math.floor(mine.focusCharge * 100)}%): a linha é marcada antes do feixe.` : '';
   else if (state.timeMs < 9000) hint = 'Desvie dos golpes: o seu Pokémon ataca sozinho. Troque quando precisar.';
   const cd = mine.switchCdMs;
   hud.value = {
@@ -572,6 +681,7 @@ function finish(): void {
 
 function frame(ts: number): void {
   raf = requestAnimationFrame(frame);
+  frameNow = ts;
   const dt = last ? Math.min(100, ts - last) : 16;
   last = ts;
   const v = inputVector();
@@ -599,6 +709,7 @@ function frame(ts: number): void {
 }
 
 function joyDown(e: PointerEvent): void {
+  wake();
   if (e.button > 0 || joyId !== null || !arenaEl.value) return;
   const r = arenaEl.value.getBoundingClientRect();
   joyId = e.pointerId;
@@ -678,6 +789,9 @@ onBeforeUnmount(() => {
   window.removeEventListener('blur', onBlur);
   if (resultTimer) clearTimeout(resultTimer);
   if (hurtTimer) clearTimeout(hurtTimer);
+  timers.forEach(clearTimeout);
+  timers.clear();
+  sparks.clear();
 });
 
 </script>
@@ -698,30 +812,15 @@ onBeforeUnmount(() => {
     <div
       ref="arenaEl"
       class="svp-arena"
-      :class="{ hurt }"
+      :class="{ hurt, shake }"
       @pointerdown="joyDown"
       @pointermove="joyMove"
       @pointerup="joyUp"
       @pointercancel="joyUp"
     >
       <div class="svp-floor" :style="floorStyle" aria-hidden="true"></div>
-      <span
-        v-for="d in trailDots"
-        :key="d.key"
-        class="svp-trail"
-        :class="{ mine: d.mine }"
-        :style="{ left: `${d.x}%`, top: `${d.y}%`, width: d.size, color: d.color }"
-        aria-hidden="true"
-      ></span>
-      <span
-        v-for="m in markers"
-        :key="m.id"
-        class="svp-marker"
-        :class="{ mine: m.mine }"
-        :style="{ left: `${m.x}%`, top: `${m.y}%`, color: m.color, width: m.size, '--mark-pulse': `${Math.max(0.45, m.leftMs / 1500)}s` }"
-        aria-hidden="true"
-      ></span>
-      <div v-for="u in units" :key="u.key" class="svp-unit" :class="{ mine: u.mine, shield: u.shield, guard: u.guard, hit: u.hit, 'face-right': u.faceRight }" :style="unitStyle(u)">
+      <div v-for="u in units" :key="u.key" class="svp-unit" :class="{ mine: u.mine, shield: u.shield, guard: u.guard, hit: u.hit, enter: u.enter, 'face-right': u.faceRight }" :style="unitStyle(u)">
+        <span class="svp-shadow" aria-hidden="true"></span>
         <span class="svp-bubble" aria-hidden="true"></span>
         <span class="svp-ring"></span>
         <span v-if="u.status" class="svp-status" aria-hidden="true">{{ u.status }}</span>
@@ -736,7 +835,7 @@ onBeforeUnmount(() => {
         v-for="f in fx"
         :key="f.id"
         class="svp-fx"
-        :class="[f.kind, { mine: f.mine }]"
+        :class="[f.kind, { mine: f.mine, big: f.big }]"
         :style="{ ...f.style, color: f.color }"
         aria-hidden="true"
       >{{ f.text }}</span>
@@ -1066,6 +1165,9 @@ onBeforeUnmount(() => {
 }
 
 .svp-status {
+  padding: 1px 5px;
+  border-radius: 99px;
+  background: rgba(0, 0, 0, 0.55);
   position: absolute;
   left: 0;
   top: -19cqw;
@@ -1082,36 +1184,49 @@ onBeforeUnmount(() => {
   pointer-events: none;
 }
 
-.svp-trail {
-  position: absolute;
-  aspect-ratio: 1;
-  transform: translate(-50%, -50%);
-  border-radius: 50%;
-  pointer-events: none;
-}
-
-.svp-trail {
-  position: absolute;
-  aspect-ratio: 1;
-  transform: translate(-50%, -50%);
-  border-radius: 50%;
-  pointer-events: none;
-}
-
-.svp-orb {
-  background: radial-gradient(circle, #fff 0 22%, currentColor 55%, transparent 72%);
-  box-shadow: 0 0 10px currentColor;
-}
-
-.svp-trail {
-  background: color-mix(in srgb, currentColor 38%, transparent);
-  box-shadow: 0 0 8px currentColor;
-  opacity: 0.8;
-}
-
 .svp-fx {
   position: absolute;
   pointer-events: none;
+}
+
+.svp-shadow {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 12cqw;
+  height: 3.2cqw;
+  transform: translate(-50%, -1.6cqw);
+  border-radius: 50%;
+  background: radial-gradient(ellipse, rgba(0, 0, 0, 0.45), transparent 70%);
+  pointer-events: none;
+}
+
+.svp-unit.mine .svp-ring {
+  box-shadow: 0 0 10px 1px rgba(79, 140, 224, 0.6);
+}
+
+.svp-unit.enter .svp-sprite {
+  animation: svp-enter 0.4s cubic-bezier(0.2, 1.4, 0.4, 1);
+}
+
+@keyframes svp-enter {
+  from { opacity: 0; scale: 0.2; }
+}
+
+.svp-arena.shake {
+  animation: svp-shake 0.22s linear;
+}
+
+@keyframes svp-shake {
+  0%, 100% { translate: 0 0; }
+  20% { translate: -1.2cqw 0.4cqw; }
+  40% { translate: 1.2cqw -0.4cqw; }
+  60% { translate: -0.8cqw 0.2cqw; }
+  80% { translate: 0.6cqw 0; }
+}
+
+.svp-fx.dmg.big {
+  font-size: 7.4cqw;
 }
 
 .svp-fx.dmg {
@@ -1192,6 +1307,7 @@ onBeforeUnmount(() => {
 
 @media (prefers-reduced-motion: reduce) {
   .svp-fx.dmg { animation-duration: 0.01s; }
+  .svp-arena.shake, .svp-unit.enter .svp-sprite { animation: none; }
 }
 
 .svp-fx.blink {
@@ -1225,22 +1341,6 @@ onBeforeUnmount(() => {
   top: 0;
   transform: translate(-50%, -50%);
 }
-
-.svp-marker {
-  position: absolute;
-  aspect-ratio: 1;
-  transform: translate(-50%, -50%);
-  border: 3px solid currentColor;
-  border-radius: 50%;
-  background: color-mix(in srgb, currentColor 18%, transparent);
-  box-shadow: inset 0 0 18px currentColor, 0 0 12px currentColor;
-  opacity: 0.78;
-  pointer-events: none;
-  animation: svp-marker var(--mark-pulse, 1s) ease-in-out infinite alternate;
-}
-
-.svp-marker.mine { color: #fff !important; }
-@keyframes svp-marker { to { opacity: 0.24; transform: translate(-50%, -50%) scale(0.82); } }
 
 .svp-joy {
   position: absolute;
