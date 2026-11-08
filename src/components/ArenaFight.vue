@@ -16,6 +16,10 @@ import { abandonEndlessArena, ENDLESS_ARENA_LABELS, nextEndlessOpponent, resolve
 import type { EndlessArenaMode, EndlessArenaRun } from '../core/endless-arena';
 import type { Challenge } from '../core/league';
 import { TYPE_LABELS_PT } from '../core/pokemon-data';
+import type { PokemonType } from '../core/pokemon-data';
+import { MOVE_CATEGORY_LABELS_PT } from '../core/survivor-moves';
+import type { MoveCategory } from '../core/survivor-moves';
+import { TYPE_GLYPHS } from '../core/type-glyphs';
 import type { ArenaWinner, SvMonSpec } from '../core/survivor-pvp';
 import { SURVIVOR_UPGRADE_RARITIES } from '../core/survivor-types';
 import type { SurvivorUpgradeOption } from '../core/survivor-types';
@@ -89,7 +93,8 @@ const attacks = computed(() => {
   void version.value;
   if (!current.value) return '';
   const spec = arenaSpecOf(current.value);
-  return `${TYPE_LABELS_PT[spec.attackType]} · ${spec.moveName} ⇄ ${spec.alt ? `${TYPE_LABELS_PT[spec.alt.attackType]} · ${spec.alt.moveName}` : 'sem segundo ataque'}`;
+  const face = (type: PokemonType, category: MoveCategory | undefined, name: string): string => `${TYPE_GLYPHS[type]} ${TYPE_LABELS_PT[type]} · ${MOVE_CATEGORY_LABELS_PT[category ?? 'projetil']} · ${name}`;
+  return `${face(spec.attackType, spec.moveCategory, spec.moveName ?? 'Golpe')} ⇄ ${spec.alt ? face(spec.alt.attackType, spec.alt.moveCategory, spec.alt.moveName) : 'sem segundo ataque'}`;
 });
 const estimated = computed(() => !!current.value && arenaEstimated(current.value.member.dexId));
 

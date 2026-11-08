@@ -3,7 +3,7 @@ import type { PokemonType } from './pokemon-data';
 import { statsOfDex } from './survivor-stats';
 import type { MoveCategory, MoveEffect } from './survivor-moves';
 import {
-  distanceToSegment, FOCUS_SHOT_PIERCE, FOCUS_SHOT_SIZE_MULTIPLIER, FOCUS_SHOT_SPEED_MULTIPLIER, RAPID_BURST_MIN_CYCLE_MS,
+  distanceToSegment, FOCUS_SHOT_SIZE_MULTIPLIER, RAPID_BURST_MIN_CYCLE_MS,
   RAPID_BURST_SHOT_INTERVAL_MS, RAPID_BURST_SHOTS, RAPID_BURST_SPREAD, TELEPORT_HIT_RADIUS, TELEPORT_MIN_COOLDOWN_MS, TELEPORT_MIN_DAMAGE_MULTIPLIER,
 } from './survivor-charge';
 import { inSurvivorCone, survivorOrbiterHitRadius, survivorOrbitAngularSpeed, survivorOrbitHitIntervalMs, survivorOrbiters } from './survivor-shapes';
@@ -55,6 +55,11 @@ export const SV_TRAIL_POINT_SPACING = 12;
 export const SV_TRAIL_TICK_MS = 420;
 export const SV_TRAIL_SPEED_MULTIPLIER = 1.25;
 export const SV_TRAIL_MAX_POINTS = 40;
+/** Foco: carrega sozinho, marca a linha no chão e só então solta o feixe (quem sai da linha não leva). */
+export const SV_FOCUS_MIN_CHARGE_MS = 2200;
+export const SV_FOCUS_TELEGRAPH_MS = 1000;
+export const SV_FOCUS_LENGTH = 560;
+export const SV_FOCUS_DAMAGE_MULT = 2.6;
 /** Efeitos dos golpes, com as mesmas durações da corrida (`EFFECT_MS`). */
 const SV_EFFECT = { burnMs: 2000, burnFactor: 0.35, slowMs: 1500, stunMs: 400, stunCdMs: 5000, pushCdMs: 400, push: 14 } as const;
 export const SV_COUNTDOWN_MS = 3000;
@@ -277,6 +282,8 @@ export interface ArenaTeamState {
   trailMs: number;
   trail: ArenaTrailPoint[];
   trailTickMs: number;
+  /** Foco: carga do feixe (0–1). */
+  focusCharge: number;
   /** Efeitos do golpe do rival no Pokémon em campo. */
   burnMs: number;
   burnDps: number;
@@ -317,12 +324,28 @@ export interface ArenaMarker {
   leftMs: number;
 }
 
+/** Feixe do Foco já marcado no chão: sai quando `leftMs` zera e acerta quem estiver na linha. Só o anfitrião guarda. */
+export interface ArenaBeam {
+  side: ArenaSide;
+  monIndex: number;
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
+  /** Meia largura da linha. */
+  width: number;
+  damage: number;
+  type: PokemonType;
+  leftMs: number;
+}
+
 export interface ArenaState {
   timeMs: number;
   countdownMs: number;
   sides: [ArenaTeamState, ArenaTeamState];
   shots: ArenaShot[];
   markers: ArenaMarker[];
+  beams: ArenaBeam[];
   nextShotId: number;
   winner: ArenaWinner | null;
   /** Limites de tempo: equipes maiores precisam de mais tempo (ver `createArena`). */
@@ -357,7 +380,9 @@ export type ArenaEvent =
   | { k: 'block'; side: ArenaSide }
   | { k: 'cone'; side: ArenaSide; angle: number; range: number }
   | { k: 'pulse'; side: ArenaSide; radius: number }
-  | { k: 'blink'; side: ArenaSide; x0: number; y0: number; x1: number; y1: number };
+  | { k: 'blink'; side: ArenaSide; x0: number; y0: number; x1: number; y1: number }
+  /** Foco: com `leftMs` > 0 é a linha marcada no chão; com 0 o feixe sai agora. */
+  | { k: 'beam'; side: ArenaSide; x0: number; y0: number; x1: number; y1: number; width: number; leftMs: number };
 
 const startPosition = (side: ArenaSide): { x: number; y: number } => ({ x: SV_ARENA_W / 2, y: SV_ARENA_H / 2 + (side === 0 ? SV_START_OFFSET : -SV_START_OFFSET) });
 
@@ -383,7 +408,7 @@ function teamState(side: ArenaSide, specs: readonly SvMonSpec[]): ArenaTeamState
   const mons: ArenaMon[] = specs.map((s) => ({ ...s, types: [...s.types], ...(s.alt ? { alt: { ...s.alt } } : {}), hp: clamp(s.startHp ?? s.maxHp, 0, s.maxHp) }));
   return {
     mons, active: Math.max(0, mons.findIndex((m) => m.hp > 0)), x, y, fireMs: 600, switchCdMs: 0, attackSwapCdMs: 0, shieldMs: 0,
-    guardMs: 0, guardCdMs: 0, orbitAngle: 0, orbitCdMs: 0, rapidPending: 0, rapidDelayMs: 0, trailCharge: 0, trailMs: 0, trail: [], trailTickMs: 0,
+    guardMs: 0, guardCdMs: 0, orbitAngle: 0, orbitCdMs: 0, rapidPending: 0, rapidDelayMs: 0, trailCharge: 0, trailMs: 0, trail: [], trailTickMs: 0, focusCharge: 0,
     burnMs: 0, burnDps: 0, slowMs: 0, stunMs: 0, stunCdMs: 0, pushCdMs: 0,
   };
 }
@@ -393,7 +418,7 @@ export function createArena(host: readonly SvMonSpec[], guest: readonly SvMonSpe
   // A morte súbita apressa o Pokémon em campo: seis de cada lado precisam do dobro do tempo de três.
   const scale = Math.max(1, Math.max(host.length, guest.length) / SV_TEAM_SIZE);
   return {
-    timeMs: 0, countdownMs: SV_COUNTDOWN_MS, sides: [teamState(0, host), teamState(1, guest)], shots: [], markers: [], nextShotId: 1, winner: null,
+    timeMs: 0, countdownMs: SV_COUNTDOWN_MS, sides: [teamState(0, host), teamState(1, guest)], shots: [], markers: [], beams: [], nextShotId: 1, winner: null,
     suddenDeathMs: SV_SUDDEN_DEATH_MS * scale, maxMs: SV_MAX_MS * scale,
   };
 }
@@ -490,6 +515,7 @@ function enter(team: ArenaTeamState, index: number): void {
   team.rapidPending = 0;
   team.trailCharge = team.trailMs = 0;
   team.trail = [];
+  team.focusCharge = 0;
 }
 
 /** Tira vida do Pokémon em campo; se cai, a troca forçada põe o próximo de pé (sem recarga). */
@@ -640,7 +666,8 @@ function fireAttack(state: ArenaState, side: ArenaSide, events: ArenaEvent[]): v
   switch (category) {
     case 'orbit':
     case 'trilha':
-      return; // dano contínuo (orbitais e faixa): ver `stepOrbit` e `stepTrail`
+    case 'foco':
+      return; // dano contínuo (orbitais e faixa) ou carregado (feixe): ver `stepOrbit`, `stepTrail` e `stepFocus`
     case 'aura': {
       // A aura pulsa sempre e só causa dano se o rival está dentro do raio (80% do raio do golpe, como na corrida).
       const pulse = arenaRadius(mon) * 0.8;
@@ -682,10 +709,6 @@ function fireAttack(state: ArenaState, side: ArenaSide, events: ArenaEvent[]): v
       pushShots(state, side, { damageFactor: 0.62, spread: RAPID_BURST_SPREAD });
       team.rapidPending = RAPID_BURST_SHOTS - 1;
       team.rapidDelayMs = RAPID_BURST_SHOT_INTERVAL_MS;
-      return;
-    case 'foco':
-      // Um tiro largo e lento que atravessa.
-      pushShots(state, side, { count: 1, speedFactor: FOCUS_SHOT_SPEED_MULTIPLIER, sizeFactor: FOCUS_SHOT_SIZE_MULTIPLIER, extraPierce: FOCUS_SHOT_PIERCE });
       return;
     default:
       pushShots(state, side);
@@ -734,9 +757,48 @@ function stepTrail(state: ArenaState, side: ArenaSide, moved: number, dt: number
   const foe = state.sides[foeSide];
   const width = Math.min(arenaRadius(mon), 36);
   if (team.trail.some((p) => Math.hypot(foe.x - p.x, foe.y - p.y) <= width + SV_MON_RADIUS)) {
-    hitActive(foe, foeSide, mon.attackType, arenaDamage(mon) * 0.9, events, mon.moveEffect, { team, mon });
+    hitActive(foe, foeSide, mon.attackType, arenaDamage(mon) * 1.2, events, mon.moveEffect, { team, mon });
     team.trailTickMs = Math.max(160, SV_TRAIL_TICK_MS);
   }
+}
+
+/** Foco: carrega sozinho; cheio, marca a linha até o rival por 1 s e solta um feixe forte (`stepBeams`). */
+function stepFocus(state: ArenaState, side: ArenaSide, dt: number, events: ArenaEvent[]): void {
+  const team = state.sides[side];
+  const mon = team.mons[team.active];
+  if (!mon || mon.hp <= 0 || categoryOf(mon) !== 'foco' || team.stunMs > 0) return;
+  if (state.beams.some((b) => b.side === side)) return;
+  team.focusCharge = Math.min(1, team.focusCharge + dt / Math.max(SV_FOCUS_MIN_CHARGE_MS, mon.fireMs * 1.6));
+  if (team.focusCharge < 1) return;
+  team.focusCharge = 0;
+  const foe = state.sides[side === 0 ? 1 : 0];
+  const aim = Math.atan2(foe.y - team.y, foe.x - team.x);
+  const beam: ArenaBeam = {
+    side, monIndex: team.active, x0: round1n(team.x), y0: round1n(team.y),
+    x1: round1n(team.x + Math.cos(aim) * SV_FOCUS_LENGTH), y1: round1n(team.y + Math.sin(aim) * SV_FOCUS_LENGTH),
+    width: clamp(arenaShotRadius(mon) * FOCUS_SHOT_SIZE_MULTIPLIER, 14, 30), damage: arenaDamage(mon) * SV_FOCUS_DAMAGE_MULT, type: mon.attackType, leftMs: SV_FOCUS_TELEGRAPH_MS,
+  };
+  state.beams.push(beam);
+  events.push({ k: 'beam', side, x0: beam.x0, y0: beam.y0, x1: beam.x1, y1: beam.y1, width: beam.width, leftMs: beam.leftMs });
+}
+
+/** A linha do Foco nunca acompanha o alvo: no fim do aviso, só leva o dano quem ainda está sobre ela. */
+function stepBeams(state: ArenaState, dt: number, events: ArenaEvent[]): void {
+  const live: ArenaBeam[] = [];
+  for (const beam of state.beams) {
+    beam.leftMs -= dt;
+    if (beam.leftMs > 0) { live.push(beam); continue; }
+    const owner = state.sides[beam.side];
+    const ownerMon = owner.mons[owner.active];
+    if (owner.active !== beam.monIndex || !ownerMon || ownerMon.hp <= 0) continue;
+    events.push({ k: 'beam', side: beam.side, x0: beam.x0, y0: beam.y0, x1: beam.x1, y1: beam.y1, width: beam.width, leftMs: 0 });
+    const targetSide: ArenaSide = beam.side === 0 ? 1 : 0;
+    const target = state.sides[targetSide];
+    if (distanceToSegment(target.x, target.y, beam.x0, beam.y0, beam.x1, beam.y1) <= beam.width + SV_MON_RADIUS) {
+      hitActive(target, targetSide, beam.type, beam.damage, events, ownerMon.moveEffect, { team: owner, mon: ownerMon });
+    }
+  }
+  state.beams = live;
 }
 
 function decideWinner(state: ArenaState): ArenaWinner | null {
@@ -789,6 +851,7 @@ export function stepArena(state: ArenaState, inputs: readonly [ArenaInput | unde
       team.rapidPending = 0;
       team.trailCharge = team.trailMs = 0;
       team.trail = [];
+      team.focusCharge = 0;
       team.fireMs = Math.min(Math.max(team.fireMs, 250), current.fireMs);
       events.push({ k: 'attack', side, index: team.active });
     }
@@ -818,6 +881,7 @@ export function stepArena(state: ArenaState, inputs: readonly [ArenaInput | unde
     }
     stepTrail(state, side, Math.hypot(team.x - beforeX, team.y - beforeY), dt, events);
     stepOrbit(state, side, dt, events);
+    stepFocus(state, side, dt, events);
   }
 
   // A marca de área nunca acompanha o alvo. Quem sair do círculo antes do fim não é atingido.
@@ -834,6 +898,7 @@ export function stepArena(state: ArenaState, inputs: readonly [ArenaInput | unde
     }
   }
   state.markers = markers;
+  stepBeams(state, dt, events);
 
   // Golpes novos preservam a forma e os buffs conquistados na run. Marcadores criados aqui
   // só começam a contar no próximo quadro: os 1,5 s inteiros ficam visíveis no chão.
@@ -910,6 +975,8 @@ export interface ArenaTeamSnap {
   trailCharge?: number;
   trailMs?: number;
   trail?: { x: number; y: number }[];
+  /** Carga do feixe do Foco (0–1). */
+  focusCharge?: number;
   /** Efeitos em andamento (só para mostrar o ícone). */
   burnMs?: number;
   slowMs?: number;
@@ -957,7 +1024,7 @@ export function snapshotArena(state: ArenaState, tick: number): ArenaSnapshot {
     hp: t.mons.map((m) => Math.round(m.hp)), active: t.active, x: round1(t.x), y: round1(t.y),
     fireMs: Math.round(t.fireMs), switchCdMs: Math.round(t.switchCdMs), shieldMs: Math.round(t.shieldMs),
     guardMs: Math.round(t.guardMs), guardCdMs: Math.round(t.guardCdMs), orbitAngle: Math.round(t.orbitAngle * 1000) / 1000,
-    trailCharge: Math.round(t.trailCharge * 100) / 100, trailMs: Math.round(t.trailMs),
+    trailCharge: Math.round(t.trailCharge * 100) / 100, trailMs: Math.round(t.trailMs), focusCharge: Math.round(t.focusCharge * 100) / 100,
     trail: t.trail.slice(-SV_TRAIL_MAX_POINTS).map((p) => ({ x: round1(p.x), y: round1(p.y) })),
     burnMs: Math.round(t.burnMs), slowMs: Math.round(t.slowMs), stunMs: Math.round(t.stunMs),
     ...(t.mons.some((m) => m.alt) ? { alt: t.mons.map((m) => m.altOn === true), attackSwapCdMs: Math.round(t.attackSwapCdMs) } : {}),
@@ -996,6 +1063,7 @@ export function applyArenaSnapshot(state: ArenaState, snap: ArenaSnapshot): bool
     team.orbitAngle = s.orbitAngle ?? 0;
     team.trailCharge = s.trailCharge ?? 0;
     team.trailMs = s.trailMs ?? 0;
+    team.focusCharge = s.focusCharge ?? 0;
     team.trail = (s.trail ?? []).map((p) => ({ x: p.x, y: p.y, bornMs: snap.timeMs }));
     team.burnMs = s.burnMs ?? 0;
     team.slowMs = s.slowMs ?? 0;

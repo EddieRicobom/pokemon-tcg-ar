@@ -366,15 +366,36 @@ describe('survival pvp: golpes iguais aos da corrida', () => {
     expect(s.nextShotId - 1).toBe(3);
   });
 
-  it('foco: um tiro largo e lento que atravessa', () => {
-    const s = createArena([mon('a', { moveCategory: 'foco', fireMs: 1000, projectileSpeed: 400, projectileSize: 8 })], [mon('x', idle)]);
+  it('foco: carrega sozinho, marca a linha e só depois o feixe acerta', () => {
+    const s = createArena([mon('a', { moveCategory: 'foco', fireMs: 1000, power: 20 })], [mon('x', idle)]);
     begin(s);
-    events(s, 650);
-    const shot = s.shots[0]!;
-    expect(s.shots).toHaveLength(1);
-    expect(shot.radius).toBeCloseTo(8 * 2.4);
-    expect(Math.hypot(shot.vx, shot.vy)).toBeCloseTo(200);
-    expect(shot.pierce).toBeGreaterThanOrEqual(2);
+    place(s, 200);
+    const early = events(s, 1000);
+    expect(early.some((e) => e.k === 'beam')).toBe(false);
+    expect(s.sides[0].focusCharge).toBeGreaterThan(0.3);
+    const marked = events(s, 2000);
+    const mark = marked.find((e) => e.k === 'beam' && e.leftMs > 0);
+    expect(mark).toBeDefined();
+    expect(foeLost(s)).toBe(0);
+    const fired = events(s, 1200);
+    expect(fired.some((e) => e.k === 'beam' && e.leftMs === 0)).toBe(true);
+    expect(foeLost(s)).toBeGreaterThanOrEqual(50);
+  });
+
+  it('foco: quem sai da linha marcada não leva o feixe', () => {
+    const s = createArena([mon('a', { moveCategory: 'foco', fireMs: 1000 })], [mon('x', idle)]);
+    begin(s);
+    place(s, 200);
+    let moved = false;
+    for (let t = 0; t < 6000 && s.winner === null; t += 20) {
+      const seen = stepArena(s, [NO_INPUT, NO_INPUT], 20);
+      if (!moved && seen.some((e) => e.k === 'beam' && e.leftMs > 0)) {
+        s.sides[1].x += 140;
+        moved = true;
+      }
+    }
+    expect(moved).toBe(true);
+    expect(foeLost(s)).toBe(0);
   });
 
   it('teleporte: salta até o rival e acerta quem está no caminho', () => {
