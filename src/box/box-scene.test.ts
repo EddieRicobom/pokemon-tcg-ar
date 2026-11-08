@@ -419,6 +419,46 @@ describe('BoxScene com o palco virtual (Arena)', () => {
     scene.dispose();
   });
 
+  it('o clima aparece no Coliseu: a chuva cai na arena, a areia molha e o Pokémon tem onde se refletir', () => {
+    const scene = sceneLookingDown();
+    scene.setBackdrop('virtual');
+    scene.place(new Vector3(0, -1.3, -3.2));
+    scene.setCreatures([entry(0)]);
+    scene.setWeather('chuva');
+    for (let t = 1; t < 4000; t++) scene.update(t * 50);
+    const fx = (scene as unknown as { weatherFx: { group: { visible: boolean; parent: { visible: boolean } | null }; counts: { rain: number }; puddleStrengthAt(x: number, z: number): number } }).weatherFx;
+    expect(fx.group.visible).toBe(true);
+    expect(fx.group.parent!.visible).toBe(true);
+    expect(fx.counts.rain).toBeGreaterThan(500);
+    let best = 0;
+    for (let x = -4; x <= 4; x += 0.1) for (let z = -4; z <= 4; z += 0.1) best = Math.max(best, fx.puddleStrengthAt(x, z));
+    expect(best).toBeGreaterThan(0.5);
+    scene.dispose();
+  });
+
+  it('desligar e religar o clima devolve as poças', () => {
+    const scene = sceneLookingDown();
+    scene.setBackdrop('virtual');
+    scene.place(new Vector3(0, -1.3, -3.2));
+    scene.setWeather('chuva');
+    let t = 1;
+    for (; t < 4000; t++) scene.update(t * 50);
+    const fx = (scene as unknown as { weatherFx: { puddleStrengthAt(x: number, z: number): number } }).weatherFx;
+    const wettest = () => {
+      let best = 0;
+      for (let x = -4; x <= 4; x += 0.1) for (let z = -4; z <= 4; z += 0.1) best = Math.max(best, fx.puddleStrengthAt(x, z));
+      return best;
+    };
+    expect(wettest()).toBeGreaterThan(0.5);
+    scene.setWeather('off');
+    scene.update(++t * 50);
+    expect(wettest()).toBe(0);
+    scene.setWeather('chuva');
+    scene.update(++t * 50);
+    expect(wettest()).toBeGreaterThan(0.5);
+    scene.dispose();
+  });
+
   it('o cenário acompanha a luz da cena e as tochas tremem a cada quadro, sem erro', () => {
     const scene = sceneLookingDown();
     scene.setBackdrop('virtual');

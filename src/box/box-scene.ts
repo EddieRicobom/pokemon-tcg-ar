@@ -10,7 +10,7 @@ import { formationSlots } from './formation';
 import { createWander, separate, stepToward, stepWander } from './wander';
 import { FxLights } from './fx-lights';
 import { Ground } from './ground';
-import { ColiseuScenery } from './coliseu-scenery';
+import { ColiseuScenery, SCENERY_RADIUS } from './coliseu-scenery';
 import { disposeBubbleTextures } from './emoji-bubble';
 import { SocialDirector } from './social';
 import { DEFAULT_SMOOTHING } from '../core/pixel-upscale';
@@ -19,6 +19,8 @@ import type { Rng } from './wander';
 
 export const MAX_CREATURES = 40;
 export const DEFAULT_HALF_SIZE_M = 1.2;
+/** Meio-lado (m) da chuva e da neve no Coliseu: cobre a arena à vista da câmera, não só a caixa dos Pokémon. */
+const ARENA_WEATHER_HALF_M = 3;
 
 export type BoxMode = 'passeio' | 'formacao';
 /** O que fica atrás da cena: a câmera do celular (AR) ou o palco virtual do Coliseu. */
@@ -73,6 +75,8 @@ export class BoxScene {
   private weatherMode: WeatherMode = 'ciclo';
   private readonly weather: WeatherState;
   private readonly weatherFx = new WeatherFx();
+  /** O clima fica fora do grupo do chão: o chão da caixa some no Coliseu, e a chuva sumia junto. */
+  private readonly weatherRoot = new Group();
 
   constructor(rng: Rng = Math.random) {
     this.rng = rng;
@@ -80,7 +84,9 @@ export class BoxScene {
     this.weather = createWeather(rng);
     this.camera.position.set(0, 0, 0);
     this.floor.visible = false;
-    this.scene.add(this.floor);
+    this.weatherRoot.visible = false;
+    this.weatherRoot.add(this.weatherFx.group);
+    this.scene.add(this.floor, this.weatherRoot);
   }
 
   get placed(): boolean {
@@ -125,6 +131,8 @@ export class BoxScene {
 
   /** O cenário fica no chão, no centro da caixa colocada (escondido enquanto não há caixa). */
   private syncScenery(): void {
+    this.weatherRoot.visible = this.anchor !== null;
+    if (this.anchor) this.weatherRoot.position.copy(this.anchor);
     if (!this.scenery) return;
     this.scenery.group.visible = this.anchor !== null;
     if (this.anchor) this.scenery.group.position.copy(this.anchor);
@@ -229,8 +237,8 @@ export class BoxScene {
     );
     this.floor.add(plane, outline);
     // O clima mora no chão da caixa: camadas sobre o chão em pixel art e as gotas e flocos no volume da caixa.
-    this.weatherFx.setGround(this.boxGround, h);
-    this.floor.add(this.weatherFx.group);
+    if (this.backdrop === 'virtual') this.weatherFx.setArena(SCENERY_RADIUS, ARENA_WEATHER_HALF_M);
+    else this.weatherFx.setGround(this.boxGround, h);
     // Cantos em "L" para a caixa parecer uma caixa.
     const tick = Math.min(0.25, h * 0.3);
     for (const [sx, sz] of [[-1, -1], [1, -1], [1, 1], [-1, 1]] as const) {
