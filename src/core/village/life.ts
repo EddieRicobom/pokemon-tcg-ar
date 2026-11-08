@@ -84,6 +84,8 @@ export interface Friendship {
   known?: number;
   /** Dia da última mágoa (amizade perdida): o Livro mostra no humor do dia. */
   hurt?: string;
+  /** Dia do último passeio guiado que rendeu amizade (um por dia, por morador). */
+  lastWalk?: string;
 }
 
 /**
@@ -156,7 +158,7 @@ export interface VillageState {
   homeProjects: HomeProjects;
   town: { level: number; mailDay: string; cafeDay: string };
   /** Pedidos diários do mural da praça. */
-  requests: { day: string; items: VillageRequest[]; story: VillageRequest[] };
+  requests: { day: string; items: VillageRequest[]; story: VillageRequest[]; bonusDay?: string };
   /** Digital Pokémon (presente inicial, Fonte, evolução) — pagos em moedas, o saldo único (`app/wallet.ts`). */
   digital: DigitalState;
   /** Quantas moedas já foram lançadas na Fonte. */
@@ -197,6 +199,10 @@ export interface Crop {
   wateredAt: number | null;
 }
 
+/** Quantos móveis e plantas o save guarda: `place` e `plant` recusam acima disso, para nada sumir ao reabrir a Vila. */
+export const MAX_PLACED = 300;
+export const MAX_CROPS = 200;
+
 export function emptyVillage(seed: number, spawn: { x: number; y: number }): VillageState {
   return {
     v: 1, seed, layout: MAP_LAYOUT, player: { ...spawn, dir: 'down' }, inventory: {}, house: 0, placed: [], homeInterior: emptyHomeInterior(), homeInteriors: {}, friends: {}, harvested: {}, follower: null,
@@ -206,9 +212,9 @@ export function emptyVillage(seed: number, spawn: { x: number; y: number }): Vil
   };
 }
 
-function normalizeRequests(raw: unknown): { day: string; items: VillageRequest[]; story: VillageRequest[] } {
+function normalizeRequests(raw: unknown): VillageState['requests'] {
   if (!raw || typeof raw !== 'object') return { day: '', items: [], story: [] };
-  const r = raw as { day?: unknown; items?: unknown };
+  const r = raw as { day?: unknown; items?: unknown; bonusDay?: unknown };
   const kinds = new Set(['collect', 'talk', 'deliver']);
   const items = Array.isArray(r.items)
     ? r.items.filter((x): x is VillageRequest => {
@@ -224,7 +230,7 @@ function normalizeRequests(raw: unknown): { day: string; items: VillageRequest[]
       return item.persistent === true && typeof item.id === 'string' && typeof item.title === 'string' && kinds.has(item.kind);
     }).slice(0, 8)
     : [];
-  return { day: typeof r.day === 'string' ? r.day.slice(0, 12) : '', items, story };
+  return { day: typeof r.day === 'string' ? r.day.slice(0, 12) : '', items, story, ...(typeof r.bonusDay === 'string' ? { bonusDay: r.bonusDay.slice(0, 12) } : {}) };
 }
 
 /** Itens que trocaram de id: o save antigo é lido com o id novo, para nada sumir da mochila. */
@@ -249,7 +255,7 @@ export function normalizeVillage(raw: unknown, seed: number, spawn: { x: number;
     inventory: inv,
     farm: normalizeFarm(r.farm),
     house: Number.isInteger(r.house) ? Math.max(0, Math.min(HOUSE_LEVELS.length - 1, r.house!)) : 0,
-    placed: Array.isArray(r.placed) ? r.placed.filter((f) => f && Number.isInteger(f.x) && Number.isInteger(f.y) && FURNITURE_IDS.includes(f.item)).slice(0, 300) : [],
+    placed: Array.isArray(r.placed) ? r.placed.filter((f) => f && Number.isInteger(f.x) && Number.isInteger(f.y) && FURNITURE_IDS.includes(f.item)).slice(0, MAX_PLACED) : [],
     homeInterior: normalizeHomeInterior(r.homeInterior),
     homeInteriors: normalizeHomeInteriors(r.homeInteriors),
     friends: normalizeFriends(r.friends),
@@ -257,7 +263,7 @@ export function normalizeVillage(raw: unknown, seed: number, spawn: { x: number;
     follower: typeof r.follower === 'string' ? r.follower : null,
     coins: Number.isInteger(r.coins) ? Math.max(0, Math.min(999999, r.coins!)) : base.coins,
     mewBlessing: r.mewBlessing === true,
-    crops: Array.isArray(r.crops) ? r.crops.filter((c) => c && Number.isInteger(c.x) && Number.isInteger(c.y) && itemDef(c.seed)?.kind === 'seed' && Number.isInteger(c.stage)).slice(0, 200) : [],
+    crops: Array.isArray(r.crops) ? r.crops.filter((c) => c && Number.isInteger(c.x) && Number.isInteger(c.y) && itemDef(c.seed)?.kind === 'seed' && Number.isInteger(c.stage)).slice(0, MAX_CROPS) : [],
     wear: {
       player: typeof r.wear?.player === 'string' && ACCESSORY_IDS.includes(r.wear.player) ? r.wear.player : null,
       mons: r.wear?.mons && typeof r.wear.mons === 'object' ? Object.fromEntries(Object.entries(r.wear.mons).filter(([, v]) => v === null || (typeof v === 'string' && ACCESSORY_IDS.includes(v)))) : {},
@@ -360,6 +366,8 @@ export function harvest(s: VillageState, map: VillageMap, x: number, y: number, 
   const tile = tileAt(map, x, y);
   const rule = HARVEST[tile];
   if (!rule) return { ok: false, message: '' };
+  const key = `${x},${y}`;
+  if (s.harvested[key] === day) return { ok: false, message: tile === 'tree' ? 'Esta árvore já deu madeira hoje. Volte amanhã!' : 'Já coletou aqui hoje. Volte amanhã!' };
   // Areia: só às vezes tem concha, e o resto é areia, argila, sal ou, raramente, uma concha espiral.
   let sandItem: ItemId | null = null;
   if (tile === 'sand') {
@@ -368,8 +376,6 @@ export function harvest(s: VillageState, map: VillageMap, x: number, y: number, 
     sandItem = roll < 0.52 ? 'concha' : roll < 0.76 ? 'areia' : roll < 0.88 ? 'argila' : roll < 0.96 ? 'sal-praia' : 'concha-espiral';
   }
   if (tile === 'tall' && rng() < 0.5) return { ok: false, message: 'Nada no mato desta vez.' };
-  const key = `${x},${y}`;
-  if (s.harvested[key] === day) return { ok: false, message: tile === 'tree' ? 'Esta árvore já deu madeira hoje. Volte amanhã!' : 'Já coletou aqui hoje. Volte amanhã!' };
   s.harvested[key] = day;
   const item = sandItem ?? (typeof rule.item === 'function' ? rule.item(rng) : rule.item);
   const qty = sandItem ? 1 + Math.floor(rng() * 2) : rule.qty[0] + Math.floor(rng() * (rule.qty[1] - rule.qty[0] + 1));
@@ -508,6 +514,7 @@ export function blocksRoute(s: VillageState, map: VillageMap, x: number, y: numb
 export function place(s: VillageState, map: VillageMap, item: FurnitureId, x: number, y: number, occupied: (x: number, y: number) => boolean): Interaction {
   if (itemDef(item)?.kind !== 'furniture') return { ok: false, message: 'Só móveis podem ser colocados no chão.' };
   if (count(s, item) <= 0) return { ok: false, message: `Você não tem ${itemName(item)}.` };
+  if (s.placed.length >= MAX_PLACED) return { ok: false, message: `A Vila já tem ${MAX_PLACED} móveis no chão. Guarde algum antes de colocar outro.` };
   const t = tileAt(map, x, y);
   if (!['grass', 'path', 'flower', 'tall', 'sand', 'trail', 'plaza'].includes(t) || isPlaced(s, x, y) || cropAt(s, x, y) || occupied(x, y)) return { ok: false, message: 'Não dá para colocar aí. Fique de frente para um lugar livre.' };
   const closed = blocksRoute(s, map, x, y);
@@ -734,8 +741,9 @@ export interface Talk {
   request: Friendship['request'];
 }
 
-/** Amizade da primeira conversa do dia. */
+/** Amizade e moedas da primeira conversa do dia. */
 export const TALK_FRIENDSHIP = 6;
+export const TALK_COINS = 5;
 
 /** Como ele recebe você depois de muito tempo sem conversar, pelo nível de agora. */
 const MISSED_YOU: Record<number, (days: number) => string> = {
@@ -889,7 +897,7 @@ export function sell(s: VillageState, id: ItemId, qty = 1): Interaction {
   if (def.sell <= 0) return { ok: false, message: `${def.name} é um prêmio de conquista: não dá para vender.` };
   s.inventory[id] = have - n;
   const earned = Math.round(def.sell * n * weeklyModifiers(s).saleMultiplier);
-  s.coins += earned;
+  s.coins = Math.min(999999, s.coins + earned);
   return { ok: true, message: `Vendeu ${n} ${def.name}: +${earned} moedas.` };
 }
 
@@ -902,13 +910,15 @@ export function plant(s: VillageState, map: VillageMap, seed: ItemId, x: number,
   const def = itemDef(seed);
   if (def?.kind !== 'seed') return { ok: false, message: 'Isso não é semente.' };
   if (count(s, seed) <= 0) return { ok: false, message: `Você não tem ${def.name}.` };
+  if (s.crops.length >= MAX_CROPS) return { ok: false, message: `Sua horta já tem ${MAX_CROPS} plantas. Colha alguma antes de plantar outra.` };
   const t = tileAt(map, x, y);
   if (!['grass', 'flower', 'tall', 'field'].includes(t) || cropAt(s, x, y) || isPlaced(s, x, y) || occupied(x, y)) return { ok: false, message: 'Plante na grama livre à sua frente.' };
   const closed = blocksRoute(s, map, x, y);
   if (closed) return { ok: false, message: closed };
   s.inventory[seed] = count(s, seed) - 1;
   s.crops.push({ x, y, seed, stage: 0, wateredAt: now });
-  return { ok: true, message: `Você plantou ${def.name}. Regue para crescer!` };
+  // O plantio já vem regado: mandar regar na hora só rendia um "Já regada" confuso.
+  return { ok: true, message: `Você plantou ${def.name}. Já está regada: volte em uns ${def.grows?.minutes ?? 1} min para regar de novo.` };
 }
 
 /**
@@ -930,12 +940,12 @@ export function tickCrops(s: VillageState, now: number, factor = 1): number {
   return grew;
 }
 
-export function water(s: VillageState, x: number, y: number, now: number): Interaction {
+export function water(s: VillageState, x: number, y: number, now: number, factor = 1): Interaction {
   const c = cropAt(s, x, y);
   const g = c && itemDef(c.seed)?.grows;
   if (!c || !g) return { ok: false, message: '' };
   if (c.stage >= g.stages) return { ok: false, message: 'Já está pronta para colher!' };
-  if (c.wateredAt !== null) return { ok: false, message: `Já regada. Volte em uns ${Math.max(1, Math.ceil((g.minutes * 60_000 - (now - c.wateredAt)) / 60_000))} minutos.` };
+  if (c.wateredAt !== null) return { ok: false, message: `Já regada. Volte em uns ${Math.max(1, Math.ceil((g.minutes * 60_000 * factor * weeklyModifiers(s).cropGrowthFactor - (now - c.wateredAt)) / 60_000))} minutos.` };
   c.wateredAt = now;
   return { ok: true, message: 'Você regou a planta.' };
 }

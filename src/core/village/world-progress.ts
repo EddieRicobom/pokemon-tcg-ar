@@ -192,6 +192,8 @@ export function weeklyEventFor(state: VillageState, day: string): WeeklyEvent {
   const week = weekKey(day);
   const index = Math.abs(state.seed + Date.parse(`${week}T00:00:00Z`) / 86_400_000) % WEEKLY_EVENTS.length;
   const event = WEEKLY_EVENTS[index]!;
+  // Roda a cada passo do treinador: sem mudança, não troca o objeto (e não acorda quem observa o estado).
+  if (state.weekly.week === week && state.weekly.eventId === event.id) return event;
   state.weekly = state.weekly.week === week
     ? { ...state.weekly, eventId: event.id }
     : { week, eventId: event.id, festivalWeek: '', festivalWon: false };

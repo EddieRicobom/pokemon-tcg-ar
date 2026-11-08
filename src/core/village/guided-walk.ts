@@ -1,6 +1,8 @@
 import { WEST } from './west';
 import type { Walker } from './actors';
 import { LEISURE_SPOTS } from './expansion';
+import { friendOf, gainFriendship } from './life';
+import type { VillageState } from './life';
 
 export const GUIDED_DESTINATIONS = [
   { x: WEST + 47, y: 36, place: 'Fonte Central' },
@@ -16,6 +18,20 @@ export const GUIDED_DESTINATIONS = [
   { x: WEST + 15, y: 13, place: 'Trilha da Madeireira' },
   { x: WEST + 17, y: 66, place: 'Pedreira do Sul' },
 ] as const;
+
+/** Amizade do primeiro passeio do dia com cada morador. */
+export const GUIDED_WALK_FRIENDSHIP = 6;
+
+/**
+ * Chegou ao destino: o primeiro passeio do dia com o morador rende amizade; os seguintes são só o passeio.
+ * Devolve quanto a amizade subiu, ou `null` se hoje este morador já recebeu.
+ */
+export function rewardGuidedWalk(state: VillageState, id: string, day: string): number | null {
+  const friend = friendOf(state, id);
+  if (friend.lastWalk === day) return null;
+  friend.lastWalk = day;
+  return gainFriendship(state, id, GUIDED_WALK_FRIENDSHIP);
+}
 
 export interface GuidedWalkProgress {
   playerDistance: number;
