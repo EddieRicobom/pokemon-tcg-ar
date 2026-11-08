@@ -7,7 +7,9 @@ import { effectiveVisual, maxVisualFps, visual } from '../app/visual-settings';
 import { isFrameDue } from '../core/frame-rate';
 import type { SoundCue } from '../box/sound-recipes';
 import { SoundEngine } from '../box/sound';
-import { impactFromFx } from '../core/survivor-impacts';
+import { flashAlpha, impactFromFx, moveLight } from '../core/survivor-impacts';
+import { drawLights } from '../village/survivor-cinema-art';
+import type { CinemaLight } from '../village/survivor-cinema-art';
 import { ImpactSparks } from '../village/survivor-impact-art';
 import type { SurvivorFx } from '../core/survivor';
 import { MOVE_CATEGORY_LABELS_PT } from '../core/survivor-moves';
@@ -178,6 +180,10 @@ function later(fn: () => void, ms: number): void {
 }
 const enteredAt: [number, number] = [-Infinity, -Infinity];
 const shake = ref(false);
+let shakeFrame = 0;
+/** Super efetivo: um clarão de tela muito leve, baixo por acessibilidade. */
+let critFlash: { born: number; color: string } | null = null;
+let shakeTimer: ReturnType<typeof setTimeout> | null = null;
 const faintAt: [number, number] = [-Infinity, -Infinity];
 const faintIndex: [number, number] = [0, 0];
 /** Áreas marcadas que estavam na tela: quando uma some, o golpe caiu e vira um clarão. */
@@ -247,15 +253,15 @@ function playCue(cue: SoundCue): void {
   sound.play(cue);
 }
 
-let lastAttackSoundAt = -Infinity;
+const lastAttackSoundAt: [number, number] = [-Infinity, -Infinity];
 const shotHeard = new Set<number>();
 /** Som do golpe por tipo e forma, com limite de frequência (rajadas não viram ruído contínuo). */
 function attackSound(side: ArenaSide, now: number): void {
-  if (now - lastAttackSoundAt < 70) return;
+  if (now - lastAttackSoundAt[side] < 70) return;
   const team = state.sides[side];
   const mon = team.mons[team.active];
   if (!mon) return;
-  lastAttackSoundAt = now;
+  lastAttackSoundAt[side] = now;
   playCue({ kind: 'survivor-attack', type: mon.attackType, category: mon.moveCategory ?? 'projetil' });
 }
 
@@ -321,16 +327,22 @@ function handleEvents(events: ArenaEvent[]): void {
       playSound(e.side === mySide ? 'survivor-hurt' : e.mult > 1 ? 'survivor-critical' : 'survivor-hit');
       if (e.side === mySide) {
         vibrate({ kind: 'hit', strength: Math.min(1, e.damage / 40) }, visual.sound);
+        // O contorno vermelho é o sinal de dano e fica sempre; só o tremor depende dos efeitos.
+        hurt.value = true;
+        if (hurtTimer) clearTimeout(hurtTimer);
+        hurtTimer = setTimeout(() => (hurt.value = false), 140);
         if (fxOn()) {
           shake.value = false;
-          requestAnimationFrame(() => (shake.value = true));
-          later(() => (shake.value = false), 260);
-          hurt.value = true;
-          if (hurtTimer) clearTimeout(hurtTimer);
-          hurtTimer = setTimeout(() => (hurt.value = false), 140);
+          if (shakeFrame) cancelAnimationFrame(shakeFrame);
+          shakeFrame = requestAnimationFrame(() => (shake.value = true));
+          if (shakeTimer) clearTimeout(shakeTimer);
+          shakeTimer = setTimeout(() => (shake.value = false), 260);
         }
       } else if (e.mult === 0) toast('Não afeta o alvo…', 'info', 1800, 'imune');
-      else if (e.mult > 1) toast('Super efetivo!', 'good', 1500, 'super');
+      else if (e.mult > 1) {
+        toast('Super efetivo!', 'good', 1500, 'super');
+        if (fxOn() && strike) critFlash = { born: clockNow(), color: TYPE_COLORS[strike.attackType] };
+      }
       else if (e.mult < 1) toast('Pouco efetivo…', 'info', 1500, 'pouco');
     } else if (e.k === 'telegraph') {
       if (e.side !== mySide) toast('Área marcada: saia do círculo!', 'bad', 1600, `mark:${e.side}`);
@@ -440,10 +452,11 @@ function buildScene(now: number): void {
   lastView = view;
   for (const sh of view.shots) {
     if (shotHeard.has(sh.id)) continue;
-    if (shotHeard.size > 400) shotHeard.clear();
     shotHeard.add(sh.id);
     attackSound(sh.side, now);
   }
+  // Só esquece os tiros que já saíram do ar: os vivos não tocam de novo.
+  if (shotHeard.size > view.shots.length + 40) for (const id of shotHeard) if (!view.shots.some((sh) => sh.id === id)) shotHeard.delete(id);
   const me = toField(view.sides[mySide].x, view.sides[mySide].y);
   // A câmera desliza até o alvo em vez de pular: segue quem joga e puxa um pouco para o rival.
   const target = arenaCameraTarget(me, toField(view.sides[foeSide].x, view.sides[foeSide].y));
@@ -465,7 +478,7 @@ function buildScene(now: number): void {
     const mon = team.mons[team.active];
     // Quem acabou de desmaiar fica mais um instante na tela, caindo, mesmo que outro já tenha entrado.
     const ghost = now - faintAt[side] < 650 ? team.mons[faintIndex[side]] : undefined;
-    if (ghost && ghost.hp <= 0 && ghost !== mon) {
+    if (ghost && ghost.hp <= 0) {
       const g = toView(view.sides[side].x, view.sides[side].y);
       out.push({ down: true, low: false, kx: '0cqw', ky: '0cqw', hit: false, enter: false, faceRight: false, key: `ghost-${side}`, mine: side === mySide, x: (g.x / SV_VIEW_W) * 100, y: (g.y / SV_VIEW_H) * 100, dexId: ghost.dexId, shiny: ghost.shiny, name: ghost.name, hpPct: 0, shield: false, guard: false, status: '' });
     }
@@ -559,6 +572,7 @@ function drawArt(now: number, view: ArenaView): void {
   const host = arenaEl.value;
   if (!canvas || !host || !host.clientWidth) {
     pendingImpacts.length = 0;
+    markerPrev.clear();
     return;
   }
   const w = host.clientWidth;
@@ -713,6 +727,25 @@ function drawArt(now: number, view: ArenaView): void {
     const c = map(f.x, f.y, pending.z);
     sparks.burst({ ...impact, x: c.x, y: c.y, r: impact.r * k, length: impact.length * k, angle: flip ? impact.angle + Math.PI : impact.angle });
   }
+  // Luz do golpe sobre o chão (sem sombra borrada): cada marca de golpe acende um clarão da cor do elemento.
+  if (fxOn() && effectiveVisual.value.lighting) {
+    const lights: CinemaLight[] = [];
+    for (const a of artFx.slice(-8)) {
+      const c = map(a.fx.x, a.fx.y);
+      lights.push({ x: c.x, y: c.y, r: a.fx.r * k * 3, color: a.fx.color, alpha: flashAlpha(now - a.born, a.fx.lifeMs) * moveLight(a.fx.moveType) * 0.7 });
+    }
+    if (lights.length > 0) drawLights(ctx, lights);
+  }
+  if (critFlash && fxOn()) {
+    const t = flashAlpha(now - critFlash.born, 180);
+    if (t > 0.02) {
+      ctx.save();
+      ctx.globalAlpha = 0.12 * t;
+      ctx.fillStyle = critFlash.color;
+      ctx.fillRect(0, 0, w, h);
+      ctx.restore();
+    } else critFlash = null;
+  }
   if (fxOn()) sparks.draw(ctx, now);
 }
 
@@ -725,8 +758,8 @@ function buildHud(): void {
   if (state.winner !== null) hint = '';
   else if (state.countdownMs > 0) hint = 'Arraste na arena para desviar dos golpes. Toque num dos seus Pokémon, embaixo, para trocar.';
   else if (sudden) hint = 'Morte súbita: quem está em campo perde vida sozinho.';
-  else if (current?.moveCategory === 'trilha') hint = mine.trailMs > 0 ? 'Trilha ativa: passe por cima do rival.' : `Ande para encher a Trilha (${Math.floor(mine.trailCharge * 100)}%).`;
-  else if (current?.moveCategory === 'foco') hint = mine.focusCharge > 0 && !beamMarks.some((b) => b.mine && !b.fired) ? `Foco carregando (${Math.floor(mine.focusCharge * 100)}%): a linha é marcada antes do feixe.` : '';
+  else if (current?.moveCategory === 'trilha') hint = mine.trailMs > 0 ? 'Trilha ativa: passe por cima do rival.' : 'Ande para encher a Trilha (a barra mostra a carga).';
+  else if (current?.moveCategory === 'foco') hint = mine.focusCharge > 0 && !beamMarks.some((b) => b.mine && !b.fired) ? 'Foco carregando: a linha é marcada antes do feixe.' : '';
   else if (state.timeMs < 9000) hint = 'Desvie dos golpes: o seu Pokémon ataca sozinho. Troque quando precisar.';
   const count = Math.ceil(state.countdownMs / 1000);
   if (count !== lastCount) {
@@ -777,7 +810,8 @@ function finish(): void {
 function frame(ts: number): void {
   raf = requestAnimationFrame(frame);
   if (!isFrameDue(ts, lastDue, maxVisualFps())) return;
-  lastDue = ts;
+  const stepMs = 1000 / maxVisualFps();
+  lastDue = Number.isFinite(stepMs) && stepMs > 0 && ts - lastDue < stepMs * 3 ? ts - ((ts - lastDue) % stepMs) : ts;
   frameNow = ts;
   const dt = last ? Math.min(100, ts - last) : 16;
   last = ts;
@@ -886,6 +920,9 @@ onBeforeUnmount(() => {
   window.removeEventListener('blur', onBlur);
   if (resultTimer) clearTimeout(resultTimer);
   if (hurtTimer) clearTimeout(hurtTimer);
+  if (shakeTimer) clearTimeout(shakeTimer);
+  if (shakeFrame) cancelAnimationFrame(shakeFrame);
+  sound.dispose();
   timers.forEach(clearTimeout);
   timers.clear();
   sparks.clear();
@@ -950,7 +987,7 @@ onBeforeUnmount(() => {
         aria-hidden="true"
       >➤</span>
 
-      <div v-if="hud.charge" class="svp-charge" aria-hidden="true"><small>{{ hud.charge.label }} {{ hud.charge.pct }}%</small><i class="svp-bar"><b :style="{ width: `${hud.charge.pct}%` }"></b></i></div>
+      <div v-if="hud.charge" class="svp-charge" role="progressbar" :aria-valuenow="hud.charge.pct" aria-valuemin="0" aria-valuemax="100" :aria-label="hud.charge.label"><small>{{ hud.charge.label }} {{ hud.charge.pct }}%</small><i class="svp-bar"><b :style="{ width: `${hud.charge.pct}%` }"></b></i></div>
       <p v-if="hud.count > 0" :key="hud.count" class="svp-count" aria-hidden="true">{{ hud.count }}</p>
       <p v-if="hud.hint" class="svp-hint" role="status">{{ hud.hint }}</p>
       <p v-if="stale" class="svp-hint warn" role="status">Sem sinal do anfitrião há alguns segundos… a luta volta quando a conexão voltar.</p>
@@ -967,6 +1004,7 @@ onBeforeUnmount(() => {
         :class="{ on: hud.guardOn, wait: hud.guardPct > 0 && !hud.guardOn }"
         :aria-label="hud.guardOn ? 'Escudo ativo' : hud.guardPct > 0 ? `Escudo recarregando, ${hud.guardSec} segundos` : 'Escudo: toque para ficar imune por 2 segundos'"
         @pointerdown.stop
+        aria-keyshortcuts="E Space"
         @click="requestGuard"
       >
         <span class="svp-guard-icon" aria-hidden="true">🛡</span>
@@ -981,6 +1019,8 @@ onBeforeUnmount(() => {
         :style="{ '--attack-color': hud.attack.color }"
         :aria-label="`Ataque em uso: ${hud.attack.now.typeLabel}, ${hud.attack.now.categoryLabel}, ${hud.attack.now.name}. Toque para trocar para ${hud.attack.next.typeLabel}, ${hud.attack.next.categoryLabel}, ${hud.attack.next.name}`"
         @pointerdown.stop
+        aria-keyshortcuts="Q"
+        :aria-disabled="hud.attack.pct > 0"
         @click="requestAttackSwap"
       >
         <span class="svp-atk-pair" aria-hidden="true">
@@ -993,7 +1033,7 @@ onBeforeUnmount(() => {
           </span>
         </span>
         <small class="svp-attack-now">{{ hud.attack.now.name }}</small>
-        <small>{{ hud.attack.pct > 0 ? `${hud.attack.sec} s` : 'Toque: trocar' }}</small>
+        <small>{{ hud.attack.pct > 0 ? `Trocar em ${hud.attack.sec} s` : 'Toque: trocar' }}</small>
         <span v-if="hud.attack.pct > 0" class="svp-cd" :style="{ height: `${hud.attack.pct}%` }" aria-hidden="true"></span>
       </button>
       <div class="svp-team mine" role="group" aria-label="Sua equipe: toque para trocar de Pokémon">
@@ -1006,6 +1046,7 @@ onBeforeUnmount(() => {
           :aria-pressed="r.active"
           :aria-label="`${r.index + 1}: ${r.name}, ${r.fainted ? 'fora de combate' : r.active ? 'em campo' : hud.switchPct > 0 ? `trocar em ${hud.switchSec} segundos` : 'toque para trocar'}, ${r.hpPct}% de vida`"
           @pointerdown.stop
+          :aria-keyshortcuts="String(r.index + 1)"
           @click="requestSwitch(r.index)"
         >
           <img v-if="!broken.includes(r.dexId)" :src="pokemonSpriteUrl(r.dexId, r.shiny)" alt="" @error="markBroken(r.dexId)" />
@@ -1142,8 +1183,8 @@ onBeforeUnmount(() => {
 
 .svp-arena {
   position: relative;
-  width: min(100%, 430px, calc((100dvh - 190px) * 0.6667));
-  min-width: min(260px, calc(100vw - 32px));
+  width: min(100%, 430px, calc((100dvh - 332px) * 0.6667));
+  min-width: min(200px, calc(100vw - 32px));
   aspect-ratio: 2 / 3;
   margin: 0 auto;
   overflow: hidden;
@@ -1337,6 +1378,31 @@ onBeforeUnmount(() => {
   translate: var(--kx, 0) var(--ky, 0);
 }
 
+.svp-guard:focus-visible,
+.svp-swap:focus-visible {
+  outline: 3px solid #ffffff;
+  outline-offset: 2px;
+}
+
+.svp-swap.active::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #4f8ce0;
+}
+
+.svp-arena::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse at 50% 50%, transparent 58%, rgba(0, 0, 0, 0.26) 100%);
+  pointer-events: none;
+}
+
 .svp-count {
   animation: svp-pop 0.4s ease-out;
 }
@@ -1448,7 +1514,9 @@ onBeforeUnmount(() => {
 @media (prefers-reduced-motion: reduce) {
   .svp-fx.dmg { animation-duration: 0.01s; }
   .svp-arena.shake, .svp-unit.enter .svp-sprite, .svp-unit.down .svp-sprite, .svp-bars.low .svp-bar b, .svp-count { animation: none; }
-  .svp-unit.hit .svp-sprite { translate: none; }
+  .svp-unit.hit .svp-sprite { translate: none; filter: none; }
+  .svp-bubble { animation: none; }
+  .svp-arena.hurt { outline-width: 2px; }
 }
 
 .svp-fx.blink {
@@ -1529,7 +1597,9 @@ onBeforeUnmount(() => {
   border-radius: 8px;
   background: rgba(0, 0, 0, 0.62);
   color: #fff;
-  font-size: 0.8rem;
+  font-size: 0.76rem;
+  max-height: 2.8em;
+  overflow: hidden;
   text-align: center;
   pointer-events: none;
 }
@@ -1557,7 +1627,7 @@ onBeforeUnmount(() => {
   position: absolute;
   left: 8px;
   right: 8px;
-  top: 50%;
+  top: 24%;
   transform: translateY(-50%);
   list-style: none;
   margin: 0;
@@ -1592,8 +1662,8 @@ onBeforeUnmount(() => {
   bottom: 4px;
   margin: 0;
   text-align: center;
-  font-size: 0.66rem;
-  color: rgba(255, 255, 255, 0.65);
+  font-size: 0.7rem;
+  color: rgba(255, 255, 255, 0.85);
   pointer-events: none;
 }
 
@@ -1701,7 +1771,7 @@ onBeforeUnmount(() => {
 .svp-attack-now {
   max-width: 100%;
   overflow: hidden;
-  font-size: 0.62rem;
+  font-size: 0.72rem;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
