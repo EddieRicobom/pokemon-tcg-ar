@@ -18,6 +18,7 @@ import type { SurvivorPreparationId } from './survivor-preparations';
 import { advanceSpecialEncounter, breakSurvivorShield, createSurvivorSpecial, DASH_DAMAGE_MULTIPLIER, DASH_TRIPLE_DAMAGE_MULTIPLIER, SPECIAL_GUARDIANS, specialProtects, stepSurvivorSpecial } from './survivor-specials';
 import { inSurvivorCone, SURVIVOR_CONE_HALF_ANGLE, SURVIVOR_ORBIT_BASE, SURVIVOR_ORBIT_MAX, survivorAimAngle, survivorOrbitAngularSpeed, survivorOrbiterHitRadius, survivorOrbiters, survivorOrbitHitIntervalMs } from './survivor-shapes';
 import type { PokemonType } from './pokemon-data';
+import { creditSupremeKill, createSurvivorSupreme, gainSupreme, stepSurvivorSupreme, SUPREME_GAIN } from './survivor-supreme';
 
 /**
  * Motor puro do modo Sobrevivência (Zona de Sobrevivência, dentro da Vila): você anda pela arena, seu Pokémon ataca
@@ -317,6 +318,7 @@ export function createSurvivorState(seed: number, options: CreateSurvivorOptions
     criticalHits: [],
     critRng: seededRng((seed ^ 0x5a17c9e3) >>> 0),
     special: createSurvivorSpecial(move.type),
+    supreme: createSurvivorSupreme(move.type),
     charge: createSurvivorCharge(),
     rng: seededRng(seed),
     runSeed: Math.floor(seed) >>> 0,
@@ -2111,6 +2113,7 @@ function hitEnemy(state: SurvivorState, e: SurvivorEnemy, damage: number, from: 
   const hpBefore = Math.max(0, e.hp);
   e.hp -= finalDamage;
   e.hitFlashMs = 90;
+  gainSupreme(state, (Math.min(hpBefore, finalDamage) / Math.max(1, e.maxHp)) * SUPREME_GAIN.damageDealtPerBar);
   if (state.runStats) recordDamage(state.runStats, move.name, move.color, Math.min(hpBefore, finalDamage));
   if (synergy?.consume) e[synergy.consume] = 0;
   if (synergy?.refreshSlowMs) e.slowMs = Math.max(e.slowMs ?? 0, synergy.refreshSlowMs);
@@ -2761,6 +2764,7 @@ function damagePlayer(state: SurvivorState, damage: number, kind: SurvivorFinalH
   const effectiveDamage = damage > 0 ? Math.max(1, Math.ceil(damage * (1 - (reduction ?? 0)) * (1 - Math.min(0.5, contactGuard + projectileGuard)))) : 0;
   state.lastHit = { ...source, kind, damage: effectiveDamage, hpBefore: p.hp };
   p.hp = Math.max(0, p.hp - effectiveDamage);
+  gainSupreme(state, (effectiveDamage / Math.max(1, p.maxHp)) * SUPREME_GAIN.damageTakenPerBar);
   if (effectiveDamage > 0 && source.digitalThreat) p.healBlockMs = 8000;
   const retaliation = p.upgradeLevels['retaliation-wave'] ?? 0;
   if (effectiveDamage > 0 && retaliation > 0) {
@@ -3183,6 +3187,12 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
   p.artifactFocusMs = Math.max(0, p.artifactFocusMs - dtMs);
   const dashPath = stepSurvivorSpecial(state, input, dtMs, ARENA_W, ARENA_H, PLAYER_RADIUS);
   if (dashPath) hitDashPath(state, dashPath);
+  stepSurvivorSupreme(state, input, dtMs, events, {
+    attackDamage: playerAttackDamage(state),
+    stun: applyStun,
+    push: (e, from, px) => { applyKnockback(e, from, px); },
+    record: (name, color, damage) => { if (state.runStats) recordDamage(state.runStats, name, color, damage); },
+  });
 
   // Movimento do jogador, com a arena como cerca.
   const chargeStyle = chargeStyleOf(state);
@@ -3459,6 +3469,8 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
     state.enemies = state.enemies.filter((e) => e.hp > 0);
     state.kills += dead.length;
     for (const e of dead) {
+      creditSupremeKill(state, e);
+      if (e.boss || e.grade === 'chefao' || e.shadowBoss) events.push({ type: 'bossDown', x: e.x, y: e.y });
       if (e.thief && !state.debugLaboratory) {
         const coins = thiefReward(state.elapsedMs);
         p.bonusCoins = (p.bonusCoins ?? 0) + coins;

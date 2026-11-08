@@ -12,9 +12,11 @@ const TYPES: readonly PokemonType[] = ['normal', 'fire', 'water', 'electric', 'g
 const STATS: BaseStats = { hp: 75, attack: 75, defense: 75, spAttack: 75, spDefense: 75, speed: 75 };
 const STRATEGIES = ['kiter', 'panic'] as const;
 const RUNS_PER_TYPE = 20;
+/** `SURVIVOR_SIM_SUPREME=1`: o robô solta o Golpe Supremo assim que o medidor enche. */
+const USE_SUPREME = process.env.SURVIVOR_SIM_SUPREME === '1';
 
 type Strategy = (typeof STRATEGIES)[number];
-interface Result { type: PokemonType; strategy: Strategy; time: number; kills: number; level: number; wave: number; }
+interface Result { type: PokemonType; strategy: Strategy; time: number; kills: number; level: number; wave: number; uses: number; }
 
 function chooseUpgrade(state: SurvivorState): void {
   const rank: Record<string, number> = { normal: 1, raro: 2, lendario: 3, ancestral: 4 };
@@ -47,9 +49,9 @@ function simulate(type: PokemonType, strategy: Strategy, seed: number): Result {
     if (player.x > 850) dx -= 1.5;
     if (player.y < 110) dy += 1.5;
     if (player.y > 530) dy -= 1.5;
-    stepSurvivor(state, { dx, dy }, 100);
+    stepSurvivor(state, { dx, dy, supreme: USE_SUPREME && state.supreme.meter >= 1 }, 100);
   }
-  return { type, strategy, time: state.elapsedMs, kills: state.kills, level: state.player.level, wave: state.wave };
+  return { type, strategy, time: state.elapsedMs, kills: state.kills, level: state.player.level, wave: state.wave, uses: state.supreme.uses };
 }
 
 const results: Result[] = [];
@@ -61,5 +63,5 @@ for (const strategy of STRATEGIES) for (const type of TYPES) for (let i = 0; i <
 const median = (values: number[]) => { const sorted = [...values].sort((a, b) => a - b); return sorted[Math.floor(sorted.length / 2)] ?? 0; };
 for (const strategy of STRATEGIES) {
   const group = results.filter((result) => result.strategy === strategy);
-  console.log(JSON.stringify({ strategy, runs: group.length, medianMinutes: median(group.map((result) => result.time)) / 60_000, reached3m: group.filter((result) => result.time >= 180_000).length, reached5m: group.filter((result) => result.time >= 300_000).length, medianKills: median(group.map((result) => result.kills)), medianLevel: median(group.map((result) => result.level)) }));
+  console.log(JSON.stringify({ strategy, runs: group.length, medianMinutes: median(group.map((result) => result.time)) / 60_000, reached3m: group.filter((result) => result.time >= 180_000).length, reached5m: group.filter((result) => result.time >= 300_000).length, medianKills: median(group.map((result) => result.kills)), medianLevel: median(group.map((result) => result.level)), medianSupremeUses: median(group.map((result) => result.uses)) }));
 }

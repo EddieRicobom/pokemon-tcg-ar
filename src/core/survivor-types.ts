@@ -3,6 +3,7 @@ import type { AttackProfile, MoveCategory, SurvivorMove } from './survivor-moves
 import type { ChargeStyle, SurvivorChargeState } from './survivor-charge';
 import type { PokemonType } from './pokemon-data';
 import type { SurvivorSpecialState } from './survivor-specials';
+import type { SurvivorSupremeState } from './survivor-supreme';
 import type { SurvivorDamageSource, SurvivorRunStats, SurvivorTimelinePoint } from './survivor-extras';
 import type { LunchEffect } from './survivor-lunch';
 import type { SurvivorMegaState } from './survivor-mega';
@@ -228,6 +229,8 @@ export const DIGITAL_DANGER_VISIBLE_RADIUS = 520;
 export type SurvivorEnemyGrade = 'comum' | 'elite' | 'chefao';
 
 export interface SurvivorEnemy {
+  /** Caiu pelo Golpe Supremo: não recarrega o medidor. */
+  supremeHit?: boolean;
   digitalThreat?: boolean;
   /** Próximo pulso da Trilha neste inimigo, no relógio da corrida. */
   trailNextHitMs?: number;
@@ -475,6 +478,8 @@ export interface SurvivorState {
   criticalHits: { enemyId: number; x: number; y: number; damage: number; boss: boolean }[];
   lastHit?: SurvivorFinalHit;
   special: SurvivorSpecialState;
+  /** Medidor e carga do Golpe Supremo (`core/survivor-supreme.ts`). */
+  supreme: SurvivorSupremeState;
   /** Estado de Foco, Rajada e Teleporte (`core/survivor-charge.ts`); fica parado nos outros golpes. */
   charge: SurvivorChargeState;
   rng: Rng;
@@ -615,6 +620,8 @@ export interface SurvivorInput {
   airborne?: boolean;
   /** Ativação solicitada uma única vez pelo botão ou teclado. */
   special?: boolean;
+  /** Golpe Supremo pedido uma única vez. */
+  supreme?: boolean;
   /** Botão de carga apertado agora: Foco e Teleporte resolvem ao soltar; Rajada é automática. */
   charge?: boolean;
   /** Cancela um hold de Teleporte sem transformá-lo em soltura. */
@@ -742,6 +749,11 @@ export type SurvivorEvent =
   | { type: 'heldItem'; id: HeldItemId; name: string; copies: number }
   | { type: 'milestone'; id: 'ten-minutes' | 'fifteen-minutes' | 'twenty-minutes'; reward: 'love-candy' | 'trust-stone' | 'omega-shard' }
   | { type: 'bossSpawn' }
+  /** Chefe periódico, chefão ou lendário sombrio caiu. */
+  | { type: 'bossDown'; x: number; y: number }
+  | { type: 'supremeReady'; name: string }
+  | { type: 'supremeCharge'; name: string }
+  | { type: 'supremeRelease'; name: string; hits: number; x: number; y: number }
   | { type: 'shadowBallSpawn'; dexId: number; name: string }
   | { type: 'shadowBossArrival'; dexId: number; name: string }
   | { type: 'shadowBossDefeated'; dexId: number; name: string; trustStones: number }
