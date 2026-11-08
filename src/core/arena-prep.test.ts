@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { createArenaBot } from './arena-bot';
 import type { ArenaBotTraits } from './arena-bot';
 import { DIGITAL_ARENA_FINALISTS } from './endless-arena';
-import { ARENA_LEVEL_UPS, ARENA_TEAM_SIZE, arenaIdleUpgrades, arenaRivalTeam, arenaSpecOf, autoFinishArenaPrep, bestArenaCard, createArenaPrep, pickArenaCard } from './arena-prep';
+import { ARENA_LEVEL_UPS, ARENA_TEAM_SIZE, arenaCardChanges, arenaCoreStats, arenaIdleUpgrades, arenaRivalTeam, arenaSpecOf, autoFinishArenaPrep, bestArenaCard, createArenaPrep, pickArenaCard } from './arena-prep';
 import { aliveCount, applyArenaSnapshot, createArena, NO_INPUT, snapshotArena, stepArena } from './survivor-pvp';
 import { parseSurvivalMessage } from '../pvp/survival-wire';
 import type { ArenaState, SvAttackForm, SvMonSpec } from './survivor-pvp';
@@ -34,6 +34,46 @@ describe('10 níveis antes da luta', () => {
     expect(prep.picked).toHaveLength(ARENA_LEVEL_UPS);
     expect(prep.state.player.level).toBe(level + ARENA_LEVEL_UPS);
     expect(prep.offer).toEqual([]);
+  });
+
+  it('o que a carta promete em números é o que a ficha de luta recebe', () => {
+    for (const seed of [1, 7, 42, 99]) {
+      const prep = createArenaPrep(charizard, seed);
+      for (let i = 0; i < ARENA_LEVEL_UPS; i++) {
+        const option = prep.offer[0]!;
+        const changes = arenaCardChanges(prep, option);
+        const levelBefore = prep.state.player.level;
+        pickArenaCard(prep, option.id);
+        expect(prep.state.player.level).toBe(levelBefore + 1);
+        const now = Object.fromEntries(arenaCoreStats(prep).map((stat) => [stat.label, stat.value]));
+        for (const change of changes) if (change.label in now) expect(now[change.label]).toBe(change.after);
+      }
+    }
+  });
+
+  it('carta que só passaria do teto da arena não ocupa vaga na oferta', () => {
+    const prep = createArenaPrep(charizard, 3);
+    prep.state.player.speed = 500; // bem acima do teto de velocidade da ficha
+    expect(arenaIdleUpgrades(prep.state.player)).toContain('legs');
+  });
+
+  it('calcular a prévia não mexe no Pokémon', () => {
+    const prep = createArenaPrep(pikachu, 5);
+    const before = arenaSpecOf(prep);
+    for (const option of prep.offer) arenaCardChanges(prep, option);
+    expect(arenaSpecOf(prep)).toEqual(before);
+    expect(prep.picked).toEqual([]);
+  });
+
+  it('carta que encurta a recarga conta como melhora', () => {
+    const prep = createArenaPrep(charizard, 3);
+    const haste = arenaCardChanges(prep, { id: 'haste', name: 'x', description: 'x' });
+    const recarga = haste.find((change) => change.label === 'Recarga');
+    if (recarga) expect(recarga.better).toBe(true);
+  });
+
+  it('carta desconhecida não inventa número', () => {
+    expect(arenaCardChanges(createArenaPrep(charizard, 3), { id: 'carta-inventada', name: 'x', description: 'x' })).toEqual([]);
   });
 
   it('recusa carta que não foi oferecida', () => {
@@ -215,12 +255,13 @@ function mirror(skillA: number, traitsA: Partial<ArenaBotTraits>, skillB: number
 
 describe('equilíbrio do rival', () => {
   it('o rival mais esperto ganha a maioria das lutas em espelho', () => {
-    const { wins, games, avgMs } = mirror(1, {}, 0.2, {}, 16);
+    // Amostra maior: com 32 lutas o resultado oscilava em cima da metade só por mudar o sorteio das cartas (com 96, o esperto leva ~65%).
+    const { wins, games, avgMs } = mirror(1, {}, 0.2, {}, 32);
     expect(wins).toBeGreaterThan(games / 2);
     // Nem relâmpago nem maratona: dá tempo de trocar, desviar e usar o escudo.
     expect(avgMs).toBeGreaterThan(60_000);
     expect(avgMs).toBeLessThan(240_000);
-  }, 60_000);
+  }, 120_000);
 
   it('trocar de Pokémon pelo tipo rende vitórias', () => {
     const { wins, games } = mirror(0.6, { switching: false }, 0.6, {});
