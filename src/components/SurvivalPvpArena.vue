@@ -83,6 +83,19 @@ interface Fx {
   color: string;
   style: Record<string, string>;
 }
+/** Linha do Foco marcada no chão (ou o clarão do feixe saindo), em coordenadas do campo. */
+interface BeamMark {
+  mine: boolean;
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
+  width: number;
+  type: PokemonType;
+  born: number;
+  lifeMs: number;
+  fired: boolean;
+}
 /** Marca do golpe desenhada na tela de arte (a mesma arte elemental do Survivor), em coordenadas do campo. */
 interface ArtFx {
   fx: SurvivorFx;
@@ -117,6 +130,8 @@ interface Hud {
   guardSec: number;
   guardOn: boolean;
   /** Botão de trocar de ataque; nulo quando quem está em campo só tem um. */
+  /** Barra de carga do Foco/Trilha do seu Pokémon em campo. */
+  charge: { label: string; pct: number } | null;
   attack: { now: AttackFace; next: AttackFace; color: string; pct: number; sec: number; alt: boolean } | null;
 }
 
@@ -131,12 +146,13 @@ const attackFace = (type: PokemonType, category: MoveCategory | undefined, name:
 
 const clock = (ms: number): string => `${Math.floor(ms / 60000)}:${String(Math.floor(ms / 1000) % 60).padStart(2, '0')}`;
 
-const hud = shallowRef<Hud>({ mine: [], foe: [], summary: '', hint: '', count: 0, switchPct: 0, switchSec: 0, guardPct: 0, guardSec: 0, guardOn: false, attack: null });
+const hud = shallowRef<Hud>({ mine: [], foe: [], summary: '', hint: '', count: 0, switchPct: 0, switchSec: 0, guardPct: 0, guardSec: 0, guardOn: false, charge: null, attack: null });
 const units = shallowRef<Unit[]>([]);
 const trailDots = shallowRef<Orb[]>([]);
 const fx = shallowRef<Fx[]>([]);
 const artCanvas = ref<HTMLCanvasElement | null>(null);
 let artFx: ArtFx[] = [];
+let beamMarks: BeamMark[] = [];
 /** Última posição e direção de cada disparo: o rastro da arte segue o caminho que ele fez. */
 const shotTrack = new Map<number, { x: number; y: number; dx: number; dy: number }>();
 const markers = shallowRef<Marker[]>([]);
@@ -263,6 +279,8 @@ function handleEvents(events: ArenaEvent[]): void {
       toast(e.side === mySide ? 'Escudo ativo!' : `${props.friendName} ativou o escudo`, e.side === mySide ? 'good' : 'info', 1600, `guard:${e.side}`);
     } else if (e.k === 'block') {
       toast(e.side === mySide ? 'O escudo bloqueou o golpe!' : 'Golpe bloqueado pelo escudo', e.side === mySide ? 'good' : 'info', 1200, `block:${e.side}`);
+    } else if (e.k === 'beam') {
+      showBeam(e);
     } else {
       showFx(e);
     }
@@ -281,6 +299,20 @@ function showDamage(side: ArenaSide, damage: number, mult: number): void {
 /** Marca na tela de arte: nasce agora e some sozinha quando passa a vida. */
 function addArtFx(kind: SurvivorFx['kind'], x: number, y: number, r: number, type: PokemonType, lifeMs: number, extra: Partial<SurvivorFx> = {}): void {
   artFx = [...artFx.slice(-14), { born: performance.now(), fx: { kind, x, y, r, color: TYPE_COLORS[type], ageMs: 0, lifeMs, moveType: type, ...extra } }];
+}
+
+/** Foco: a linha marcada fica até o feixe sair; quando sai, vira um clarão curto. */
+function showBeam(e: Extract<ArenaEvent, { k: 'beam' }>): void {
+  const team = state.sides[e.side];
+  const type: PokemonType = team.mons[team.active]?.attackType ?? 'normal';
+  const mine = e.side === mySide;
+  const now = performance.now();
+  if (e.leftMs > 0) {
+    beamMarks = [...beamMarks.filter((b) => b.mine !== mine || b.fired), { mine, x0: e.x0, y0: e.y0, x1: e.x1, y1: e.y1, width: e.width, type, born: now, lifeMs: e.leftMs, fired: false }];
+    if (!mine) toast('Feixe marcado: saia da linha!', 'bad', 1600, `beam:${e.side}`);
+  } else {
+    beamMarks = [...beamMarks.filter((b) => b.mine !== mine || b.fired), { mine, x0: e.x0, y0: e.y0, x1: e.x1, y1: e.y1, width: e.width, type, born: now, lifeMs: 380, fired: true }];
+  }
 }
 
 /** Efeitos de golpe de quem ataca: a mesma arte elemental do Survivor, sobre a geometria real (cone, raio da aura); o teleporte é um traço. */
@@ -361,6 +393,58 @@ function buildScene(now: number): void {
   drawArt(now, view);
 }
 
+/** Linha do Foco: faixa pulsando que enche até o disparo; o clarão do feixe é largo, claro e some rápido. */
+function drawBeam(ctx: CanvasRenderingContext2D, b: BeamMark, map: (x: number, y: number, z?: number) => ScreenPoint, k: number, now: number): void {
+  const a = map(b.x0, b.y0, 4);
+  const e = map(b.x1, b.y1, 4);
+  const len = Math.hypot(e.x - a.x, e.y - a.y);
+  if (len < 1) return;
+  const ux = (e.x - a.x) / len;
+  const uy = (e.y - a.y) / len;
+  const half = b.width * k;
+  const color = TYPE_COLORS[b.type];
+  const age = now - b.born;
+  const poly = (grow: number, w: number): void => {
+    const cx = a.x + ux * len * grow;
+    const cy = a.y + uy * len * grow;
+    ctx.beginPath();
+    ctx.moveTo(a.x - uy * w, a.y + ux * w);
+    ctx.lineTo(cx - uy * w, cy + ux * w);
+    ctx.lineTo(cx + uy * w, cy - ux * w);
+    ctx.lineTo(a.x + uy * w, a.y - ux * w);
+    ctx.closePath();
+  };
+  ctx.save();
+  if (b.fired) {
+    const t = Math.min(1, age / b.lifeMs);
+    ctx.globalAlpha = 0.55 * (1 - t);
+    ctx.fillStyle = color;
+    poly(1, half * (1.2 - 0.4 * t));
+    ctx.fill();
+    ctx.globalAlpha = 0.95 * (1 - t);
+    ctx.fillStyle = '#ffffff';
+    poly(1, half * 0.45 * (1 - t * 0.6));
+    ctx.fill();
+  } else {
+    const fill = Math.min(1, age / b.lifeMs);
+    const pulse = 0.5 + 0.5 * Math.sin(now / 90);
+    ctx.globalAlpha = 0.14 + 0.1 * pulse;
+    ctx.fillStyle = color;
+    poly(1, half);
+    ctx.fill();
+    ctx.globalAlpha = 0.25 + 0.4 * fill;
+    poly(fill, half * 0.55);
+    ctx.fill();
+    ctx.globalAlpha = 0.9;
+    ctx.setLineDash([6, 6]);
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = b.mine ? '#ffffff' : '#ff6b63';
+    poly(1, half);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
 /** Tela de arte: disparos, órbitas, aura e marcas de golpe com a arte elemental do Survivor (chama, gota, faísca…). */
 function drawArt(now: number, view: ArenaView): void {
   const canvas = artCanvas.value;
@@ -400,6 +484,8 @@ function drawArt(now: number, view: ArenaView): void {
       for (let i = 0; i < shape.shots; i++) drawElementOrbiter(ctx, shape, mon.attackType, map, i, now, detailed);
     }
   }
+  beamMarks = beamMarks.filter((b) => now - b.born < b.lifeMs + (b.fired ? 0 : 400));
+  for (const b of beamMarks) drawBeam(ctx, b, map, k, now);
   const seen = new Set<number>();
   for (const s of view.shots) {
     seen.add(s.id);
@@ -443,11 +529,13 @@ function buildHud(): void {
   else if (state.countdownMs > 0) hint = 'Arraste na arena para desviar dos golpes. Toque num dos seus Pokémon, embaixo, para trocar.';
   else if (sudden) hint = 'Morte súbita: quem está em campo perde vida sozinho.';
   else if (current?.moveCategory === 'trilha') hint = mine.trailMs > 0 ? 'Trilha ativa: passe por cima do rival.' : `Ande para encher a Trilha (${Math.floor(mine.trailCharge * 100)}%).`;
+  else if (current?.moveCategory === 'foco') hint = mine.focusCharge > 0 && !state.beams.some((b) => b.side === mySide) ? `Foco carregando (${Math.floor(mine.focusCharge * 100)}%): a linha é marcada antes do feixe.` : '';
   else if (state.timeMs < 9000) hint = 'Desvie dos golpes: o seu Pokémon ataca sozinho. Troque quando precisar.';
   const cd = mine.switchCdMs;
   hud.value = {
     mine: rowsOf(mine), foe: rowsOf(foe),
     summary: `Você ${aliveCount(mine)}/${mine.mons.length} de pé · ${props.friendName} ${aliveCount(foe)}/${foe.mons.length}${state.countdownMs > 0 ? '' : ` · ${clock(state.timeMs)}`}`,
+    charge: current?.moveCategory === 'foco' ? { label: 'Foco', pct: Math.round(mine.focusCharge * 100) } : current?.moveCategory === 'trilha' && mine.trailMs <= 0 ? { label: 'Trilha', pct: Math.round(mine.trailCharge * 100) } : null,
     hint, count: Math.ceil(state.countdownMs / 1000),
     switchPct: cd > 0 ? Math.round((100 * cd) / SV_SWITCH_COOLDOWN_MS) : 0, switchSec: Math.ceil(cd / 1000),
     guardPct: mine.guardCdMs > 0 ? Math.round((100 * mine.guardCdMs) / SV_GUARD_COOLDOWN_MS) : 0, guardSec: Math.ceil(mine.guardCdMs / 1000), guardOn: mine.guardMs > 0,
@@ -664,6 +752,7 @@ onBeforeUnmount(() => {
         aria-hidden="true"
       >➤</span>
 
+      <div v-if="hud.charge" class="svp-charge" aria-hidden="true"><small>{{ hud.charge.label }} {{ hud.charge.pct }}%</small><i class="svp-bar"><b :style="{ width: `${hud.charge.pct}%` }"></b></i></div>
       <p v-if="hud.count > 0" class="svp-count" aria-hidden="true">{{ hud.count }}</p>
       <p v-if="hud.hint" class="svp-hint" role="status">{{ hud.hint }}</p>
       <p v-if="stale" class="svp-hint warn" role="status">Sem sinal do anfitrião há alguns segundos… a luta volta quando a conexão voltar.</p>
@@ -1200,6 +1289,19 @@ onBeforeUnmount(() => {
   font-size: 0.8rem;
   text-align: center;
   pointer-events: none;
+}
+
+.svp-charge {
+  position: absolute;
+  left: 8px;
+  bottom: 22px;
+  width: 30cqw;
+  display: grid;
+  gap: 2px;
+  pointer-events: none;
+  color: #fff;
+  font-weight: 800;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
 }
 
 .svp-hint.warn {

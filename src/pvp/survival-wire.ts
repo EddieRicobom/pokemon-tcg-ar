@@ -118,7 +118,7 @@ function parseSideSnap(v: unknown): ArenaSnapshot['sides'][0] | null {
   if (!isNum(v.fireMs, 0, 5000) || !isNum(v.switchCdMs, 0, 60000) || !isNum(v.shieldMs, 0, 10000)) return null;
   const side: ArenaSnapshot['sides'][0] = { hp: v.hp as number[], active: v.active, x: v.x, y: v.y, fireMs: v.fireMs, switchCdMs: v.switchCdMs, shieldMs: v.shieldMs };
   // Escudo, órbita, Trilha e efeitos: opcionais (um anfitrião mais antigo não manda), mas se vierem têm de estar nos limites.
-  const optional: [keyof ArenaSnapshot['sides'][0], number][] = [['guardMs', 3000], ['guardCdMs', 20000], ['orbitAngle', 7], ['trailCharge', 1], ['trailMs', 6000], ['burnMs', 5000], ['slowMs', 5000], ['stunMs', 5000]];
+  const optional: [keyof ArenaSnapshot['sides'][0], number][] = [['guardMs', 3000], ['guardCdMs', 20000], ['orbitAngle', 7], ['trailCharge', 1], ['trailMs', 6000], ['focusCharge', 1], ['burnMs', 5000], ['slowMs', 5000], ['stunMs', 5000]];
   for (const [key, max] of optional) {
     if (v[key] === undefined) continue;
     if (!isNum(v[key], 0, max)) return null;
@@ -181,7 +181,9 @@ function parseEvents(v: unknown): ArenaEvent[] | null {
     else if (e.k === 'cone' && isNum(e.angle, -7, 7) && isNum(e.range, 0, 600)) out.push({ k: 'cone', side: e.side, angle: e.angle, range: e.range });
     else if (e.k === 'pulse' && isNum(e.radius, 0, 400)) out.push({ k: 'pulse', side: e.side, radius: e.radius });
     else if (e.k === 'blink' && isNum(e.x0, 0, SV_ARENA_W) && isNum(e.y0, 0, SV_ARENA_H) && isNum(e.x1, 0, SV_ARENA_W) && isNum(e.y1, 0, SV_ARENA_H)) out.push({ k: 'blink', side: e.side, x0: e.x0, y0: e.y0, x1: e.x1, y1: e.y1 });
-    else return null;
+    else if (e.k === 'beam' && isNum(e.x0, -700, SV_ARENA_W + 700) && isNum(e.y0, -700, SV_ARENA_H + 700) && isNum(e.x1, -700, SV_ARENA_W + 700) && isNum(e.y1, -700, SV_ARENA_H + 700) && isNum(e.width, 4, 60) && isNum(e.leftMs, 0, 2000)) {
+      out.push({ k: 'beam', side: e.side, x0: e.x0, y0: e.y0, x1: e.x1, y1: e.y1, width: e.width, leftMs: e.leftMs });
+    } else return null;
   }
   return out;
 }
