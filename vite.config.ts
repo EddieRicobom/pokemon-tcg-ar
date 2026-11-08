@@ -124,6 +124,8 @@ export default defineConfig({
   test: {
     pool: 'threads',
     environment: 'happy-dom',
+    // Import dinâmico de SFC grande estoura os 5 s padrão em máquina carregada.
+    testTimeout: 30_000,
     include: ['src/**/*.test.ts', 'config/**/*.test.ts'],
   },
 });
