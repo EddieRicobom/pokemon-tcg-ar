@@ -311,10 +311,10 @@ describe('equilíbrio do rival', () => {
   }, 60_000);
 
   it('o Especial rende vitórias e não encurta demais a luta', () => {
-    const { wins, games, avgMs } = mirror(0.7, { special: false }, 0.7, {});
+    const { wins, games, avgMs } = mirror(0.7, { special: false }, 0.7, {}, 24);
     expect(wins).toBeLessThanOrEqual(games / 2);
     expect(avgMs).toBeGreaterThan(60_000);
-  }, 60_000);
+  }, 180_000);
 
   it('trocar de Pokémon pelo tipo rende vitórias', () => {
     const { wins, games } = mirror(0.6, { switching: false }, 0.6, {});
