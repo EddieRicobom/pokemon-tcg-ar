@@ -10,7 +10,7 @@ import ArenaFight from '../components/ArenaFight.vue';
 import type { ArenaFightSetup } from '../components/ArenaFight.vue';
 import LeagueCard from '../components/LeagueCard.vue';
 import TeamPicker from '../components/TeamPicker.vue';
-import { ARENA_CHOICES, ARENA_TEAM, arenaPlan, choiceFromFlags, endlessFromFlags } from '../core/arena-menu';
+import { ARENA_CHOICES, ARENA_PITCH, ARENA_TEAM, arenaPlan, choiceFromFlags, endlessFromFlags } from '../core/arena-menu';
 import type { ArenaChoice } from '../core/arena-menu';
 import { ENDLESS_ARENA_LABELS } from '../core/endless-arena';
 import type { EndlessArenaMode } from '../core/endless-arena';
@@ -33,7 +33,10 @@ const endless = ref<EndlessArenaMode>(endlessFromFlags(arrival) ?? 'formatacao')
 if (arrival.size > 0) window.history.replaceState(null, '', routeHref('arena', undefined, fromVila ? ['vila'] : []));
 
 const teamCount = ref<number | null>(null);
+/** Quantos Pokémon a pessoa tem para escolher; `null` até o TeamPicker terminar de ler. */
+const available = ref<number | null>(null);
 const members = ref<ArenaMember[]>([]);
+const membersLoading = ref(true);
 const membersError = ref('');
 const selectedChallenge = computed(() => (pendingChallenge.value ? challengeById(pendingChallenge.value) : null));
 const leaderLocked = computed(() => !!selectedChallenge.value && statusOf(league.value, selectedChallenge.value) === 'locked');
@@ -46,7 +49,9 @@ const noDex = computed(() => members.value.filter((m) => m.dexId === undefined))
 const plan = computed(() => arenaPlan({
   choice: choice.value,
   teamCount: teamCount.value ?? 0,
-  teamBlocker: membersError.value || (noDex.value.length > 0 ? `Sem número da Pokédex, não dá para lutar: ${noDex.value.map((m) => m.name).join(', ')}.` : null),
+  teamBlocker: membersError.value || (noDex.value.length > 0 ? `Sem número da Pokédex, não dá para lutar: ${noDex.value.map((m) => m.name).join(', ')}.` : null) || (!membersLoading.value && members.value.length !== teamCount.value ? 'Um Pokémon da equipe sumiu deste aparelho: escolha outro.' : null),
+  teamLoading: membersLoading.value,
+  available: available.value,
   endless: endless.value,
   leader: selectedChallenge.value?.leader ?? null,
   leaderLocked: leaderLocked.value,
@@ -61,6 +66,7 @@ const rewardNote = computed(() => {
 let membersToken = 0;
 async function refreshMembers(ids: string[]): Promise<void> {
   const token = ++membersToken;
+  membersLoading.value = true;
   try {
     const list = await loadArenaMembers(ids);
     if (token !== membersToken) return;
@@ -71,6 +77,7 @@ async function refreshMembers(ids: string[]): Promise<void> {
     members.value = [];
     membersError.value = `Não consegui abrir a equipe: ${error instanceof Error ? error.message : String(error)}`;
   }
+  membersLoading.value = false;
 }
 
 function updateTeam(ids: string[]): void {
@@ -98,9 +105,6 @@ function enter(): void {
   else fight.value = { kind: 'treino' };
 }
 
-// Escolher um líder na Liga marca o desafio: leva para o passo seguinte.
-watch(() => pendingChallenge.value, (id) => { if (id && choice.value === 'liga') scrollTo('arena-step-4'); });
-
 onMounted(() => {
   if (choice.value) scrollTo(choice.value === 'liga' && selectedChallenge.value ? 'arena-step-4' : 'arena-step-2');
 });
@@ -112,7 +116,7 @@ onMounted(() => {
       <h2 id="arena-title">Arena</h2>
       <a v-if="fromVila" class="button" :href="routeHref('vila')">Voltar à Vila</a>
     </header>
-    <p class="note">Luta 6×6 em tempo real, a mesma do fim do PvP do Survivor: você anda e desvia, o Pokémon ataca sozinho, e dá para trocar de Pokémon e de ataque com um toque.</p>
+    <p class="note">Luta 6×6 em tempo real: você anda e desvia, o Pokémon ataca sozinho, e dá para trocar de Pokémon e de ataque com um toque. {{ ARENA_PITCH }}</p>
 
     <ol class="arena-steps" aria-label="Passos da Arena">
       <li :class="{ done: choice !== null, now: plan.step === 1 }"><b>{{ choice ? '✓' : '1' }}</b>O que fazer</li>
@@ -147,11 +151,10 @@ onMounted(() => {
     <template v-if="choice">
       <section id="arena-step-2" class="arena-section" aria-labelledby="arena-step-2-title">
         <h3 id="arena-step-2-title">2 · Sua equipe</h3>
-        <p class="note">A luta pede exatamente {{ ARENA_TEAM }} Pokémon. Equipe atual: <strong>{{ teamCount ?? '…' }}/{{ ARENA_TEAM }}</strong>.</p>
-        <TeamPicker :max="6" group-label="time de batalha" hint="Toque num Pokémon para colocar ou tirar da equipe. Tirar daqui não apaga o Pokémon da coleção." @ready="updateTeam" @change="updateTeam" />
+                <TeamPicker :max="6" group-label="Equipe de batalha" :hint="`A luta pede exatamente ${ARENA_TEAM} Pokémon. Toque em um para colocar ou tirar; tirar daqui não apaga da coleção.`" @ready="updateTeam" @change="updateTeam" @available="available = $event" />
         <p v-if="membersError" class="hint" role="alert">{{ membersError }}</p>
-        <div v-if="teamCount === 0" class="arena-first-run" role="status">
-          <strong>Você ainda não tem Pokémon para formar uma equipe.</strong>
+        <div v-if="teamCount === 0 || (available !== null && available < ARENA_TEAM)" class="arena-first-run" role="status">
+          <strong>{{ teamCount === 0 ? 'Você ainda não tem Pokémon para formar uma equipe.' : `Você tem ${available} de ${ARENA_TEAM} Pokémon para formar a equipe.` }}</strong>
           <p>Escaneie cartas, abra Minhas cartas para carregar um Pokémon salvo ou entre na Vila para receber um companheiro digital.</p>
           <div class="actions row">
             <a class="button primary" :href="routeHref('escanear')">Escanear uma carta</a>
@@ -165,7 +168,7 @@ onMounted(() => {
         <h3 id="arena-step-3-title">3 · Escolha o líder</h3>
         <p class="note">Por região e em ordem. O próximo desafio aberto vem destacado e cada bloqueio diz o que falta.</p>
         <p v-if="selectedChallenge" class="hint" role="status">Líder escolhido: <strong>{{ selectedChallenge.leader }}</strong> ({{ selectedChallenge.role }}).</p>
-        <LeagueCard embedded />
+        <LeagueCard embedded @challenge="scrollTo('arena-step-4')" />
       </section>
 
       <section v-else-if="choice === 'corridas'" id="arena-step-3" class="arena-section" aria-labelledby="arena-step-3-title">
@@ -191,12 +194,12 @@ onMounted(() => {
 
     <!-- Passo 4: o resumo e o botão principal ficam sempre à mão, no pé da tela. -->
     <section id="arena-step-4" class="arena-enter" :class="{ waiting: !chosen }" aria-labelledby="arena-step-4-title">
-      <h3 id="arena-step-4-title">4 · Entrar</h3>
-      <p v-if="chosen" class="arena-summary"><span aria-hidden="true">{{ chosen.icon }}</span> {{ plan.summary }}</p>
+      <h3 id="arena-step-4-title" class="arena-sr">4 · Entrar</h3>
+      <p v-if="chosen && plan.ready" class="arena-summary"><span aria-hidden="true">{{ chosen.icon }}</span> {{ plan.summary }}</p>
       <p v-if="!plan.ready && plan.blocker" class="arena-blocker" role="status">{{ plan.blocker }}</p>
       <button type="button" class="primary arena-go" :disabled="!plan.ready" @click="enter">{{ plan.cta }}</button>
-      <a class="arena-stroll" :href="routeHref('caixa', undefined, ['arena'])">Ver os Pokémon passeando no Coliseu</a>
     </section>
+    <a class="arena-stroll" :href="routeHref('caixa', undefined, ['arena'])">Ver os Pokémon passeando no Coliseu</a>
 
     <ArenaFight v-if="fight" :setup="fight" :members="members" @close="fight = null" />
   </section>
@@ -235,7 +238,10 @@ onMounted(() => {
 .arena-toggle { display: flex; align-items: center; gap: .7rem; min-height: 2.75rem; }
 .arena-toggle input { width: 1.4rem; height: 1.4rem; flex: none; }
 .arena-toggle small { display: block; color: var(--muted); }
-.arena-enter { position: sticky; bottom: calc(var(--nav-height) + 18px + env(safe-area-inset-bottom)); z-index: 5; display: grid; gap: .5rem; padding: .85rem; border: 1px solid var(--gold); border-radius: .95rem; background: rgba(12, 17, 34, .96); box-shadow: 0 -6px 24px rgba(0, 0, 0, .45); scroll-margin-top: .75rem; }
+.arena-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.arena-stroll { justify-self: center; display: inline-flex; align-items: center; min-height: 44px; color: var(--gold); }
+.arena-summary, .arena-blocker { font-size: .9rem; line-height: 1.25; }
+.arena-enter { position: sticky; bottom: calc(var(--nav-height) + 18px + env(safe-area-inset-bottom)); z-index: 5; display: grid; gap: .4rem; padding: .6rem; border: 1px solid var(--gold); border-radius: .95rem; background: rgba(12, 17, 34, .96); box-shadow: 0 -6px 24px rgba(0, 0, 0, .45); scroll-margin-top: .75rem; }
 .arena-enter > * { margin: 0; }
 .arena-blocker { color: var(--gold); }
 .arena-duel-alt { min-height: 2.75rem; font-size: .92rem; font-weight: 700; }
@@ -243,7 +249,7 @@ onMounted(() => {
 .arena-go:disabled { opacity: .55; }
 /* Antes de escolher o modo, o pé fica fino: só o botão, sem cobrir as opções. */
 .arena-enter.waiting { gap: 0; padding: .45rem; border-color: var(--line); }
-.arena-enter.waiting h3, .arena-enter.waiting .arena-blocker { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.arena-enter.waiting .arena-blocker { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .arena-enter.waiting .arena-go { min-height: 2.8rem; font-size: .95rem; }
 @media (prefers-reduced-motion: reduce) {
   .arena-view * { transition: none !important; animation: none !important; scroll-behavior: auto !important; }
