@@ -542,6 +542,21 @@ describe('placar da luta', () => {
   });
 });
 
+describe('fraqueza dupla', () => {
+  it('pesa no máximo 2,5×, e Pokémon imune segue imune', () => {
+    const hitOf = (types: SvMonSpec['types']): ArenaEvent | undefined => {
+      const s = createArena([mon('a', { attackType: 'rock', power: 10, fireMs: 300 })], [mon('x', { types, moveCategory: 'trilha', fireMs: 60_000, maxHp: 1000 })]);
+      begin(s);
+      s.sides[1].y = s.sides[0].y - 40;
+      const seen: ArenaEvent[] = [];
+      for (let t = 0; t < 1500 && !seen.some((e) => e.k === 'hit'); t += 20) seen.push(...stepArena(s, [NO_INPUT, NO_INPUT], 20));
+      return seen.find((e) => e.k === 'hit');
+    };
+    expect(hitOf(['fire', 'flying'])).toMatchObject({ mult: 2.5, damage: 25 });
+    expect(hitOf(['fire'])).toMatchObject({ mult: 2, damage: 20 });
+  });
+});
+
 describe('troca sem abuso', () => {
   const trail: Partial<SvMonSpec> = { moveCategory: 'trilha', fireMs: 60_000 };
 

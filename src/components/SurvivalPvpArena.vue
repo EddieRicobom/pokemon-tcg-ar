@@ -1760,8 +1760,10 @@ onBeforeUnmount(() => {
   font-style: normal;
 }
 
+/* À esquerda: o centro é da contagem. */
 .svp-vs-mark {
-  justify-self: center;
+  justify-self: start;
+  margin-left: 14cqw;
   padding: 0 4cqw;
   font-size: 11cqw;
   font-style: italic;

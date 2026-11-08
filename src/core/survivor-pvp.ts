@@ -64,6 +64,8 @@ export const SV_FOCUS_MIN_CHARGE_MS = 2200;
 export const SV_FOCUS_TELEGRAPH_MS = 1000;
 export const SV_FOCUS_LENGTH = 560;
 export const SV_FOCUS_DAMAGE_MULT = 2.6;
+/** Na arena o tipo pesa até 2,5×: com o 4× da fraqueza dupla, um Pokémon caía em segundos, sem tempo de reagir. */
+export const SV_MAX_TYPE_MULT = 2.5;
 /** Esquiva: um arranque curto com invulnerabilidade só durante ele. Quem acerta o tempo atravessa o golpe. */
 export const SV_DODGE_MS = 170;
 export const SV_DODGE_DISTANCE = 96;
@@ -719,7 +721,7 @@ function hitActive(target: ArenaTeamState, side: ArenaSide, type: PokemonType, d
     events.push({ k: 'block', side });
     return;
   }
-  const mult = typeEffectiveness(type, defender.types);
+  const mult = Math.min(SV_MAX_TYPE_MULT, typeEffectiveness(type, defender.types));
   const landed = special ? Math.min(damage, (defender.maxHp * SV_SPECIAL_HIT_CAP) / Math.max(1, mult)) : damage;
   const dealt = mult === 0 ? 0 : Math.max(1, Math.round(landed * mult));
   events.push({ k: 'hit', side, damage: dealt, mult, ...(special ? { special: true } : {}) });
