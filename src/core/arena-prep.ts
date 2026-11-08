@@ -21,7 +21,7 @@ export const ARENA_LEVEL_UPS = 10;
  * A luta 6x6 dá mais vida a cada Pokémon do que o fim do PvP do Survivor: com a vida da corrida, cada um caía em uns 10 s
  * e não sobrava tempo para trocar, desviar e usar o escudo (medido em lutas entre rivais, ver `arena-prep.test.ts`).
  */
-export const ARENA_HP_FACTOR = 1.7;
+export const ARENA_HP_FACTOR = 1.4;
 const OFFER_SIZE = 3;
 
 export interface ArenaPrepMember {

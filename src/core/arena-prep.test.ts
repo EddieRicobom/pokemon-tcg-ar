@@ -215,7 +215,7 @@ function mirror(skillA: number, traitsA: Partial<ArenaBotTraits>, skillB: number
 
 describe('equilíbrio do rival', () => {
   it('o rival mais esperto ganha a maioria das lutas em espelho', () => {
-    const { wins, games, avgMs } = mirror(1, {}, 0.2, {});
+    const { wins, games, avgMs } = mirror(1, {}, 0.2, {}, 16);
     expect(wins).toBeGreaterThan(games / 2);
     // Nem relâmpago nem maratona: dá tempo de trocar, desviar e usar o escudo.
     expect(avgMs).toBeGreaterThan(60_000);
