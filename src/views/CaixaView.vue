@@ -27,6 +27,7 @@ import type { PokemonType } from '../core/pokemon-data';
 import { loadPinData } from '../app/services';
 import type { BoxMode } from '../box/box-scene';
 import { loadCreatureEntries } from '../box/load-creatures';
+import type { LoadOptions } from '../box/load-creatures';
 import type { RunningBox } from '../box/start-box';
 import type { BoxCreature } from '../box/creature';
 import { loadChunk } from '../app/stale-build';
@@ -36,6 +37,7 @@ type Phase = 'idle' | 'starting' | 'running';
 const openButton = ref<HTMLButtonElement | null>(null);
 const canvasEl = ref<HTMLCanvasElement | null>(null);
 const stageEl = ref<HTMLElement | null>(null);
+const skyEl = ref<HTMLElement | null>(null);
 const showFilters = ref(false);
 const showTeam = ref(false);
 const showAdjust = ref(false);
@@ -94,6 +96,8 @@ let box: RunningBox | null = null;
 let disposed = false;
 let sessionVersion = 0;
 let populationVersion = 0;
+/** O dedo que está olhando em volta: um segundo dedo na tela não pode virar a câmera aos saltos. */
+let activePointer: number | null = null;
 let pointerDown: { x: number; y: number } | null = null;
 let lastPointer: { x: number; y: number } | null = null;
 let pickedTimer: ReturnType<typeof setTimeout> | null = null;
@@ -117,6 +121,8 @@ const bookList = ref<{ id: string; name: string; real: string }[]>([]);
 const bookMons = computed(() => bookList.value.map((r) => ({ id: r.id, name: r.name, real: r.real, types: bookTypes.get(r.id) ?? [], thumb: bookThumbs.get(r.id) })));
 const bondOf = (id: string): number => friendLevel(village.friends[id]?.points ?? 0).level;
 
+const wornNow = new WeakMap<BoxCreature, string | null>();
+
 /** Ao montar a caixa: acessórios da Vila, corações dos mais próximos e a ajuda diária dos amigos. */
 function applyVillage(): void {
   village = loadVillage();
@@ -126,11 +132,15 @@ function applyVillage(): void {
   const notes: { text: string; tone: 'ok' | 'warn' }[] = [];
   for (const c of current.scene.creatureList) {
     const acc = village.wear.mons[c.info.id];
-    const accDef = acc ? itemDef(acc) : undefined;
-    c.setAccessory(acc ? paintAccessory(acc) : null, accDef?.pos, accDef?.nudge);
+    // Quem continua na caixa com o mesmo acessório não repinta nada.
+    if (wornNow.get(c) !== (acc ?? null)) {
+      wornNow.set(c, acc ?? null);
+      const accDef = acc ? itemDef(acc) : undefined;
+      c.setAccessory(acc ? paintAccessory(acc) : null, accDef?.pos, accDef?.nudge);
+    }
     const help = dailyHelp(village, c.info.id, today, Math.random);
     if (help.items.length > 0 || help.rare) {
-      c.say('🎁', 2600);
+      if (effectiveVisual.value.social) c.say('🎁', 2600);
       const what = [...help.items.map((h) => `${h.qty} ${itemName(h.item)}`), ...(help.rare ? [itemName(help.rare)] : [])].join(' e ');
       notes.push({ text: `${c.info.name} trouxe ${what} para a sua mochila da Vila!`, tone: 'ok' });
     }
@@ -144,7 +154,8 @@ function applyVillage(): void {
 const heartTimer = setInterval(() => {
   if (document.hidden) return;
   const current = box;
-  if (!current || phase.value !== 'running') return;
+  // Respeita a opção de vida social e a formação: nelas nenhum balão aparece.
+  if (!current || phase.value !== 'running' || !effectiveVisual.value.social || boxMode.value !== 'passeio') return;
   const close = current.scene.creatureList.filter((c) => bondOf(c.info.id) >= 3 && !c.bubbleEmoji);
   const pick = close[Math.floor(Math.random() * close.length)];
   if (pick && Math.random() < 0.6) {
@@ -154,7 +165,7 @@ const heartTimer = setInterval(() => {
 }, 7000);
 
 /** Os moradores da Vila (cartas e Digital Pokémon) já com os sprites prontos para a cena. */
-async function loadTeamCreatures(cache: Awaited<ReturnType<typeof getCache>>) {
+async function loadTeamCreatures(cache: Awaited<ReturnType<typeof getCache>>, options?: LoadOptions) {
   const digital = loadVillage().digital;
   const team = resolveTeam(savedTeam.value, [...(await cache.list()), ...digitalCandidates(digital)]);
   return loadCreatureEntries(cache, undefined, team.ids, {
@@ -164,7 +175,7 @@ async function loadTeamCreatures(cache: Awaited<ReturnType<typeof getCache>>) {
       const sprite = await fetchSprite(dexId).catch(() => null);
       return sprite ? decodeSprite(sprite) : null;
     },
-  }, loadCardCompanionEntry);
+  }, loadCardCompanionEntry, options);
 }
 
 async function openBook(): Promise<void> {
@@ -222,7 +233,8 @@ async function populate(): Promise<void> {
   try {
     const cache = await getCache();
     // Os moradores escolhidos (ou, sem escolha, os 6 mais recentes) vão para a caixa — Digital Pokémon inclusive.
-    const loaded = await loadTeamCreatures(cache);
+    // Quem já está em cena não é decodificado de novo, e uma troca mais nova interrompe esta leitura.
+    const loaded = await loadTeamCreatures(cache, { reuse: new Map(lastEntries.map((e) => [e.info.id, e])), cancelled: () => disposed || box !== current || version !== populationVersion });
     if (disposed || box !== current || version !== populationVersion) return;
     current.setCreatures(loaded.entries);
     lastEntries = loaded.entries;
@@ -235,6 +247,16 @@ async function populate(): Promise<void> {
   } finally {
     if (box === current && version === populationVersion) loadingCreatures.value = false;
   }
+}
+
+/** Vários toques seguidos em «Quem passeia» viram uma leitura só. */
+let populateTimer: ReturnType<typeof setTimeout> | null = null;
+function schedulePopulate(): void {
+  if (populateTimer) clearTimeout(populateTimer);
+  populateTimer = setTimeout(() => {
+    populateTimer = null;
+    void populate();
+  }, 250);
 }
 
 /** O que a cena virtual recebe ao abrir. */
@@ -259,7 +281,7 @@ async function openVirtual(version: number): Promise<void> {
     const { startBox } = await loadChunk(() => import('../box/start-box'));
     if (disposed || version !== sessionVersion) return;
     const openedBox = await startBox({
-      canvas, container: stage, virtual: true,
+      canvas, container: stage, virtual: true, sky: skyEl.value,
     });
     if (disposed || version !== sessionVersion) { openedBox.stop(); return; }
     box = openedBox;
@@ -289,6 +311,14 @@ async function open(): Promise<void> {
 function close(): void {
   sessionVersion++;
   populationVersion++;
+  if (populateTimer) clearTimeout(populateTimer);
+  populateTimer = null;
+  if (stageNotesTimer) clearTimeout(stageNotesTimer);
+  stageNotesTimer = null;
+  stageNotes.value = [];
+  activePointer = null;
+  pointerDown = null;
+  lastPointer = null;
   loadingCreatures.value = false;
   lastEntries = [];
   population.value = { shown: 0, available: 0, failed: 0 };
@@ -305,26 +335,39 @@ function close(): void {
 }
 
 function showPicked(creature: BoxCreature): void {
-  if (effectiveVisual.value.social) creature.react();
-  else creature.poke();
+  if (effectiveVisual.value.social) {
+    creature.react();
+    box?.scene.reactAround(creature);
+  } else {
+    creature.poke();
+  }
   picked.value = { name: shown(creature.info.id, creature.info.name), detail: creature.info.detail, dexId: creature.info.dexId, shiny: creature.info.shiny, mega: creature.info.mega };
   if (pickedTimer) clearTimeout(pickedTimer);
   pickedTimer = setTimeout(() => (picked.value = null), 5000);
 }
 
 function onPointerDown(event: PointerEvent): void {
+  if (activePointer !== null) return;
+  activePointer = event.pointerId;
   pointerDown = { x: event.clientX, y: event.clientY };
   lastPointer = { x: event.clientX, y: event.clientY };
+  // Com a captura, soltar o dedo fora do palco (ou sobre a barra de botões) ainda termina o arraste. Só com a arena
+  // aberta: capturar antes roubaria o clique de «Cancelar abertura».
+  if (phase.value === 'running') {
+    try { stageEl.value?.setPointerCapture?.(event.pointerId); } catch { /* ponteiro já acabou */ }
+  }
 }
 
 function onPointerMove(event: PointerEvent): void {
-  if (!lastPointer || !box) return;
+  if (event.pointerId !== activePointer || !lastPointer || !box) return;
   box.orientation.lookBy(event.clientX - lastPointer.x, event.clientY - lastPointer.y);
   lastPointer = { x: event.clientX, y: event.clientY };
 }
 
 function onPointerUp(event: PointerEvent): void {
+  if (event.pointerId !== activePointer) return;
   const down = pointerDown;
+  activePointer = null;
   pointerDown = null;
   lastPointer = null;
   if (!down || !box || Math.hypot(event.clientX - down.x, event.clientY - down.y) > 12) return;
@@ -334,6 +377,14 @@ function onPointerUp(event: PointerEvent): void {
     const creature = box.pick(ndc.x, ndc.y);
     if (creature) showPicked(creature);
   }
+}
+
+/** O sistema tomou o toque: não conta como toque num Pokémon. */
+function onPointerCancel(event: PointerEvent): void {
+  if (event.pointerId !== activePointer) return;
+  activePointer = null;
+  pointerDown = null;
+  lastPointer = null;
 }
 
 watch(() => effectiveVisual.value.smoothing, (smoothing) => box?.setSmoothing(smoothing));
@@ -403,12 +454,13 @@ onBeforeUnmount(() => {
       ref="stageEl"
       class="viewport box-viewport"
       :class="{ 'pseudo-full': pseudo, immersive }"
+      :style="immersive ? { touchAction: 'none' } : undefined"
       @pointerdown="onPointerDown"
       @pointermove="onPointerMove"
       @pointerup="onPointerUp"
-      @pointercancel="onPointerUp"
+      @pointercancel="onPointerCancel"
     >
-      <div class="virtual-sky" aria-hidden="true"></div>
+      <div ref="skyEl" class="virtual-sky" aria-hidden="true"><i class="sky-stars"></i></div>
       <canvas ref="canvasEl" class="overlay" aria-label="Coliseu com os Pokémon escaneados"></canvas>
       <p v-if="phase === 'idle'" class="placeholder">Coliseu fechado</p>
       <div v-if="phase === 'starting'" class="box-opening" role="status"><p>Montando o Coliseu…</p><button type="button" @click.stop="close">Cancelar abertura</button></div>
@@ -427,7 +479,7 @@ onBeforeUnmount(() => {
             <strong>Moradores da Vila</strong>
             <button type="button" class="link" aria-label="Fechar moradores na Caixa" @click="showTeam = false">Fechar</button>
           </header>
-          <TeamPicker @change="populate" />
+          <TeamPicker @change="schedulePopulate" />
         </div>
         <div v-if="showAdjust && arenaOn" ref="adjustDialog" class="stage-sheet" role="dialog" aria-label="Ajustes da caixa" @keydown.esc.stop.prevent="showAdjust = false" @pointerdown.stop @pointerup.stop @click.stop>
           <header>
@@ -466,3 +518,24 @@ onBeforeUnmount(() => {
 
   </section>
 </template>
+
+<style scoped>
+/* Estrelas do céu da noite: só aparecem quando a cena pede (--stars vem de start-box). Sem custo por quadro. */
+.sky-stars {
+  position: absolute;
+  inset: 0 0 45% 0;
+  opacity: var(--stars, 0);
+  background-image:
+    radial-gradient(1.5px 1.5px at 12% 22%, #fff 99%, transparent),
+    radial-gradient(1px 1px at 27% 58%, #dfe7ff 99%, transparent),
+    radial-gradient(1.5px 1.5px at 41% 14%, #fff 99%, transparent),
+    radial-gradient(1px 1px at 55% 41%, #ffeec2 99%, transparent),
+    radial-gradient(1.5px 1.5px at 68% 18%, #fff 99%, transparent),
+    radial-gradient(1px 1px at 79% 63%, #dfe7ff 99%, transparent),
+    radial-gradient(1.5px 1.5px at 90% 30%, #fff 99%, transparent),
+    radial-gradient(1px 1px at 6% 72%, #ffeec2 99%, transparent),
+    radial-gradient(1px 1px at 34% 83%, #fff 99%, transparent),
+    radial-gradient(1px 1px at 62% 79%, #dfe7ff 99%, transparent);
+  background-size: 100% 100%;
+}
+</style>

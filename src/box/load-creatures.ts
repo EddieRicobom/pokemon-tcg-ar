@@ -52,6 +52,13 @@ export const browserDecoders: CreatureDecoders = {
   },
 };
 
+export interface LoadOptions {
+  /** Entradas já decodificadas (por id): quem continua na caixa não passa pelo decodificador de novo. */
+  reuse?: ReadonlyMap<string, CreatureEntry>;
+  /** Devolve true quando esta leitura perdeu a validade (uma mais nova começou): para antes da próxima carta. */
+  cancelled?: () => boolean;
+}
+
 /**
  * Monta a população da Caixa a partir das cartas guardadas neste aparelho: um Pokémon por carta que tem
  * sprite guardado (GIF animado ou PNG parado), as mais recentes primeiro (ou só as de `only`, na ordem dada). Uma carta com problema não impede
@@ -63,6 +70,7 @@ export async function loadCreatureEntries(
   only?: readonly string[],
   digital?: DigitalCreatures,
   companion?: (card: CachedCard, decoders: CreatureDecoders) => Promise<CreatureEntry | null>,
+  options: LoadOptions = {},
 ): Promise<LoadedCreatures> {
   let cards = (await cache.list()).filter((card) => card.sprite.state === 'ok');
   const digitalById = new Map((digital?.instances ?? []).map((i) => [i.instanceId, i]));
@@ -81,7 +89,12 @@ export async function loadCreatureEntries(
   const entries: CreatureEntry[] = [];
   const failed: LoadedCreatures['failed'] = [];
   for (const item of order) {
-    if (entries.length >= MAX_CREATURES) break;
+    if (entries.length >= MAX_CREATURES || options.cancelled?.()) break;
+    const known = options.reuse?.get(item.kind === 'digital' ? item.id : item.card.id);
+    if (known) {
+      entries.push(known);
+      continue;
+    }
     if (item.kind === 'digital') {
       const inst = digitalById.get(item.id)!;
       try {

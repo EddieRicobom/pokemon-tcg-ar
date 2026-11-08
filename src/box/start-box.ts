@@ -9,6 +9,7 @@ import type { BoxCreature } from './creature';
 import { DEFAULT_PHONE_HEIGHT_M, FLOOR_MESSAGES } from './floor';
 import { createWebglBackend } from '../ar/webgl-backend';
 import { ambientFromSample } from './fx-lights';
+import { hourOf, skyFor } from './sky';
 import { sensorSettings } from '../app/sensor-settings';
 import { effectiveVisual, maxVisualFps } from '../app/visual-settings';
 import { isFrameDue } from '../core/frame-rate';
@@ -27,6 +28,8 @@ export interface StartBoxOptions {
   virtual?: boolean;
   canvas: HTMLCanvasElement;
   container: HTMLElement;
+  /** O céu atrás do canvas transparente (palco virtual): a cena pinta nele a hora do dia e o clima. */
+  sky?: HTMLElement | null;
   onModeChange?: (mode: OrientationMode) => void;
 }
 
@@ -61,7 +64,8 @@ export interface RunningBox {
 export async function startBox(options: StartBoxOptions): Promise<RunningBox> {
   const scene = new BoxScene();
   const renderer = (() => {
-    try { return createWebglBackend(options.canvas); }
+    // No Modo Rotom a economia vale até na densidade de pixels.
+    try { return createWebglBackend(options.canvas, effectiveVisual.value.rotomMode ? 1 : 1.5); }
     catch (error) { scene.dispose(); throw error; }
   })();
   const virtual = options.virtual === true;
@@ -116,6 +120,40 @@ export async function startBox(options: StartBoxOptions): Promise<RunningBox> {
     }
   };
 
+  // O céu do Coliseu acompanha a hora do aparelho e o clima (uma vez por segundo, e só mexe no CSS se a cor mudou).
+  const skyEl = virtual ? (options.sky ?? null) : null;
+  let lastSky = -Infinity;
+  let paintedSky = '';
+  const clearSky = () => {
+    if (!skyEl) return;
+    skyEl.style.removeProperty('background');
+    skyEl.style.removeProperty('--stars');
+    paintedSky = '';
+  };
+  const updateSky = (now: number) => {
+    if (!virtual || now - lastSky < 1000) return;
+    lastSky = now;
+    if (!effectiveVisual.value.lighting) {
+      scene.setDaylight(1, 1, 1, 0);
+      clearSky();
+      return;
+    }
+    const weather = scene.weatherNow?.state;
+    const look = skyFor(hourOf(new Date()), weather?.cloud ?? 0, weather?.rain ?? 0);
+    scene.setDaylight(look.ambient[0], look.ambient[1], look.ambient[2], look.night);
+    const background = `linear-gradient(180deg, ${look.top} 0%, ${look.mid} 40%, ${look.low} 100%)`;
+    if (!skyEl || background === paintedSky) return;
+    paintedSky = background;
+    skyEl.style.background = background;
+    skyEl.style.setProperty('--stars', look.stars.toFixed(2));
+  };
+
+  // Movimento reduzido vem do sistema e pode mudar com a tela aberta.
+  const motionQuery = window.matchMedia?.('(prefers-reduced-motion: reduce)') ?? null;
+  const applyMotion = () => scene.setCalm(motionQuery?.matches === true);
+  applyMotion();
+  motionQuery?.addEventListener?.('change', applyMotion);
+
   const tick = (now: number) => {
     if (!running) return;
     handle = requestGameFrame(tick, maxVisualFps);
@@ -124,6 +162,7 @@ export async function startBox(options: StartBoxOptions): Promise<RunningBox> {
     if (!isFrameDue(now, lastFrameAt, fps)) return;
     lastFrameAt = now;
     sampleAmbient(now);
+    updateSky(now);
     orientation.latencyMs = sensorSettings.latencyMs;
     scene.setCameraQuaternion(orientation.read(performance.now()));
     scene.update(now);
@@ -147,7 +186,7 @@ export async function startBox(options: StartBoxOptions): Promise<RunningBox> {
     },
     clearPlacement: () => scene.clearPlacement(),
     pick: (x, y) => scene.pick(x, y),
-    setCreatures: (entries) => scene.setCreatures(entries),
+    setCreatures: (entries) => scene.setCreatures(entries, { entrance: true }),
     setMode: (mode) => scene.setMode(mode),
     setSmoothing: (mode) => scene.setSmoothing(mode),
     setLighting: (on) => scene.setLighting(on),
@@ -173,6 +212,8 @@ export async function startBox(options: StartBoxOptions): Promise<RunningBox> {
       observer.disconnect();
       document.removeEventListener('visibilitychange', onVisibility);
       video?.removeEventListener('loadedmetadata', resize);
+      motionQuery?.removeEventListener?.('change', applyMotion);
+      clearSky();
       orientation.stop();
       scene.dispose();
       renderer.dispose();

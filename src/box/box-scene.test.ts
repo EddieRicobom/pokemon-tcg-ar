@@ -377,6 +377,130 @@ describe('BoxScene: clima', () => {
   });
 });
 
+describe('BoxScene: custo e vida', () => {
+  function arena(n: number): BoxScene {
+    const scene = sceneLookingDown();
+    scene.place(new Vector3(0, -1.3, -3.2), 1.2);
+    scene.setCreatures(Array.from({ length: n }, (_, i) => entry(i)));
+    return scene;
+  }
+  const shadows = (scene: BoxScene) => (scene as unknown as { shadows: { count: number; mesh: { material: { opacity: number } } } }).shadows;
+
+  it('todas as sombras saem numa chamada só e acompanham a população', () => {
+    const scene = arena(5);
+    scene.update(16);
+    expect(shadows(scene).count).toBe(5);
+    scene.setCreatures([entry(0)]);
+    scene.update(32);
+    expect(shadows(scene).count).toBe(1);
+    scene.dispose();
+  });
+
+  it('quem continua na caixa fica onde estava e só quem saiu é descartado', () => {
+    const scene = arena(3);
+    const list = [...scene.creatureList];
+    const entries = list.map((c) => ({ info: c.info, source: (c as unknown as { baseSource: CreatureEntry['source'] }).baseSource }));
+    const dispose = list.map((c) => vi.spyOn(c, 'dispose'));
+    const pos = { x: list[0]!.state.x, z: list[0]!.state.z };
+    scene.setCreatures([entries[0]!, entries[1]!]);
+    expect(scene.creatureList[0]).toBe(list[0]);
+    expect(scene.creatureList[0]!.state.x).toBe(pos.x);
+    expect(scene.creatureList[0]!.state.z).toBe(pos.z);
+    expect(dispose[0]).not.toHaveBeenCalled();
+    expect(dispose[2]).toHaveBeenCalledOnce();
+    scene.dispose();
+  });
+
+  it('fora da visão o GIF não avança, e a verba limita os quadros refeitos ao mesmo tempo', () => {
+    const scene = sceneLookingDown();
+    scene.place(new Vector3(0, -1.3, -3.2), 1.2);
+    const frame = () => ({ rgba: new Uint8ClampedArray(8 * 8 * 4).fill(200), delayMs: 100 });
+    const gif = { width: 8, height: 8, frames: [frame(), frame(), frame()], durationMs: 300 };
+    const many: CreatureEntry[] = Array.from({ length: 12 }, (_, i) => ({ info: { id: `g${i}`, name: 'G', detail: '', dexId: 1 }, source: { kind: 'gif', gif: { ...gif, frames: [...gif.frames] } as never } }));
+    scene.setCreatures(many);
+    scene.update(1000);
+    scene.update(1120);
+    const moved = scene.creatureList.filter((c) => c.currentFrame >= 1).length;
+    expect(moved).toBeLessThanOrEqual(4);
+    expect(moved).toBeGreaterThan(0);
+    // Olhando para o outro lado ninguém aparece e nenhum quadro é trocado.
+    scene.setCameraQuaternion(lookQuaternion(Math.PI, 0.6));
+    const before = scene.creatureList.map((c) => c.currentFrame);
+    for (let t = 1200; t < 2000; t += 16) scene.update(t);
+    expect(scene.creatureList.every((c) => !c.onScreen)).toBe(true);
+    expect(scene.creatureList.map((c) => c.currentFrame)).toEqual(before);
+    scene.dispose();
+  });
+
+  it('com muita gente os quadros não são ampliados; a textura volta ao tamanho cheio com poucos', () => {
+    const scene = arena(2);
+    const width = () => (scene.creatureList[0]!.mesh.material.map!.image as { width: number }).width;
+    const full = width();
+    const first = scene.creatureList[0]!;
+    const source = (first as unknown as { baseSource: CreatureEntry['source'] }).baseSource;
+    scene.setCreatures([{ info: first.info, source }, ...Array.from({ length: 20 }, (_, i) => entry(i + 50))]);
+    expect(scene.creatureList[0]).toBe(first);
+    expect(width()).toBeLessThan(full);
+    scene.setCreatures([{ info: first.info, source }]);
+    expect(width()).toBe(full);
+    scene.dispose();
+  });
+
+  it('a entrada faz o Pokémon crescer do chão e terminar no tamanho certo', () => {
+    const scene = sceneLookingDown();
+    scene.place(new Vector3(0, -1.3, -3.2), 1.2);
+    scene.setSocial(false);
+    scene.setCreatures([entry(0)], { entrance: true });
+    scene.update(16);
+    const c = scene.creatureList[0]!;
+    expect(Math.abs(c.mesh.scale.y)).toBeLessThan(c.height * 0.2);
+    for (let t = 16; t < 1200; t += 16) scene.update(t);
+    expect(c.mesh.scale.y).toBeCloseTo(c.height, 5);
+    expect(c.mesh.visible).toBe(true);
+    scene.dispose();
+  });
+
+  it('tocar num Pokémon faz os vizinhos olharem e reagirem, sem ficarem presos olhando', () => {
+    const scene = arena(2);
+    const [a, b] = scene.creatureList as [ReturnType<BoxScene['creatureList']['slice']>[number], ReturnType<BoxScene['creatureList']['slice']>[number]];
+    a.state.x = 0; a.state.z = 0; b.state.x = 0.4; b.state.z = 0;
+    scene.reactAround(a);
+    expect(b.bubbleEmoji).toBe('❗');
+    expect(b.fx.facing).not.toBeNull();
+    scene.update(100);
+    for (let t = 116; t < 1800; t += 16) scene.update(t);
+    expect(b.fx.facing).toBeNull();
+    scene.dispose();
+  });
+
+  it('movimento reduzido: sem pulinho, sem chuva caindo, mas o Pokémon continua lá', () => {
+    const scene = arena(1);
+    scene.setCalm(true);
+    scene.setWeather('chuva');
+    const c = scene.creatureList[0]!;
+    c.poke();
+    scene.update(16);
+    scene.update(100);
+    expect(c.mesh.position.y).toBe(0);
+    for (let t = 1; t < 400; t++) scene.update(100 + t * 50);
+    expect((scene as unknown as { weatherFx: { counts: { rain: number } } }).weatherFx.counts.rain).toBe(0);
+    scene.dispose();
+  });
+
+  it('nuvem e noite enfraquecem a sombra', () => {
+    const clear = arena(1);
+    clear.setWeather('off');
+    clear.update(16);
+    const night = arena(1);
+    night.setWeather('off');
+    night.setDaylight(0.6, 0.6, 0.9, 1);
+    night.update(16);
+    expect(shadows(night).mesh.material.opacity).toBeLessThan(shadows(clear).mesh.material.opacity);
+    clear.dispose();
+    night.dispose();
+  });
+});
+
 describe('BoxScene com o palco virtual (Arena)', () => {
   it('o cenário do Coliseu só aparece com a caixa colocada e vai para o centro dela', () => {
     const scene = sceneLookingDown();
@@ -416,6 +540,46 @@ describe('BoxScene com o palco virtual (Arena)', () => {
     expect(scene.coliseu!.detail).toBe(false);
     scene.setScenery(true);
     expect(scene.coliseu!.detail).toBe(true);
+    scene.dispose();
+  });
+
+  it('o clima aparece no Coliseu: a chuva cai na arena, a areia molha e o Pokémon tem onde se refletir', () => {
+    const scene = sceneLookingDown();
+    scene.setBackdrop('virtual');
+    scene.place(new Vector3(0, -1.3, -3.2));
+    scene.setCreatures([entry(0)]);
+    scene.setWeather('chuva');
+    for (let t = 1; t < 4000; t++) scene.update(t * 50);
+    const fx = (scene as unknown as { weatherFx: { group: { visible: boolean; parent: { visible: boolean } | null }; counts: { rain: number }; puddleStrengthAt(x: number, z: number): number } }).weatherFx;
+    expect(fx.group.visible).toBe(true);
+    expect(fx.group.parent!.visible).toBe(true);
+    expect(fx.counts.rain).toBeGreaterThan(500);
+    let best = 0;
+    for (let x = -4; x <= 4; x += 0.1) for (let z = -4; z <= 4; z += 0.1) best = Math.max(best, fx.puddleStrengthAt(x, z));
+    expect(best).toBeGreaterThan(0.5);
+    scene.dispose();
+  });
+
+  it('desligar e religar o clima devolve as poças', () => {
+    const scene = sceneLookingDown();
+    scene.setBackdrop('virtual');
+    scene.place(new Vector3(0, -1.3, -3.2));
+    scene.setWeather('chuva');
+    let t = 1;
+    for (; t < 4000; t++) scene.update(t * 50);
+    const fx = (scene as unknown as { weatherFx: { puddleStrengthAt(x: number, z: number): number } }).weatherFx;
+    const wettest = () => {
+      let best = 0;
+      for (let x = -4; x <= 4; x += 0.1) for (let z = -4; z <= 4; z += 0.1) best = Math.max(best, fx.puddleStrengthAt(x, z));
+      return best;
+    };
+    expect(wettest()).toBeGreaterThan(0.5);
+    scene.setWeather('off');
+    scene.update(++t * 50);
+    expect(wettest()).toBe(0);
+    scene.setWeather('chuva');
+    scene.update(++t * 50);
+    expect(wettest()).toBeGreaterThan(0.5);
     scene.dispose();
   });
 

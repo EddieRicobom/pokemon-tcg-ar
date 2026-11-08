@@ -94,4 +94,19 @@ describe('população da caixa', () => {
     expect(r.entries[1]?.info).toMatchObject({ name: 'Charmander', dexId: 4, digital: true, detail: 'Digital Pokémon' });
     expect(r.failed).toEqual([{ name: 'Squirtle', reason: expect.stringContaining('sprite indisponível') }]);
   });
+
+  it('reaproveita o que já está decodificado e para quando a leitura perde a validade', async () => {
+    let decoded = 0;
+    const counting: CreatureDecoders = { ...decoders, gif: async (blob) => { decoded++; return decoders.gif(blob); } };
+    const cards = [card(1), card(2), card(3)];
+    const cache = { list: async () => cards, getAssetBlob: async () => new Blob(['x']) };
+    const first = await loadCreatureEntries(cache, counting);
+    expect(decoded).toBe(3);
+    const again = await loadCreatureEntries(cache, counting, undefined, undefined, undefined, { reuse: new Map(first.entries.map((e) => [e.info.id, e])) });
+    expect(decoded).toBe(3);
+    expect(again.entries[0]).toBe(first.entries[0]);
+    let calls = 0;
+    const stopped = await loadCreatureEntries(cache, counting, undefined, undefined, undefined, { cancelled: () => ++calls > 1 });
+    expect(stopped.entries).toHaveLength(1);
+  });
 });

@@ -1,7 +1,8 @@
 import {
-  DataTexture, DoubleSide, Group, LinearFilter, Mesh, MeshBasicMaterial, NearestFilter, PlaneGeometry, RGBAFormat, SRGBColorSpace, Sprite, SpriteMaterial,
-  UnsignedByteType, Vector3, CircleGeometry,
+  DataTexture, DoubleSide, Group, LinearFilter, Mesh, MeshBasicMaterial, NearestFilter, PlaneGeometry, RGBAFormat, SRGBColorSpace, Sphere, Sprite, SpriteMaterial,
+  UnsignedByteType, Vector3,
 } from 'three';
+import type { Frustum } from 'three';
 import { ShinyAura } from '../ar/shiny-aura';
 import { BUBBLE_ASPECT, bubbleTexture } from './emoji-bubble';
 import { enableRelight } from './fx-lights';
@@ -66,6 +67,8 @@ interface BubbleState {
 
 const BUBBLE_POP_MS = 200;
 const BUBBLE_FADE_MS = 300;
+/** Quanto dura o pulo de quem acaba de entrar na arena. */
+const ENTER_MS = 520;
 
 function easeOutBack(t: number): number {
   const c1 = 1.70158;
@@ -83,6 +86,8 @@ const MAX_HEIGHT_M = 0.9;
 const SPRITE_FACES_LEFT = true;
 /** Ampliação dentro da caixa (×2): a tela mostra o Pokémon pequeno e há muitos ao mesmo tempo. */
 const BOX_MAX_UPSCALE = 2;
+/** A partir de quantos Pokémon os quadros deixam de ser ampliados. */
+const FULL_UPSCALE_MAX_CREATURES = 14;
 /** Memória máxima de quadros suavizados por Pokémon quando a caixa tem poucos. */
 const FRAME_CACHE_BYTES = 6 * 1024 * 1024;
 /** Memória total (todos os Pokémon da caixa) para os quadros suavizados: com 40 na caixa, cada um fica com menos. */
@@ -93,6 +98,23 @@ export function frameCacheFor(count: number): number {
   const share = BOX_FRAME_BUDGET_BYTES / (Number.isFinite(count) ? Math.max(1, count) : 1);
   return Math.floor(Math.min(FRAME_CACHE_BYTES, Math.max(512 * 1024, share)));
 }
+
+/**
+ * Ampliação dos quadros para uma caixa com `count` Pokémon. Com muita gente cada um ocupa pouco da tela, ampliar não
+ * aparece, e sem ampliar todos os quadros cabem na memória de cada um (senão eles eram refeitos a cada volta do GIF).
+ */
+export function upscaleFor(count: number): 1 | 2 {
+  return count > FULL_UPSCALE_MAX_CREATURES ? 1 : BOX_MAX_UPSCALE;
+}
+
+/** O que a cena entrega a cada quadro para poupar o que não aparece. */
+export interface CreatureView {
+  frustum: Frustum;
+  /** Quantos quadros ainda podem ser ampliados agora (a conta é cara e não pode empilhar num quadro só). */
+  budget: { left: number };
+}
+
+const scratchSphere = new Sphere();
 
 interface PreparedFrame {
   data: Uint8ClampedArray;
@@ -119,16 +141,24 @@ export const BOX_METERS_PER_RELATIVE = 0.26;
 /** A forma Mega cresce pela arte (desenho maior que o da forma base), até este fator. */
 export const MEGA_MAX_GROWTH = 1.5;
 
+const boundsCache = new WeakMap<object, ContentBounds>();
+
+/** Medir varre todos os quadros do GIF: uma vez por sprite basta. */
 function boundsOf(source: CreatureSource): ContentBounds {
-  return contentBounds(source.kind === 'gif' ? source.gif : { width: source.image.width, height: source.image.height, frames: [{ rgba: source.image.data, delayMs: 0 }] });
+  const key = source.kind === 'gif' ? source.gif : source.image;
+  let bounds = boundsCache.get(key);
+  if (!bounds) {
+    bounds = contentBounds(source.kind === 'gif' ? source.gif : { width: source.image.width, height: source.image.height, frames: [{ rgba: source.image.data, delayMs: 0 }] });
+    boundsCache.set(key, bounds);
+  }
+  return bounds;
 }
 
 /** Fração da altura do quadro ocupada pelo desenho, e a altura do desenho em pixels. */
 function measure(source: CreatureSource): { frac: number; px: number } {
-  const gif = source.kind === 'gif' ? source.gif : { width: source.image.width, height: source.image.height, frames: [{ rgba: source.image.data, delayMs: 0 }] };
-  const b = contentBounds(gif);
+  const b = boundsOf(source);
   const frac = Math.max(0.2, b.bottom - b.top);
-  return { frac, px: frac * gif.height };
+  return { frac, px: frac * (source.kind === 'gif' ? source.gif.height : source.image.height) };
 }
 
 /**
@@ -148,7 +178,11 @@ export function creatureSizeFor(dexId: number | undefined, source: CreatureSourc
 export class BoxCreature {
   readonly group = new Group();
   readonly mesh: Mesh<PlaneGeometry, MeshBasicMaterial>;
-  readonly shadow: Mesh<CircleGeometry, MeshBasicMaterial>;
+  /** Tamanho da sombra neste quadro (a cena desenha todas juntas, ver shadow-batch.ts). */
+  shadowX = 0;
+  shadowZ = 0;
+  /** Apareceu no último quadro? Fora da visão o GIF não é avançado. */
+  onScreen = true;
   width: number;
   height: number;
   private texture: DataTexture;
@@ -184,8 +218,20 @@ export class BoxCreature {
   /** Reflexo na poça (de ponta-cabeça sob os pés); null até a primeira poça. */
   private reflection: Mesh<PlaneGeometry, MeshBasicMaterial> | null = null;
   private reflectionStrength = 0;
+  /** Movimento reduzido: sem pulinhos nem balanço (o GIF e o passeio continuam). */
+  calm = false;
+  private enterDelayMs = 0;
+  private enterLeftMs = 0;
+  /** Olhando para o lado de alguém por um instante; ao acabar o olhar volta a seguir o movimento. */
+  private lookMs = 0;
 
-  constructor(readonly info: CreatureInfo, source: CreatureSource, readonly state: WanderState, private readonly frameCacheLimit = FRAME_CACHE_BYTES) {
+  constructor(
+    readonly info: CreatureInfo,
+    source: CreatureSource,
+    readonly state: WanderState,
+    private frameCacheLimit = FRAME_CACHE_BYTES,
+    private maxUpscale: 1 | 2 = BOX_MAX_UPSCALE,
+  ) {
     this.baseSource = source;
     const first = source.kind === 'gif' ? source.gif.frames[0]?.rgba : source.image.data;
     const width = source.kind === 'gif' ? source.gif.width : source.image.width;
@@ -205,14 +251,9 @@ export class BoxCreature {
     geometry.translate(0, 0.5, 0); // origem nos pés
     this.mesh = new Mesh(geometry, new MeshBasicMaterial({ map: this.texture, alphaTest: 0.5, side: DoubleSide }));
     this.mesh.scale.set(this.width, this.height, 1);
-    this.shadow = new Mesh(
-      new CircleGeometry(0.5, 20),
-      new MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.28, depthWrite: false }),
-    );
-    this.shadow.rotation.x = -Math.PI / 2;
-    this.shadow.position.y = 0.004;
-    this.shadow.scale.set(this.width * 0.8, this.width * 0.45, 1);
-    this.group.add(this.shadow, this.mesh);
+    this.shadowX = this.width * 0.8;
+    this.shadowZ = this.width * 0.45;
+    this.group.add(this.mesh);
     this.mesh.userData.creature = this;
     if (info.shiny) this.setShiny(true);
   }
@@ -355,7 +396,7 @@ export class BoxCreature {
   private prepare(index: number, rgba: Uint8ClampedArray): PreparedFrame {
     const cached = this.frameCache.get(index);
     if (cached) return cached;
-    const up = upscaleSprite(rgba, this.spriteWidth, this.spriteHeight, BOX_MAX_UPSCALE, this.smoothing);
+    const up = upscaleSprite(rgba, this.spriteWidth, this.spriteHeight, this.maxUpscale, this.smoothing);
     const prepared: PreparedFrame = { data: up.data, width: up.width, height: up.height };
     if (this.frameCacheBytes + prepared.data.byteLength <= this.frameCacheLimit) {
       this.frameCache.set(index, prepared);
@@ -381,6 +422,10 @@ export class BoxCreature {
   setSmoothing(mode: SmoothingMode): void {
     if (mode === this.smoothing) return;
     this.smoothing = mode;
+    this.rebuildFrames();
+  }
+
+  private rebuildFrames(): void {
     this.frameCache.clear();
     this.frameCacheBytes = 0;
     const old = this.texture;
@@ -388,6 +433,37 @@ export class BoxCreature {
     this.mesh.material.map = this.texture;
     this.mesh.material.needsUpdate = true;
     old.dispose();
+  }
+
+  /** Este Pokémon continua na caixa, que mudou de tamanho: ajusta a memória dos quadros sem recomeçar. */
+  tune(frameCacheLimit: number, maxUpscale: 1 | 2): void {
+    this.frameCacheLimit = frameCacheLimit;
+    if (maxUpscale !== this.maxUpscale) {
+      this.maxUpscale = maxUpscale;
+      this.rebuildFrames();
+    } else if (this.frameCacheBytes > frameCacheLimit) {
+      this.frameCache.clear();
+      this.frameCacheBytes = 0;
+    }
+  }
+
+  /** É este o sprite com que o Pokémon nasceu? */
+  hasSource(source: CreatureSource): boolean {
+    return source === this.baseSource;
+  }
+
+  /** Chegada na arena: depois de `delayMs` cresce do chão com um pulinho. */
+  enter(delayMs: number): void {
+    this.enterDelayMs = Math.max(0, delayMs);
+    this.enterLeftMs = ENTER_MS;
+  }
+
+  /** Olha para a direção (x, z) do chão por `ms` milissegundos. */
+  lookToward(x: number, z: number, ms: number): void {
+    const length = Math.hypot(x, z);
+    if (length < 1e-4) return;
+    this.fx.facing = { x: x / length, z: z / length };
+    this.lookMs = ms;
   }
 
   /** Liga a iluminação dos golpes e do ambiente neste sprite (ver fx-lights.ts). */
@@ -441,21 +517,32 @@ export class BoxCreature {
     }
     const age = b.total - b.left;
     const width = Math.min(0.3, Math.max(0.17, this.height * 0.6));
-    const pop = age < BUBBLE_POP_MS ? Math.max(0, easeOutBack(age / BUBBLE_POP_MS)) : 1;
+    const pop = !this.calm && age < BUBBLE_POP_MS ? Math.max(0, easeOutBack(age / BUBBLE_POP_MS)) : 1;
     b.sprite.scale.set(width * pop, width * BUBBLE_ASPECT * pop, 1);
-    const bob = Math.sin(nowMs * 0.004) * 0.012;
+    const bob = this.calm ? 0 : Math.sin(nowMs * 0.004) * 0.012;
     b.sprite.position.set(0, this.mesh.position.y + this.height * this.fx.scale * this.fx.squash + 0.03 + bob, 0);
     b.sprite.material.opacity = Math.min(1, b.left / BUBBLE_FADE_MS);
   }
 
   /**
    * `base` = ponto do chão no centro da caixa; `camera` = posição da câmera; `right` = eixo "direita da tela"
-   * (para decidir para que lado espelhar).
+   * (para decidir para que lado espelhar); `view` poupa o que está fora da tela.
    */
-  update(nowMs: number, dtMs: number, base: Vector3, camera: Vector3, right: Vector3): void {
+  update(nowMs: number, dtMs: number, base: Vector3, camera: Vector3, right: Vector3, view?: CreatureView): void {
     const s = this.state;
     const fx = this.fx;
     this.group.position.set(base.x + s.x + fx.dx, base.y + this.groundY, base.z + s.z + fx.dz);
+    if (view) {
+      scratchSphere.center.set(this.group.position.x, this.group.position.y + this.height / 2, this.group.position.z);
+      scratchSphere.radius = Math.max(this.width, this.height) * 0.8;
+      this.onScreen = view.frustum.intersectsSphere(scratchSphere);
+    } else {
+      this.onScreen = true;
+    }
+    if (this.lookMs > 0) {
+      this.lookMs -= dtMs;
+      if (this.lookMs <= 0) fx.facing = null;
+    }
     const toCameraX = camera.x - this.group.position.x;
     const toCameraZ = camera.z - this.group.position.z;
     this.mesh.rotation.order = 'YXZ';
@@ -466,23 +553,37 @@ export class BoxCreature {
     // O sinal negativo inclinava a arte para longe do observador e fazia os Pokémon parecerem virados.
     this.mesh.rotation.x = Math.min(MAX_LEAN_RAD, Math.max(0, elevation * LEAN_FRACTION));
     const moving = s.vx !== 0 || s.vz !== 0;
-    const heading = fx.facing ?? (moving ? { x: s.vx, z: s.vz } : null);
-    if (heading) {
-      const side = heading.x * right.x + heading.z * right.z;
+    if (fx.facing || moving) {
+      const side = fx.facing ? fx.facing.x * right.x + fx.facing.z * right.z : s.vx * right.x + s.vz * right.z;
       if (Math.abs(side) > 0.02) this.flip = (side > 0) === SPRITE_FACES_LEFT ? -1 : 1;
     }
-    this.mesh.scale.x = this.width * this.flip * fx.scale;
-    this.mesh.scale.y = this.height * fx.scale * fx.squash;
+    // Entrada na arena: espera a vez, cresce do chão e cai com um pulinho.
+    let appear = 1;
+    let entryLift = 0;
+    if (this.enterLeftMs > 0) {
+      if (this.enterDelayMs > 0) {
+        this.enterDelayMs = Math.max(0, this.enterDelayMs - dtMs);
+        appear = 0;
+      } else {
+        this.enterLeftMs = Math.max(0, this.enterLeftMs - dtMs);
+        const t = 1 - this.enterLeftMs / ENTER_MS;
+        appear = Math.max(0, easeOutBack(t));
+        entryLift = (1 - t) * (1 - t) * 0.45;
+      }
+    }
+    this.mesh.visible = appear > 0.001;
+    this.mesh.scale.x = this.width * this.flip * fx.scale * appear;
+    this.mesh.scale.y = this.height * fx.scale * fx.squash * appear;
     this.mesh.rotation.z = fx.faint * 1.35 * -this.flip;
     // Desmaiado fica escuro; levar golpe tinge de vermelho.
     const dark = 1 - fx.faint * 0.6;
     this.mesh.material.color.setHex(fx.tint).multiplyScalar(dark);
-    let hop = moving ? Math.abs(Math.sin(s.hopPhase)) * 0.05 : 0;
+    let hop = moving && !this.calm ? Math.abs(Math.sin(s.hopPhase)) * 0.05 : 0;
     if (this.pulseMs > 0) {
       this.pulseMs = Math.max(0, this.pulseMs - dtMs);
-      hop += Math.sin((1 - this.pulseMs / 500) * Math.PI) * 0.12;
+      if (!this.calm) hop += Math.sin((1 - this.pulseMs / 500) * Math.PI) * 0.12;
     }
-    hop += fx.dy;
+    hop += fx.dy + entryLift;
     this.mesh.position.y = hop;
     this.updateBubble(dtMs, nowMs);
     this.updateReflection();
@@ -500,21 +601,24 @@ export class BoxCreature {
       this.accessory.scale.set(at.w * kx * this.flip, at.h * ky, 1);
       this.accessory.position.set((at.x + at.w / 2 - W / 2) * kx * this.flip, this.mesh.position.y + (H - at.y - at.h / 2) * ky, at.behind ? -0.002 : 0.002);
       this.accessory.renderOrder = at.behind ? -1 : 1;
-      this.accessory.visible = fx.faint < 0.5 && !at.hidden;
+      this.accessory.visible = fx.faint < 0.5 && !at.hidden && appear > 0.98;
     }
-    if (this.aura) {
+    if (this.aura && this.onScreen) {
       this.aura.update(nowMs);
       this.aura.group.visible = fx.faint < 0.5;
     }
-    const shadowScale = 1 - Math.min(0.3, Math.max(0, hop) * 2);
-    this.shadow.scale.set(this.width * 0.8 * shadowScale, this.width * 0.45 * shadowScale, 1);
+    const shadowScale = (1 - Math.min(0.3, Math.max(0, hop) * 2)) * appear;
+    this.shadowX = this.width * 0.8 * shadowScale;
+    this.shadowZ = this.width * 0.45 * shadowScale;
 
-    if (this.gif) {
+    if (this.gif && this.onScreen) {
       if (this.startedAt === 0) this.startedAt = nowMs;
       const index = frameIndexAt(this.gif, nowMs - this.startedAt);
       if (index !== this.shownFrame) {
         const frame = this.gif.frames[index];
-        if (frame) {
+        // Sem verba neste quadro, mostra o atual e tenta de novo no próximo.
+        const affordable = !view || this.frameCache.has(index) || view.budget.left-- > 0;
+        if (frame && affordable) {
           this.shownFrame = index;
           this.lastRgba = frame.rgba;
           this.texture.image.data = asBytes(this.prepare(index, frame.rgba).data);
@@ -537,8 +641,6 @@ export class BoxCreature {
     this.texture.dispose();
     this.mesh.geometry.dispose();
     this.mesh.material.dispose();
-    this.shadow.geometry.dispose();
-    this.shadow.material.dispose();
     this.group.removeFromParent();
   }
 }

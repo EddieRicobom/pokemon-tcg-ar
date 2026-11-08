@@ -1,24 +1,36 @@
 import {
-  BufferGeometry, Float32BufferAttribute, Group, Line, LineBasicMaterial, LineLoop, Mesh, MeshBasicMaterial, PerspectiveCamera, PlaneGeometry,
+  BufferGeometry, Float32BufferAttribute, Frustum, Group, Line, LineBasicMaterial, LineLoop, Matrix4, Mesh, MeshBasicMaterial, PerspectiveCamera, PlaneGeometry,
   Quaternion, Raycaster, Scene, Vector2, Vector3,
 } from 'three';
-import { BoxCreature, frameCacheFor } from './creature';
-import type { CreatureInfo, CreatureSource } from './creature';
+import { BoxCreature, frameCacheFor, upscaleFor } from './creature';
+import type { CreatureInfo, CreatureSource, CreatureView } from './creature';
+import { ShadowBatch } from './shadow-batch';
 import { intersectFloor, keepBoxAway } from './floor';
 import type { FloorResult } from './floor';
 import { formationSlots } from './formation';
 import { createWander, separate, stepToward, stepWander } from './wander';
 import { FxLights } from './fx-lights';
 import { Ground } from './ground';
-import { ColiseuScenery } from './coliseu-scenery';
+import { ColiseuScenery, SCENERY_RADIUS } from './coliseu-scenery';
 import { disposeBubbleTextures } from './emoji-bubble';
 import { SocialDirector } from './social';
+import type { SocialHooks } from './social';
 import { DEFAULT_SMOOTHING } from '../core/pixel-upscale';
 import type { SmoothingMode } from '../core/pixel-upscale';
 import type { Rng } from './wander';
 
 export const MAX_CREATURES = 40;
 export const DEFAULT_HALF_SIZE_M = 1.2;
+/** Meio-lado (m) da chuva e da neve no Coliseu: cobre a arena à vista da câmera, não só a caixa dos Pokémon. */
+const ARENA_WEATHER_HALF_M = 3;
+/** Quantos quadros de GIF podem ser ampliados num mesmo quadro da tela, somando todos os Pokémon. */
+const FRAME_PREPARE_BUDGET = 4;
+/** A luz nunca desce disto: noite com chuva escurece, mas o Pokémon continua visível. */
+const MIN_AMBIENT = 0.45;
+/** Até onde (m) os vizinhos notam que um Pokémon foi tocado, e quantos reagem. */
+const NOTICE_RADIUS_M = 0.75;
+const NOTICE_MAX = 3;
+const BASE_SHADOW_OPACITY = 0.28;
 
 export type BoxMode = 'passeio' | 'formacao';
 /** O que fica atrás da cena: a câmera do celular (AR) ou o palco virtual do Coliseu. */
@@ -48,6 +60,18 @@ export class BoxScene {
   private readonly floor = new Group();
   private readonly raycaster = new Raycaster();
   private creatures: BoxCreature[] = [];
+  /** Os `state` de `creatures`, para não remontar a lista a cada quadro. */
+  private states: BoxCreature['state'][] = [];
+  private readonly shadows = new ShadowBatch(MAX_CREATURES);
+  private readonly frustum = new Frustum();
+  private readonly projView = new Matrix4();
+  private readonly view: CreatureView = { frustum: this.frustum, budget: { left: FRAME_PREPARE_BUDGET } };
+  private readonly right = new Vector3();
+  private tickCount = 0;
+  /** Movimento reduzido (`prefers-reduced-motion`). */
+  private calm = false;
+  /** 0 de dia, 1 de noite (no Coliseu, pela hora do aparelho). */
+  private night = 0;
   private anchor: Vector3 | null = null;
   private half = DEFAULT_HALF_SIZE_M;
   private lastNow = 0;
@@ -73,6 +97,8 @@ export class BoxScene {
   private weatherMode: WeatherMode = 'ciclo';
   private readonly weather: WeatherState;
   private readonly weatherFx = new WeatherFx();
+  /** O clima fica fora do grupo do chão: o chão da caixa some no Coliseu, e a chuva sumia junto. */
+  private readonly weatherRoot = new Group();
 
   constructor(rng: Rng = Math.random) {
     this.rng = rng;
@@ -80,8 +106,17 @@ export class BoxScene {
     this.weather = createWeather(rng);
     this.camera.position.set(0, 0, 0);
     this.floor.visible = false;
-    this.scene.add(this.floor);
+    this.weatherRoot.visible = false;
+    this.weatherRoot.add(this.weatherFx.group);
+    this.shadows.mesh.visible = false;
+    this.scene.add(this.floor, this.weatherRoot, this.shadows.mesh);
   }
+
+  private readonly socialHooks: SocialHooks = {
+    bubble: (i, emoji, ms) => this.creatures[i]?.say(emoji, ms),
+    hop: (i) => this.creatures[i]?.poke(),
+    cheer: () => this.scenery?.cheer(this.lastNow),
+  };
 
   get placed(): boolean {
     return this.anchor !== null;
@@ -106,6 +141,8 @@ export class BoxScene {
     if (kind === 'virtual') {
       this.scenery = new ColiseuScenery();
       this.scenery.setDetail(this.sceneryDetail);
+      this.scenery.setCalm(this.calm);
+      this.scenery.setGlow(this.night);
       this.scene.add(this.scenery.group);
     } else {
       this.scenery?.dispose();
@@ -125,6 +162,8 @@ export class BoxScene {
 
   /** O cenário fica no chão, no centro da caixa colocada (escondido enquanto não há caixa). */
   private syncScenery(): void {
+    this.weatherRoot.visible = this.anchor !== null;
+    if (this.anchor) this.weatherRoot.position.copy(this.anchor);
     if (!this.scenery) return;
     this.scenery.group.visible = this.anchor !== null;
     if (this.anchor) this.scenery.group.position.copy(this.anchor);
@@ -229,8 +268,8 @@ export class BoxScene {
     );
     this.floor.add(plane, outline);
     // O clima mora no chão da caixa: camadas sobre o chão em pixel art e as gotas e flocos no volume da caixa.
-    this.weatherFx.setGround(this.boxGround, h);
-    this.floor.add(this.weatherFx.group);
+    if (this.backdrop === 'virtual') this.weatherFx.setArena(SCENERY_RADIUS, ARENA_WEATHER_HALF_M);
+    else this.weatherFx.setGround(this.boxGround, h);
     // Cantos em "L" para a caixa parecer uma caixa.
     const tick = Math.min(0.25, h * 0.3);
     for (const [sx, sz] of [[-1, -1], [1, -1], [1, 1], [-1, 1]] as const) {
@@ -254,6 +293,21 @@ export class BoxScene {
   /** Luz do ambiente real (da câmera): multiplica a cor dos sprites. Mudanças são suavizadas. */
   setEnvironment(r: number, g: number, b: number): void {
     this.envTarget.set(r, g, b);
+  }
+
+  /** A luz da hora do dia no Coliseu (`night` de 0 a 1 acende as tochas e deixa a turma com sono). */
+  setDaylight(r: number, g: number, b: number, night: number): void {
+    this.setEnvironment(r, g, b);
+    this.night = night;
+    this.scenery?.setGlow(night);
+  }
+
+  /** Movimento reduzido: tira pulinhos, ola, chuva caindo e o tremor das chamas; o Pokémon continua passeando. */
+  setCalm(on: boolean): void {
+    this.calm = on;
+    this.weatherFx.setCalm(on);
+    this.scenery?.setCalm(on);
+    for (const creature of this.creatures) creature.calm = on;
   }
 
   /** Liga ou desliga a luz do ambiente nos sprites e no chão. */
@@ -299,20 +353,58 @@ export class BoxScene {
     if (mode === 'formacao') this.stopSocial();
   }
 
-  /** Troca a população da caixa (até `MAX_CREATURES`). */
-  setCreatures(entries: CreatureEntry[]): void {
+  /**
+   * Troca a população da caixa (até `MAX_CREATURES`). Quem continua fica onde está, com a textura e os quadros que já
+   * tinha: mexer em «Quem passeia» não teletransporta a turma nem recomeça o trabalho de todo mundo.
+   */
+  setCreatures(entries: CreatureEntry[], options: { entrance?: boolean } = {}): void {
     this.social.reset(this.creatures);
-    for (const creature of this.creatures) creature.dispose();
-    this.creatures = [];
     const chosen = entries.slice(0, MAX_CREATURES);
     const cacheLimit = frameCacheFor(chosen.length);
+    const upscale = upscaleFor(chosen.length);
+    const leaving = new Map(this.creatures.map((c) => [c.info.id, c]));
+    const next: BoxCreature[] = [];
+    let arrivals = 0;
     for (const entry of chosen) {
+      const kept = leaving.get(entry.info.id);
+      if (kept?.hasSource(entry.source)) {
+        leaving.delete(entry.info.id);
+        kept.tune(cacheLimit, upscale);
+        next.push(kept);
+        continue;
+      }
       const state = createWander(this.half, this.rng);
-      const creature = new BoxCreature(entry.info, entry.source, state, cacheLimit);
+      const creature = new BoxCreature(entry.info, entry.source, state, cacheLimit, upscale);
       creature.setSmoothing(this.smoothing);
       creature.attachLights(this.fx);
+      creature.calm = this.calm;
+      if (options.entrance && !this.calm) creature.enter(Math.min(1200, arrivals * 70));
+      arrivals++;
       this.scene.add(creature.group);
-      this.creatures.push(creature);
+      next.push(creature);
+    }
+    for (const creature of leaving.values()) creature.dispose();
+    this.creatures = next;
+    this.states = next.map((c) => c.state);
+  }
+
+  /** Os vizinhos de quem foi tocado param, olham para ele e levam um susto. */
+  reactAround(target: BoxCreature): void {
+    if (!this.socialOn || this.mode !== 'passeio') return;
+    let noticed = 0;
+    for (let i = 0; i < this.creatures.length && noticed < NOTICE_MAX; i++) {
+      const creature = this.creatures[i]!;
+      if (creature === target || this.social.isBusy(i)) continue;
+      const dx = target.state.x - creature.state.x;
+      const dz = target.state.z - creature.state.z;
+      if (dx * dx + dz * dz > NOTICE_RADIUS_M * NOTICE_RADIUS_M) continue;
+      noticed++;
+      creature.state.vx = 0;
+      creature.state.vz = 0;
+      creature.state.pauseMs = Math.max(creature.state.pauseMs, 1000);
+      creature.lookToward(dx, dz, 1100);
+      creature.poke();
+      if (!creature.bubbleEmoji) creature.say('❗', 1100);
     }
   }
 
@@ -324,23 +416,26 @@ export class BoxScene {
     this.lastNow = nowMs;
     const placed = this.anchor;
     for (const creature of this.creatures) creature.group.visible = placed !== null;
+    this.shadows.mesh.visible = placed !== null;
     if (!placed) return;
     const base = placed;
+    const creatures = this.creatures;
     if (this.mode === 'formacao') {
       // Em fila de frente para a câmera: cada um anda até a sua vaga.
-      const slots = formationSlots(this.creatures.length, this.half, -base.x, -base.z);
-      this.creatures.forEach((creature, i) => {
+      const slots = formationSlots(creatures.length, this.half, -base.x, -base.z);
+      for (let i = 0; i < creatures.length; i++) {
         const slot = slots[i];
-        if (slot) stepToward(creature.state, slot.x, slot.z, dt, 0.9);
-      });
+        if (slot) stepToward(creatures[i]!.state, slot.x, slot.z, dt, 0.9);
+      }
     } else {
       if (this.socialOn) {
-        this.social.update(dt, this.creatures, this.half, { bubble: (i, emoji, ms) => this.creatures[i]?.say(emoji, ms), hop: (i) => this.creatures[i]?.poke() });
+        this.social.setMood(this.weatherMode === 'off' ? null : this.weather.kind, this.night > 0.6);
+        this.social.update(dt, creatures, this.half, this.socialHooks);
       }
-      this.creatures.forEach((creature, i) => {
-        if (!this.socialOn || !this.social.isBusy(i)) stepWander(creature.state, dt, this.half, this.rng);
-      });
-      separate(this.creatures.map((c) => c.state), 0.28, this.half);
+      for (let i = 0; i < creatures.length; i++) {
+        if (!this.socialOn || !this.social.isBusy(i)) stepWander(creatures[i]!.state, dt, this.half, this.rng);
+      }
+      separate(this.states, 0.28, this.half);
     }
     const weatherOn = this.weatherMode !== 'off';
     const mode = this.weatherMode;
@@ -349,27 +444,41 @@ export class BoxScene {
     // Luz: ambiente real (suave), e o clima tinge por cima.
     this.env.lerp(this.envTarget, Math.min(1, dt / 600));
     const [wr, wg, wb] = weatherOn ? weatherTint(this.weather) : [1, 1, 1];
-    if (this.lighting) this.fx.setAmbient(this.env.x * wr, this.env.y * wg, this.env.z * wb);
-    else this.fx.setAmbient(1, 1, 1);
-    this.fx.setLights([], null);
+    const lightX = this.lighting ? Math.max(MIN_AMBIENT, this.env.x * wr) : 1;
+    const lightY = this.lighting ? Math.max(MIN_AMBIENT, this.env.y * wg) : 1;
+    const lightZ = this.lighting ? Math.max(MIN_AMBIENT, this.env.z * wb) : 1;
+    this.fx.setAmbient(lightX, lightY, lightZ);
     // O chão e os enfeites seguem a luz do ambiente, como os Pokémon.
-    const gx = this.lighting ? Math.min(1.1, this.env.x * wr) : 1;
-    const gy = this.lighting ? Math.min(1.1, this.env.y * wg) : 1;
-    const gz = this.lighting ? Math.min(1.1, this.env.z * wb) : 1;
+    const gx = Math.min(1.1, lightX);
+    const gy = Math.min(1.1, lightY);
+    const gz = Math.min(1.1, lightZ);
     this.boxGround?.setTint(gx, gy, gz);
+    this.weatherFx.setTint(gx, gy, gz);
     this.scenery?.setTint(gx, gy, gz);
     this.scenery?.update(nowMs);
     this.camera.updateMatrixWorld(true);
-    const right = new Vector3(1, 0, 0).applyQuaternion(this.camera.quaternion);
+    const right = this.right.set(1, 0, 0).applyQuaternion(this.camera.quaternion);
     right.y = 0;
     if (right.lengthSq() > 1e-6) right.normalize();
-    // Cada Pokémon pisa na altura do terreno sob ele.
-    for (const creature of this.creatures) {
+    this.frustum.setFromProjectionMatrix(this.projView.multiplyMatrices(this.camera.projectionMatrix, this.camera.matrixWorldInverse));
+    this.view.budget.left = FRAME_PREPARE_BUDGET;
+    // Debaixo de nuvem (e à noite) a sombra fica mais fraca.
+    this.shadows.setOpacity(BASE_SHADOW_OPACITY * (1 - 0.5 * (weatherOn ? this.weather.cloud : 0)) * (1 - 0.35 * (this.lighting ? this.night : 0)));
+    this.shadows.begin();
+    // O primeiro da fila muda a cada quadro, para a verba de ampliação não favorecer sempre os mesmos.
+    const count = creatures.length;
+    const first = count > 0 ? this.tickCount++ % count : 0;
+    for (let k = 0; k < count; k++) {
+      const creature = creatures[(first + k) % count]!;
+      // Cada Pokémon pisa na altura do terreno sob ele.
       creature.groundY = this.boxGround?.heightAt(creature.state.x, creature.state.z) ?? 0;
       // Pisando numa poça: o Pokémon aparece refletido nela.
       creature.setReflection(weatherOn ? this.weatherFx.puddleStrengthAt(creature.state.x, creature.state.z) : 0);
-      creature.update(nowMs, dt, base, this.camera.position, right);
+      creature.update(nowMs, dt, base, this.camera.position, right, this.view);
+      const at = creature.group.position;
+      this.shadows.add(at.x, at.y + 0.004, at.z, creature.shadowX, creature.shadowZ);
     }
+    this.shadows.end();
   }
 
   /** O Pokémon mais próximo sob um ponto da tela, ou null. */
@@ -391,6 +500,8 @@ export class BoxScene {
     this.boxGround = null;
     for (const creature of this.creatures) creature.dispose();
     this.creatures = [];
+    this.states = [];
+    this.shadows.dispose();
     this.anchor = null;
     for (const child of [...this.floor.children]) {
       const d = child as Mesh | Line;

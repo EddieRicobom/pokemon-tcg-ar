@@ -79,14 +79,18 @@ export function stepWander(state: WanderState, dtMs: number, half: number, rng: 
 /** Afasta os que estão perto demais um do outro (empurra metade da sobreposição para cada lado). */
 export function separate(states: WanderState[], minDistance: number, half: number): void {
   const limit = half * MARGIN;
+  const minSq = minDistance * minDistance;
+  const clamp = (v: number) => Math.min(limit, Math.max(-limit, v));
   for (let i = 0; i < states.length; i++) {
+    const a = states[i]!;
     for (let j = i + 1; j < states.length; j++) {
-      const a = states[i]!;
       const b = states[j]!;
       let dx = b.x - a.x;
       let dz = b.z - a.z;
-      let distance = Math.hypot(dx, dz);
-      if (distance >= minDistance) continue;
+      const distSq = dx * dx + dz * dz;
+      // Roda a cada quadro para cada par: a maioria sai aqui, sem raiz quadrada.
+      if (distSq >= minSq) continue;
+      let distance = Math.sqrt(distSq);
       if (distance < 1e-6) {
         dx = 1;
         dz = 0;
@@ -95,14 +99,10 @@ export function separate(states: WanderState[], minDistance: number, half: numbe
       const push = (minDistance - distance) / 2;
       const nx = dx / distance;
       const nz = dz / distance;
-      a.x -= nx * push;
-      a.z -= nz * push;
-      b.x += nx * push;
-      b.z += nz * push;
-      for (const s of [a, b]) {
-        s.x = Math.min(limit, Math.max(-limit, s.x));
-        s.z = Math.min(limit, Math.max(-limit, s.z));
-      }
+      a.x = clamp(a.x - nx * push);
+      a.z = clamp(a.z - nz * push);
+      b.x = clamp(b.x + nx * push);
+      b.z = clamp(b.z + nz * push);
     }
   }
 }

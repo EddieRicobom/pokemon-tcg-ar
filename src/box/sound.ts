@@ -140,6 +140,8 @@ export class SoundEngine implements SoundSink {
     this.ctx = null;
     this.master = null;
     this.noiseBuffer = null;
+    // Um contexto fechado nunca avisa o fim das vozes: sem zerar, a próxima sessão herdaria o limite cheio e ficaria muda.
+    this.voices = 0;
     if (ctx) void ctx.close().catch(() => undefined);
   }
 }

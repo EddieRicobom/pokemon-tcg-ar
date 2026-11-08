@@ -1,23 +1,32 @@
 import {
-  BufferAttribute, BufferGeometry, DataTexture, Group, LinearFilter, LineBasicMaterial, LineSegments, Mesh, MeshBasicMaterial, NearestFilter,
+  BufferAttribute, BufferGeometry, CircleGeometry, DataTexture, Group, LinearFilter, LineBasicMaterial, LineSegments, Mesh, MeshBasicMaterial, NearestFilter,
   Points, PointsMaterial, RepeatWrapping, RGBAFormat, UnsignedByteType,
 } from 'three';
 import { cloudShadow, puddleAt, snowAt, tileNoise } from '../core/weather';
 import type { WeatherState } from '../core/weather';
 import type { Ground } from './ground';
 
-const MAX_RAIN = 420;
-const MAX_SNOW = 360;
-/** Altura (m) de onde a chuva e a neve caem, acima do chão da caixa. */
-const SKY = 1.1;
+const MAX_RAIN = 900;
+const MAX_SNOW = 520;
 const RAIN_SPEED = 4.2;
-const RAIN_LEN = 0.075;
 const SNOW_SPEED = 0.32;
 /** Resolução dos mapas de poça e de neve (pixel art, como o chão). */
 const MAP = 64;
 const CLOUD_TEX = 128;
 /** Tamanho (m) de um "quadro" de nuvens no chão. */
 const CLOUD_TILE_M = 2.6;
+
+/** Até onde a chuva e a neve vão, e quantas: na caixa sobre a câmera é um volume pequeno; no Coliseu, a arena à vista. */
+interface WeatherVolume {
+  /** Altura (m) de onde a chuva e a neve caem. */
+  sky: number;
+  rain: number;
+  snow: number;
+  rainLen: number;
+  flake: number;
+}
+const BOX_VOLUME: WeatherVolume = { sky: 1.1, rain: 420, snow: 360, rainLen: 0.075, flake: 0.028 };
+const ARENA_VOLUME: WeatherVolume = { sky: 3, rain: MAX_RAIN, snow: MAX_SNOW, rainLen: 0.17, flake: 0.05 };
 
 function dataTexture(size: number, nearest: boolean): DataTexture {
   const tex = new DataTexture(new Uint8Array(size * size * 4), size, size, RGBAFormat, UnsignedByteType);
@@ -48,6 +57,7 @@ function roundDot(): DataTexture {
  * O clima desenhado na caixa. Mora no grupo do chão (coordenadas da caixa, origem no centro): sombras de nuvem que
  * passam com o vento, poças que enchem as baixadas e brilham, neve que cobre o chão aos poucos, gotas e flocos caindo.
  * As poças devolvem a força do reflexo em cada ponto (`puddleStrengthAt`), para os Pokémon se refletirem nelas.
+ * No Coliseu (`setArena`) não há relevo: as mesmas camadas cobrem a areia e as baixadas vêm de um ruído fixo.
  */
 export class WeatherFx {
   readonly group = new Group();
@@ -65,7 +75,16 @@ export class WeatherFx {
   private readonly snowMat = new MeshBasicMaterial({ map: this.snowTex, transparent: true, depthWrite: false });
   private overlays: Mesh[] = [];
   private ground: Ground | null = null;
+  /** Disco sobre a areia do Coliseu (null na caixa sobre a câmera). */
+  private arenaGeometry: CircleGeometry | null = null;
+  private volume = BOX_VOLUME;
+  /** Meio-lado do volume da chuva e da neve (m). */
   private half = 1.2;
+  /** Meio-lado da área coberta pelos mapas de poça e de neve (m). */
+  private mapHalf = 1.2;
+  private off = false;
+  /** Movimento reduzido: sem partículas caindo, nuvem andando nem água tremendo. */
+  private calm = false;
   /** Profundidade (0 alto … 1 baixo) e ruído de cada célula dos mapas. */
   private depth = new Float32Array(MAP * MAP).fill(0.5);
   private readonly noise = new Float32Array(MAP * MAP);
@@ -112,9 +131,10 @@ export class WeatherFx {
   }
 
   private respawnAll(): void {
-    for (let i = 0; i < MAX_RAIN; i++) this.spawnDrop(i, this.rand() * SKY);
+    const { sky } = this.volume;
+    for (let i = 0; i < MAX_RAIN; i++) this.spawnDrop(i, this.rand() * sky);
     for (let i = 0; i < MAX_SNOW; i++) {
-      this.spawnFlake(i, this.rand() * SKY);
+      this.spawnFlake(i, this.rand() * sky);
       this.snowPhase[i] = this.rand() * Math.PI * 2;
     }
   }
@@ -122,11 +142,19 @@ export class WeatherFx {
   private spawnDrop(i: number, y: number): void {
     const x = (this.rand() * 2 - 1) * this.half;
     const z = (this.rand() * 2 - 1) * this.half;
-    this.rainPos.set([x, y, z, x, y + RAIN_LEN, z], i * 6);
+    const pos = this.rainPos;
+    const o = i * 6;
+    pos[o] = pos[o + 3] = x;
+    pos[o + 1] = y;
+    pos[o + 4] = y + this.volume.rainLen;
+    pos[o + 2] = pos[o + 5] = z;
   }
 
   private spawnFlake(i: number, y: number): void {
-    this.snowPos.set([(this.rand() * 2 - 1) * this.half, y, (this.rand() * 2 - 1) * this.half], i * 3);
+    const o = i * 3;
+    this.snowPos[o] = (this.rand() * 2 - 1) * this.half;
+    this.snowPos[o + 1] = y;
+    this.snowPos[o + 2] = (this.rand() * 2 - 1) * this.half;
   }
 
   private paintClouds(): void {
@@ -143,13 +171,32 @@ export class WeatherFx {
     this.cloudTex.needsUpdate = true;
   }
 
-  /** Liga as camadas ao chão da caixa (ou tira, com `null`). Chame de novo quando o chão for refeito. */
-  setGround(ground: Ground | null, half: number): void {
+  /** Tira as camadas atuais e aponta os mapas para o novo chão. */
+  private resetLayers(ground: Ground | null, mapHalf: number, particleHalf: number, volume: WeatherVolume): void {
     for (const mesh of this.overlays) mesh.removeFromParent();
     this.overlays = [];
     this.ground = ground;
-    this.half = half;
+    this.mapHalf = mapHalf;
+    this.half = particleHalf;
+    this.volume = volume;
+    (this.snow.material as PointsMaterial).size = volume.flake;
     this.respawnAll();
+    this.paintedWet = -1;
+    this.paintedSnow = -1;
+    const repeat = (mapHalf * 2) / CLOUD_TILE_M;
+    this.cloudTex.repeat.set(repeat, repeat);
+  }
+
+  /** Filtro dos mapas de água e neve: em blocos sobre o chão em pixel art, macio no disco grande da areia. */
+  private setMapFilter(filter: typeof NearestFilter | typeof LinearFilter): void {
+    for (const tex of [this.puddleTex, this.snowTex]) tex.magFilter = tex.minFilter = filter;
+  }
+
+  /** Liga as camadas ao chão da caixa (ou tira, com `null`). Chame de novo quando o chão for refeito. */
+  setGround(ground: Ground | null, half: number): void {
+    this.dropArena();
+    this.resetLayers(ground, half, half, BOX_VOLUME);
+    this.setMapFilter(NearestFilter);
     for (let y = 0; y < MAP; y++) {
       for (let x = 0; x < MAP; x++) {
         // Célula → ponto da caixa (a textura do chão tem v para cima = −z).
@@ -158,12 +205,39 @@ export class WeatherFx {
         this.depth[y * MAP + x] = ground ? ground.depthAt(wx, wz) : 0.5;
       }
     }
-    this.paintedWet = -1;
-    this.paintedSnow = -1;
-    const repeat = (half * 2) / CLOUD_TILE_M;
-    this.cloudTex.repeat.set(repeat, repeat);
     if (!ground) return;
     this.overlays = [ground.overlay(this.cloudMat, 0.001), ground.overlay(this.puddleMat, 0.002), ground.overlay(this.snowMat, 0.003)];
+    for (const mesh of this.overlays) mesh.visible = !this.off;
+  }
+
+  /** O clima sobre a areia do Coliseu: camadas num disco de raio `radius`; chuva e neve na parte da arena à vista. */
+  setArena(radius: number, particleHalf: number): void {
+    this.dropArena();
+    this.resetLayers(null, radius, particleHalf, ARENA_VOLUME);
+    this.setMapFilter(LinearFilter);
+    for (let y = 0; y < MAP; y++) {
+      for (let x = 0; x < MAP; x++) this.depth[y * MAP + x] = 0.2 + 0.8 * tileNoise(x / 5, y / 5, 1e6, 9);
+    }
+    const geometry = new CircleGeometry(radius, 48);
+    geometry.rotateX(-Math.PI / 2);
+    this.arenaGeometry = geometry;
+    const layers = [this.cloudMat, this.puddleMat, this.snowMat];
+    this.overlays = layers.map((material, i) => {
+      const mesh = new Mesh(geometry, material);
+      mesh.position.y = 0.001 + i * 0.001;
+      mesh.renderOrder = -2;
+      mesh.visible = !this.off;
+      this.group.add(mesh);
+      return mesh;
+    });
+  }
+
+  private dropArena(): void {
+    if (!this.arenaGeometry) return;
+    for (const mesh of this.overlays) mesh.removeFromParent();
+    this.overlays = [];
+    this.arenaGeometry.dispose();
+    this.arenaGeometry = null;
   }
 
   private paintPuddles(wet: number): void {
@@ -201,9 +275,9 @@ export class WeatherFx {
 
   /** Força do reflexo (0 a 1) da poça sob o ponto (x, z) da caixa. */
   puddleStrengthAt(x: number, z: number): number {
-    if (!this.ground) return 0;
-    const cx = Math.floor(((x + this.half) / (2 * this.half)) * MAP);
-    const cy = Math.floor(((this.half - z) / (2 * this.half)) * MAP);
+    if (!this.ground && !this.arenaGeometry) return 0;
+    const cx = Math.floor(((x + this.mapHalf) / (2 * this.mapHalf)) * MAP);
+    const cy = Math.floor(((this.mapHalf - z) / (2 * this.mapHalf)) * MAP);
     if (cx < 0 || cy < 0 || cx >= MAP || cy >= MAP) return 0;
     return this.puddle[cy * MAP + cx] ?? 0;
   }
@@ -212,16 +286,26 @@ export class WeatherFx {
   update(dtMs: number, state: WeatherState | null, nowMs: number): void {
     const dt = Math.min(0.1, Math.max(0, dtMs / 1000));
     if (!state) {
+      if (this.off) return;
+      this.off = true;
       this.group.visible = false;
       for (const mesh of this.overlays) mesh.visible = false;
       this.puddle.fill(0);
+      // Ao religar, as poças e a neve precisam ser repintadas: sem isso o reflexo só voltava quando o chão mudasse.
+      this.paintedWet = -1;
+      this.paintedSnow = -1;
       return;
     }
-    this.group.visible = true;
-    for (const mesh of this.overlays) mesh.visible = true;
+    if (this.off) {
+      this.off = false;
+      this.group.visible = true;
+      for (const mesh of this.overlays) mesh.visible = true;
+    }
     // Nuvens: a sombra anda com o vento.
-    this.cloudU += (state.windX * dt) / CLOUD_TILE_M;
-    this.cloudV += (state.windZ * dt) / CLOUD_TILE_M;
+    if (!this.calm) {
+      this.cloudU += (state.windX * dt) / CLOUD_TILE_M;
+      this.cloudV += (state.windZ * dt) / CLOUD_TILE_M;
+    }
     this.cloudTex.offset.set(this.cloudU % 1, this.cloudV % 1);
     this.cloudMat.opacity = Math.min(1, state.cloud * 1.1);
     if (Math.abs(state.wet - this.paintedWet) > 0.015) {
@@ -229,37 +313,45 @@ export class WeatherFx {
       this.paintPuddles(state.wet);
     }
     // A água brilha de leve (mais com chuva: os pingos agitam a poça).
-    this.puddleMat.opacity = 0.85 + 0.15 * Math.sin(nowMs / (state.rain > 0.3 ? 140 : 700));
+    this.puddleMat.opacity = this.calm ? 0.9 : 0.85 + 0.15 * Math.sin(nowMs / (state.rain > 0.3 ? 140 : 700));
     if (Math.abs(state.snowCover - this.paintedSnow) > 0.015) {
       this.paintedSnow = state.snowCover;
       this.paintSnow(state.snowCover);
     }
-    // Chuva: gotas inclinadas pelo vento.
-    const drops = Math.round(MAX_RAIN * state.rain);
+    // Chuva: gotas inclinadas pelo vento. Sem gota no ar não há por que reenviar o buffer à GPU.
+    const drops = this.calm ? 0 : Math.round(this.volume.rain * state.rain);
     this.rain.geometry.setDrawRange(0, drops * 2);
+    const { rainLen, sky } = this.volume;
+    const pos = this.rainPos;
+    const dy = RAIN_SPEED * dt;
+    const tiltX = state.windX * 0.02;
+    const tiltZ = state.windZ * 0.02;
     for (let i = 0; i < drops; i++) {
       const o = i * 6;
-      const dy = RAIN_SPEED * dt;
-      let y = this.rainPos[o + 1]! - dy;
+      const y = pos[o + 1]! - dy;
       if (y < 0) {
-        this.spawnDrop(i, SKY + this.rand() * 0.2);
+        this.spawnDrop(i, sky + this.rand() * 0.2);
         continue;
       }
-      const x = this.rainPos[o]! + state.windX * dt * 2;
-      const z = this.rainPos[o + 2]! + state.windZ * dt * 2;
-      y = Math.max(0, y);
-      this.rainPos.set([x, y, z, x - state.windX * 0.02, y + RAIN_LEN, z - state.windZ * 0.02], o);
+      const x = pos[o]! + state.windX * dt * 2;
+      const z = pos[o + 2]! + state.windZ * dt * 2;
+      pos[o] = x;
+      pos[o + 1] = y;
+      pos[o + 2] = z;
+      pos[o + 3] = x - tiltX;
+      pos[o + 4] = y + rainLen;
+      pos[o + 5] = z - tiltZ;
     }
-    this.rain.geometry.attributes.position!.needsUpdate = true;
+    if (drops > 0) this.rain.geometry.attributes.position!.needsUpdate = true;
     // Neve: flocos que descem devagar, balançando.
-    const flakes = Math.round(MAX_SNOW * state.snow);
+    const flakes = this.calm ? 0 : Math.round(this.volume.snow * state.snow);
     this.snow.geometry.setDrawRange(0, flakes);
     const t = nowMs / 1000;
     for (let i = 0; i < flakes; i++) {
       const o = i * 3;
       const y = this.snowPos[o + 1]! - SNOW_SPEED * dt;
       if (y < 0) {
-        this.spawnFlake(i, SKY);
+        this.spawnFlake(i, sky);
         continue;
       }
       const sway = Math.sin(t * 1.3 + this.snowPhase[i]!) * 0.12;
@@ -267,7 +359,18 @@ export class WeatherFx {
       this.snowPos[o + 1] = y;
       this.snowPos[o + 2] = Math.max(-this.half, Math.min(this.half, this.snowPos[o + 2]! + state.windZ * dt));
     }
-    this.snow.geometry.attributes.position!.needsUpdate = true;
+    if (flakes > 0) this.snow.geometry.attributes.position!.needsUpdate = true;
+  }
+
+  /** A água e a neve seguem a luz da cena: sem isso a neve ficava branca e ofuscante à noite. */
+  setTint(r: number, g: number, b: number): void {
+    this.puddleMat.color.setRGB(r, g, b);
+    this.snowMat.color.setRGB(r, g, b);
+  }
+
+  /** Movimento reduzido (`prefers-reduced-motion`): as camadas no chão ficam, o que cai e o que treme para. */
+  setCalm(on: boolean): void {
+    this.calm = on;
   }
 
   /** Para testes: quantas gotas e flocos estão no ar. */
@@ -276,6 +379,7 @@ export class WeatherFx {
   }
 
   dispose(): void {
+    this.dropArena();
     for (const mesh of this.overlays) mesh.removeFromParent();
     this.overlays = [];
     this.rain.geometry.dispose();
