@@ -370,7 +370,14 @@ onBeforeUnmount(() => {
 }
 
 .afight-close {
-  padding: 4px 10px;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 4px 12px;
+}
+
+.afight button:focus-visible {
+  outline: 3px solid #ffffff;
+  outline-offset: 2px;
 }
 
 .afight-prep {
@@ -404,6 +411,7 @@ onBeforeUnmount(() => {
 }
 
 .afight-card {
+  min-height: 44px;
   display: grid;
   gap: 2px;
   padding: 10px 12px;
