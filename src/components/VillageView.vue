@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent, markRaw, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
+import { computed, defineAsyncComponent, markRaw, nextTick, onBeforeUnmount, onMounted, reactive, ref, toRaw, watch } from 'vue';
 import { getCache, getDigitalSprite, getLocalVillageSprite, getLocalVillageSpriteDirs, getVillageAtlas, getVillageGroundTile, loadPinData, resolveSpeciesByDexId } from '../app/services';
 import { resolveTeam } from '../app/team';
 import { savedTeam } from '../app/team-store';
@@ -48,8 +48,11 @@ import type { ItemKind } from '../core/village/catalog';
 import {
   add, buy, canAfford, canFollow, claimFriendMilestones, cook, count, craft, dailyHelp, describeCost, fish, FISH_PER_DAY, friendLevel, friendOf, friendProgressText, giveGift, harvest, harvestCrop, HOUSE_LEVELS, itemName, pickUp, place,
   plant, pruneHarvest, RECIPES, sell, talk, tickCrops, upgradeHouse, water, wear,
-  BATTLE_REWARD_COINS, BATTLE_REWARDS_PER_DAY, battleRewardsLeft, favoriteFoodOf,
+  BATTLE_REWARD_COINS, BATTLE_REWARDS_PER_DAY, battleRewardsLeft, favoriteFoodOf, TALK_COINS,
 } from '../core/village/life';
+import { GIFT_TAG_LABEL, giftOptions } from '../core/village/gift-options';
+import { dailyMarks, nextVillageStep } from '../core/village/next-step';
+import type { NextStep } from '../core/village/next-step';
 import { albumEntries, albumProgress, catchUp, makeEnv, pickMoment, recentGossip, recordFriendMilestone, relationMap, relationsOf, resolveScene, savedMoments, sceneChoice, setFavorite, unreadCount } from '../core/village/social';
 import {
   canAffordSummon, canEvolve, COIN_SUMMON_COST, COIN_SUMMON_ENABLED, evolve, EVOLVE_COST, grantStarter, grantSurvival, instanceOf, LAST_DEX_ID, pickAnySpecies,
@@ -61,7 +64,7 @@ import { celebiDiaryPage, dismissActive, legendaryEffects, legendaryOf, rollLege
 import type { LegendaryEffects } from '../core/village/legendary';
 import { ALL_QUESTIONS, FONTE_POOL, isComplete as quizComplete, nextForm, resolveStarter } from '../core/village/starter-quiz';
 import type { QuizAnswers } from '../core/village/starter-quiz';
-import { claimRequest, ensureRequests, requestStatus } from '../core/village/requests';
+import { BOARD_BONUS_COINS, claimBoardBonus, claimRequest, ensureRequests, requestStatus } from '../core/village/requests';
 import type { VillageRequest } from '../core/village/requests';
 import { completeFestival, discoverAt, festivalRound, requestInfluence, resolveExpeditions, startExpedition, weeklyEventFor, weeklyModifiers } from '../core/village/world-progress';
 import type { DiscoveryPlace, WeeklyEvent } from '../core/village/world-progress';
@@ -99,7 +102,7 @@ import { west } from '../core/village/west';
 import { MEW_STATUE_FRONT } from '../core/village/mountain';
 import { behindMewStatue, meditationMessage, MEW_BLESSING, MEW_SHRINE } from '../core/village/mew-shrine';
 import type { WorksiteId } from '../core/village/town-layout';
-import { GUIDED_DESTINATIONS, guidedWalkArrived, guidedWalkProgress } from '../core/village/guided-walk';
+import { GUIDED_DESTINATIONS, guidedWalkArrived, guidedWalkProgress, rewardGuidedWalk } from '../core/village/guided-walk';
 import type { Dir } from '../core/village/actors';
 import { stickDirs, stickVector } from '../core/village/joystick';
 import type { PokemonType } from '../core/pokemon-data';
@@ -527,6 +530,8 @@ let saveTimer: ReturnType<typeof setInterval> | null = null;
 let cropTimer: ReturnType<typeof setInterval> | null = null;
 let toastTimer: ReturnType<typeof setTimeout> | null = null;
 let dirty = false;
+/** O treinador andou desde a última gravação (só a posição mudou). */
+let stepsUnsaved = false;
 let fishing = false;
 /** Cópia da lista de moradores usada em `game.setMons`, pra poder acrescentar um Digital Pokémon sem reler a Caixa. */
 let villagerList: VillageMon[] = [];
@@ -683,6 +688,8 @@ function advanceCutscene(): void {
   cutsceneOpen.value = false;
   state.digital = { ...state.digital, introSeen: true };
   changed();
+  // Quem já escondeu o aviso de controles não passa pelo `watch(welcome)`: sem isto o presente inicial não aparecia.
+  if (!welcome.value && !recapScenes.value.length) finishArrival();
 }
 
 // -- Mini tutorial dos Digital Pokémon (Fase 4): uma vez, logo depois do presente inicial.
@@ -867,9 +874,15 @@ async function doEvolve(instanceId: string, nextDexId: number): Promise<void> {
 // -- Encontros lendários: uma oportunidade de sorteio por dia do calendário (ver `core/village/legendary.ts`).
 /** O que os encontros lendários estão mudando agora (chuva, horta, moedas, conversas, postes, animações). */
 function effects(): LegendaryEffects {
+  // A cena pergunta isto várias vezes por quadro; a resposta só muda com o lendário ativo ou com o passar dos segundos.
+  const at = performance.now();
+  if (effectsCache && effectsCache.legendary === state.legendary && at - effectsCache.at < 1000) return effectsCache.value;
   const now = Date.now();
-  return legendaryEffects(state.legendary, now, dayKey(new Date(now)), (ms) => dayKey(new Date(ms)));
+  const value = legendaryEffects(state.legendary, now, dayKey(new Date(now)), (ms) => dayKey(new Date(ms)));
+  effectsCache = { at, legendary: state.legendary, value };
+  return value;
 }
+let effectsCache: { at: number; legendary: typeof state.legendary; value: LegendaryEffects } | null = null;
 
 function rollLegendaryToday(): void {
   const r = rollLegendary(state.legendary, Math.random, day.value, new Date().toISOString(), (id) => isLegendUnlocked(id, legendRegions.value));
@@ -958,7 +971,24 @@ function displayResidentMessage(raw: string): string {
 const inventory = computed(() => ITEMS.filter((i) => count(state, i.id) > 0));
 const backpackItems = computed(() => inventory.value.map((i) => ({ id: i.id, name: i.name, qty: count(state, i.id) })));
 const sellable = computed(() => inventory.value.filter((i) => i.sell > 0 && i.kind !== 'accessory' && !i.gift));
-const giftable = computed(() => inventory.value.filter((i) => i.kind !== 'accessory'));
+/** Lista do presente de quem está na conversa: pedido e favoritos na frente. */
+const giftable = computed(() => {
+  const id = dialog.value?.id;
+  if (!id) return [];
+  return giftOptions(state, id, types.get(id) ?? [], inventory.value.map((item) => item.id), day.value)
+    .map((option) => ({ id: option.id, name: itemName(option.id), note: option.tag ? GIFT_TAG_LABEL[option.tag] : '' }));
+});
+/** Avisa, antes de escolher, o que ainda vale hoje: presente e refeição são um por dia. */
+const giftDayNote = computed(() => {
+  const id = dialog.value?.id;
+  if (!id) return '';
+  const friend = friendOf(state, id);
+  const gift = friend.lastGift === day.value;
+  const meal = friend.lastMeal === day.value;
+  if (gift && meal) return 'Hoje já ganhou presente e comida; só um pedido em aberto ainda vale.';
+  if (gift) return 'O presente de hoje já foi; comida e pedido ainda valem.';
+  return meal ? 'Já comeu hoje; presentes que não são comida ainda valem.' : 'Um presente e uma refeição por dia.';
+});
 type RecipeAvailability = 'todos' | 'prontas' | 'faltando';
 const inventoryQuery = ref('');
 const inventoryKind = ref<ItemKind | 'todos'>('todos');
@@ -1098,7 +1128,7 @@ const bookMemories = computed(() => Object.fromEntries(mons.value.map((mon) => [
 const bookMons = computed(() => mons.value.map((m) => ({ id: m.id, name: m.name, real: m.real, types: types.get(m.id) ?? [], thumb: m.thumb, accessory: state.wear.mons[m.id] ?? null })));
 const accessoriesOwned = computed(() => ACCESSORY_IDS.filter((id) => count(state, id) > 0));
 
-let guidedTrip: { id: string; destination: typeof GUIDED_DESTINATIONS[number] } | null = null;
+let guidedTrip: { id: string; destination: typeof GUIDED_DESTINATIONS[number]; previousFollower: string | null } | null = null;
 const guidedTripVersion = ref(0);
 
 // ---- controle
@@ -1113,10 +1143,17 @@ const joy = reactive({ active: false, pointerId: -1, cx: 0, cy: 0, x: 0, y: 0, l
 let tapInteraction: ({ kind: 'point'; x: number; y: number } | { kind: 'mon'; id: string }) | null = null;
 /** Recalcular caminho custa busca no mapa; alvo móvel é atualizado no máximo duas vezes por segundo. */
 let lastTapRetargetAt = -Infinity;
+/** Alvo do toque que não dá para alcançar (morador cercado, por exemplo) não fica buscando caminho para sempre. */
+const TAP_INTERACTION_MS = 25_000;
+let tapInteractionDeadline = 0;
 const TAP_MS = 320;
 const TAP_PX = 10;
+/** Janela aberta por cima do mapa: o dedo que ainda está na tela não pode continuar andando atrás dela. */
+function worldBlocked(): boolean {
+  return !!legendaryScene.value || !!hoOhWishScene.value || !!sheet.value || !!dialog.value || !!quiz.value || quizOpen.value || cutsceneOpen.value || recapScenes.value.length > 0;
+}
 function applyStick(x: number, y: number): void {
-  if (legendaryScene.value) { game?.holdStick(null); return; }
+  if (worldBlocked()) { game?.holdStick(null); return; }
   if (x !== 0 || y !== 0) {
     tapInteraction = null;
     game?.setInteractionMarker(null);
@@ -1159,6 +1196,8 @@ function joyUp(e: PointerEvent): void {
       lastTapRetargetAt = performance.now();
       game.setInteractionMarker({ x: object.x, y: object.y });
       game.walkTo(object.x, object.y);
+      tapInteractionDeadline = performance.now() + TAP_INTERACTION_MS;
+      checkTapInteraction();
       return;
     }
     const t = game.tileAtScreen(e.clientX, e.clientY);
@@ -1166,6 +1205,9 @@ function joyUp(e: PointerEvent): void {
       tapInteraction = game.interactableAt(t.x, t.y) ? { kind: 'point', ...t } : null;
       game.setInteractionMarker(tapInteraction?.kind === 'point' ? tapInteraction : null);
       game.walkTo(t.x, t.y);
+      tapInteractionDeadline = performance.now() + TAP_INTERACTION_MS;
+      // Tocou em algo colado em você: não haverá passo nenhum para disparar a interação.
+      checkTapInteraction();
     }
   }
 }
@@ -1621,7 +1663,7 @@ function speakToResident(id: string): void {
   if (result.gained > 0) {
     game.bubble(id, '❤️');
     trainerEvent('talk', id);
-    earnCoins(5);
+    earnCoins(TALK_COINS);
   }
   if (result.lost > 0) game.bubble(id, '😞', 2600);
   let text = result.text + friendGainNote(id, result.gained - result.lost);
@@ -1740,8 +1782,9 @@ function openRequestBoard(): void {
   if (previousDay !== state.requests.day) changed();
   const summary = allRequests.map((request) => {
     const status = requestStatus(state, request, today);
-    return `${request.done ? '✅' : request.persistent ? '🔎' : '📌'} ${request.title}\n   ${request.detail}\n   ${request.location} · ${status.text}`;
+    return `${request.done ? '✅' : request.persistent ? '🔎' : '📌'} ${request.title}\n   ${request.detail}\n   ${request.location} · ${status.text}${request.done ? '' : ` · +${request.rewardCoins} moedas`}`;
   }).join('\n\n');
+  const bonusNote = state.requests.bonusDay === today ? 'Bônus de hoje já recebido!' : `Fechando os três pedidos de hoje: +${BOARD_BONUS_COINS} moedas de bônus.`;
   const conclude = (id: string): void => {
     const result = claimRequest(state, id, refreshDay());
     if (result.ok) {
@@ -1750,21 +1793,22 @@ function openRequestBoard(): void {
       const story = storyRequests.find((request) => request.id === id);
       const modeStory = story?.id.startsWith('modo:') === true;
       if (story && !modeStory) say('🔎 Pedido da descoberta concluído. Uma nova pista pode ser encontrada na Vila.');
-      if (state.requests.items.every((request) => request.done)) {
-        state.town.level = Math.max(state.town.level, Math.min(99, level.value + 1));
-        say('🏘️ Todos os pedidos de hoje foram atendidos: a Vila subiu um nível.');
-      }
       changed();
       playSound('success');
     }
     const completedStory = storyRequests.find((request) => request.id === id);
-    say(completedStory?.id.startsWith('modo:') ? `📚 História opcional concluída no Museu. ${result.message}` : result.message);
+    const bonus = result.ok ? claimBoardBonus(state, refreshDay()) : 0;
+    if (bonus > 0) {
+      earnCoins(bonus);
+      playSound('bell');
+    }
+    say(`${completedStory?.id.startsWith('modo:') ? `📚 História opcional concluída no Museu. ${result.message}` : result.message}${bonus > 0 ? ` 🎉 Mural completo: +${bonus} moedas de bônus!` : ''}`, bonus > 0 ? 5200 : 2800);
     openRequestBoard();
   };
   const festival = weeklyEvent.value ?? weeklyEventFor(state, today);
   dialog.value = {
     name: 'Mural de pedidos',
-    text: summary || 'O mural está vazio por enquanto.',
+    text: summary ? `${summary}\n\n🎉 ${bonusNote}` : 'O mural está vazio por enquanto.',
     actions: [
       { label: `Festival: ${festival.title}`, run: openFestival },
       ...allRequests.map((request: VillageRequest) => {
@@ -1887,24 +1931,31 @@ function finishGuidedTrip(): void {
   guidedTripVersion.value++;
   minimapRoute.value = '';
   if (!trip) return;
-  if (state.follower === trip.id) {
-    state.follower = null;
-    changed();
-  }
-  const f = friendOf(state, trip.id);
-  f.points = Math.min(100, f.points + 6);
+  restoreFollowerAfterTrip(trip);
+  changed();
+  const gained = rewardGuidedWalk(state, trip.id, refreshDay());
   const mon = mons.value.find((m) => m.id === trip.id);
+  game?.bubble(trip.id, '💖');
+  // Um passeio por dia vale amizade e página no Diário: refazer o trajeto não vira fonte infinita de pontos.
+  if (gained === null) {
+    say(`🚶 Passeio concluído! ${mon?.name ?? nameOf(trip.id)} adorou, mas a amizade do passeio vale uma vez por dia.`);
+    return;
+  }
   const now = new Date();
   state.diary = trimMoments([...state.diary, {
     id: `passeio:${trip.id}:${now.getTime()}`,
     t: now.getTime(), day: refreshDay(), hour: now.getHours(), tpl: 'passeio-guiado', kind: 'amizade', title: `Passeio até ${trip.destination.place}`, emoji: '🚶',
     cast: [{ id: trip.id, name: mon?.name ?? nameOf(trip.id) }],
     lines: [{ who: 0, text: `${mon?.name ?? nameOf(trip.id)} adorou conhecer ${trip.destination.place} com você.`, fx: 'heart' }],
-    result: ['+6 amizade'],
+    result: [`+${gained} amizade`],
   }]);
   changed();
-  game?.bubble(trip.id, '💖');
-  say(`🚶 Passeio concluído! ${mon?.name ?? nameOf(trip.id)} ganhou +6 de amizade e o momento foi para o Diário.`);
+  say(`🚶 Passeio concluído! ${mon?.name ?? nameOf(trip.id)} ganhou +${gained} de amizade e o momento foi para o Diário.`);
+}
+
+/** O passeio só empresta o lugar de seguidor: quem já seguia você volta, e quem não pode seguir volta a passear. */
+function restoreFollowerAfterTrip(trip: { id: string; previousFollower: string | null }): void {
+  if (state.follower === trip.id) state.follower = trip.previousFollower;
 }
 
 function cancelGuidedTrip(): void {
@@ -1913,7 +1964,7 @@ function cancelGuidedTrip(): void {
   guidedTripVersion.value++;
   minimapRoute.value = '';
   if (!trip) return;
-  if (state.follower === trip.id) state.follower = null;
+  restoreFollowerAfterTrip(trip);
   game?.setWaiting(null);
   changed();
   say(`🚶 Passeio com ${nameOf(trip.id)} encerrado. Nenhuma recompensa foi registrada.`);
@@ -1940,13 +1991,16 @@ function updateWorldProgress(): void {
   }
   weeklyEvent.value = weeklyEventFor(state, refreshDay());
   const completed = resolveExpeditions(state, Date.now(), (id) => personalityOf(id).name, (id) => types.get(id) ?? [], (id) => friendOf(state, id).points);
+  const returned: string[] = [];
   for (const expedition of completed) {
     const result = expedition.result;
     if (!result) continue;
     earnCoins(result.coins);
     if (result.item) add(state, result.item, result.qty);
-    say(`🧭 ${result.text} +${result.coins} moedas${result.item ? ` e ${result.qty} ${itemName(result.item)}` : ''}`);
+    returned.push(`🧭 ${result.text} +${result.coins} moedas${result.item ? ` e ${result.qty} ${itemName(result.item)}` : ''}`);
   }
+  // Duas expedições voltando juntas: um aviso só, para a segunda não apagar a primeira.
+  if (returned.length > 0) say(returned.join(' '), 3000 + returned.length * 2500);
   if (completed.length > 0) changed();
 }
 
@@ -1971,15 +2025,17 @@ function checkTapInteraction(): void {
   const target = tapInteraction;
   if (!target || !game) return;
   const point = target.kind === 'mon' ? game.residentPosition(target.id) : target;
-  if (!point) {
+  if (!point || worldBlocked() || performance.now() > tapInteractionDeadline) {
     tapInteraction = null;
     game.setInteractionMarker(null);
     return;
   }
+  if (game.player.t < 1) return;
   const distance = Math.abs(game.player.x - point.x) + Math.abs(game.player.y - point.y);
   if (distance <= 1) {
     tapInteraction = null;
     game.setInteractionMarker(null);
+    game.stopWalk();
     game.facePoint(point.x, point.y);
     pressA();
   } else if (target.kind === 'mon') {
@@ -2001,7 +2057,7 @@ function checkTapInteraction(): void {
 
 function startGuidedTrip(id: string, destination = GUIDED_DESTINATIONS[(state.seed + id.length + refreshDay().length) % GUIDED_DESTINATIONS.length]!): void {
   if (!game) return;
-  guidedTrip = { id, destination };
+  guidedTrip = { id, destination, previousFollower: guidedTrip?.previousFollower ?? state.follower };
   guidedTripVersion.value++;
   minimapRoute.value = `Passeio: ${destination.place}`;
   state.follower = id;
@@ -2224,7 +2280,7 @@ function openFountain(b: Building): void {
             return;
           }
           if (Math.random() < 0.06) {
-            state.coins += 5;
+            state.coins = Math.min(999999, state.coins + 5);
             say(wish.trustStone ? '✨ A fonte devolveu 5 moedas e entregou a Pedra da Confiança de hoje!' : '✨ A fonte brilhou e devolveu 5 moedas!');
           } else say(wish.trustStone ? '💠 Você fez um pedido e recebeu a Pedra da Confiança de hoje!' : '✨ Você fez um pedido…');
           persist();
@@ -2513,7 +2569,9 @@ function persist(): boolean {
 
 function onLeave(): void {
   cancelFarm();
+  if (guidedTrip) restoreFollowerAfterTrip(guidedTrip);
   guidedTrip = null;
+  guidedTripVersion.value++;
   minimapRoute.value = '';
   settleScenes();
   state.lastSeen = Date.now();
@@ -2521,6 +2579,7 @@ function onLeave(): void {
 }
 
 function onVisibility(): void {
+  dayReadAt = -Infinity;
   sound.setPaused(document.hidden);
   syncMusic();
   if (document.hidden) {
@@ -2539,7 +2598,19 @@ function onVisibility(): void {
 
 /** Abre o menu compartilhado quando a Vila está livre; o B usa este mesmo caminho. */
 function openMenu(): void {
-  if (recapScenes.value.length || cutsceneOpen.value || loading.value || game?.sceneActive) return;
+  if (recapScenes.value.length || cutsceneOpen.value || loading.value) return;
+  if (game?.sceneActive) {
+    // Antes o botão simplesmente não respondia durante um momento. O momento vai para o Diário do mesmo jeito.
+    if (performance.now() > skipSceneUntil) {
+      skipSceneUntil = performance.now() + 4000;
+      say('Um momento está acontecendo. Toque em Menu de novo para pular (ele fica guardado no Diário).', 4000);
+      return;
+    }
+    skipSceneUntil = 0;
+    settleScenes();
+    if (game?.sceneActive) game.abortScene();
+    changed();
+  }
   welcome.value = false;
   updateWorldProgress();
   if (askingMon) game?.clearBubble(askingMon.id);
@@ -2552,6 +2623,41 @@ function openMenu(): void {
   tab.value = 'inicio';
   menuSection.value = 'vila';
   sheet.value = 'menu';
+}
+
+let skipSceneUntil = 0;
+
+/** O que fazer agora, a partir do estado real; `mons` e o dia entram como dependências do cálculo. */
+const villageBoard = map.decor.find((decor) => decor.kind === 'board') ?? null;
+const fishingVisit = WORK_SITES.find((site) => site.id === 'fishing')?.visit ?? null;
+const nextStep = computed<NextStep>(() => nextVillageStep({ state, day: day.value, residents: mons.value, mailUnread: mailUnread.value, board: villageBoard, fishing: fishingVisit }));
+const todayMarks = computed(() => dailyMarks({ state, day: day.value, residents: mons.value }));
+
+function followNextStep(): void {
+  const action = nextStep.value.action;
+  if (action.kind === 'build') { sheet.value = 'build'; return; }
+  if (action.kind === 'mail') { openMail(); return; }
+  if (action.kind === 'starter') { closeVillageSheet(); maybeOfferStarter(); return; }
+  if (action.kind === 'none' || !game) return;
+  closeVillageSheet();
+  if (action.kind === 'point') {
+    // Ao chegar, a interação dispara sozinha (abre o mural, colhe, rega), como quando se toca no objeto.
+    tapInteraction = { kind: 'point', x: action.x, y: action.y };
+    tapInteractionDeadline = performance.now() + 60_000;
+    game.setInteractionMarker(tapInteraction);
+    game.walkTo(action.x, action.y);
+    minimapRoute.value = action.place;
+    say(`🧭 Caminhando até ${action.place}…`, 1800);
+    return;
+  }
+  const at = game.residentPosition(action.id);
+  if (!at) return;
+  tapInteraction = { kind: 'mon', id: action.id };
+  tapInteractionDeadline = performance.now() + 60_000;
+  lastTapRetargetAt = performance.now();
+  game.setInteractionMarker(at);
+  game.walkTo(at.x, at.y);
+  say(`🚶 Caminhando até ${nameOf(action.id)}…`, 1800);
 }
 
 function pickTab(t: Tab): void {
@@ -2626,13 +2732,21 @@ function tickFarm(): void {
   game.setFarmTasks(farmSession.tasks);
 }
 
+/** `refreshDay` é chamada de muitos lugares (mapa, passos, clima): a data só é relida uma vez por segundo. */
+let dayReadAt = -Infinity;
+let communityDay = '';
 function refreshDay(): string {
+  const at = performance.now();
+  if (at - dayReadAt < 1000 && communityDay === day.value) return day.value;
+  dayReadAt = at;
   const today = dayKey(new Date());
   if (today !== day.value) {
     day.value = today;
     pruneHarvest(state, today);
   }
-  if (game) {
+  // O ciclo da comunidade só anda quando o dia vira; os demais chamadores não precisam montar a lista de moradores.
+  if (game && communityDay !== today) {
+    communityDay = today;
     const residents = mons.value.map((mon) => {
       const monTypes = types.get(mon.id);
       return monTypes?.length ? { id: mon.id, favoriteFood: favoriteFoodOf(monTypes), types: monTypes } : { id: mon.id };
@@ -2691,11 +2805,12 @@ function pressA(): void {
     const ready = harvestCrop(state, t.x, t.y, Math.random);
     if (ready.ok) {
       playSound('collect');
+      if (ready.got) game.floatItem(t.x, t.y, ready.got.item, ready.got.qty);
       say(ready.message);
       changed();
       return;
     }
-    const r = water(state, t.x, t.y, now);
+    const r = water(state, t.x, t.y, now, effects().growthFactor);
     say(r.message);
     if (r.ok) { playSound('village-water'); changed(); }
   } else if (t.kind === 'furniture') {
@@ -2744,6 +2859,7 @@ function pressA(): void {
       const r = fish(state, map, t.x, t.y, today, Math.random);
       say(r.message);
       if (r.ok) {
+        if (r.got) game?.floatItem(t.x, t.y, r.got.item, r.got.qty);
         playSound('collect');
         changed();
       }
@@ -2755,6 +2871,7 @@ function pressA(): void {
     const r = harvest(state, map, t.x, t.y, today, Math.random);
     say(r.message);
     if (r.ok) {
+      if (r.got) game.floatItem(t.x, t.y, r.got.item, r.got.qty);
       playSound(t.tile === 'tree' ? 'village-chop' : t.tile === 'rock' ? 'village-mine' : 'collect');
       changed();
     }
@@ -2812,10 +2929,14 @@ function buildMiniBase(): void {
   miniBase = c;
 }
 
+/** Prédios, lugares e ícones do minimapa desenhados uma vez: emoji em canvas é caro e estes não mudam a cada 300 ms. */
+let miniStatic: { key: string; canvas: HTMLCanvasElement } | null = null;
+
 function drawMini(): void {
   if (arActive.value) return;
   const el = miniEl.value;
-  if (!el || !game) return;
+  // Coberto por uma folha ou fora da tela, ninguém está vendo: volta a desenhar no próximo ciclo depois de fechar.
+  if (!el || !game || document.hidden || sheet.value) return;
   if (!miniBase) buildMiniBase();
   const rect = el.getBoundingClientRect();
   if (!rect.width) return;
@@ -2823,9 +2944,18 @@ function drawMini(): void {
   const width = Math.round(rect.width * dpr), height = Math.round(rect.height * dpr);
   if (el.width !== width || el.height !== height) { el.width = width; el.height = height; }
   MINI_K = el.width / map.w;
-  const ctx = el.getContext('2d')!;
+  const visible = el.getContext('2d')!;
+  const staticKey = `${width}x${height}:${dpr}:${miniBig.value}:${minimapRoute.value}`;
+  const staticReady = miniStatic?.key === staticKey;
+  if (!staticReady) {
+    const layer = miniStatic?.canvas ?? document.createElement('canvas');
+    layer.width = width;
+    layer.height = height;
+    miniStatic = { key: staticKey, canvas: layer };
+  }
+  let ctx = staticReady ? visible : miniStatic!.canvas.getContext('2d')!;
   ctx.imageSmoothingEnabled = false;
-  ctx.drawImage(miniBase!, 0, 0, map.w * MINI_K, map.h * MINI_K);
+  if (!staticReady) ctx.drawImage(miniBase!, 0, 0, map.w * MINI_K, map.h * MINI_K);
   const dot = (x: number, y: number, color: string, r: number) => {
     ctx.fillStyle = color;
     ctx.beginPath();
@@ -2864,6 +2994,7 @@ function drawMini(): void {
     ctx.fillText(icon, (x + 0.5) * MINI_K, (y + 0.5) * MINI_K);
     label(`${icon} ${name}`, x + 0.5, y - 0.1, color);
   };
+  const drawStaticLayer = (): void => {
   // Contornos dos lugares principais: a base continua sendo a leitura do terreno, e estes contornos ajudam a reconhecer
   // um prédio mesmo quando o minimapa está reduzido no celular.
   const placeColors: Partial<Record<string, string>> = { arcade: '#ffb347', pins: '#e78cff', arena: '#ff6d7a', torre: '#bd9cff', masmorra: '#d08a5c', museum: '#71d7ff', cafe: '#ffc66d', mail: '#f5f0db', fountain: '#7de7ff' };
@@ -2888,6 +3019,11 @@ function drawMini(): void {
     ctx.textBaseline = 'middle';
     ctx.fillText('🔔', (bell.x + 0.5) * MINI_K, (bell.y - 1) * MINI_K);
   }
+  };
+  if (!staticReady) drawStaticLayer();
+  ctx = visible;
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(miniStatic!.canvas, 0, 0);
   const requestPoint = (location: string): { x: number; y: number } | null => {
     const l = location.toLowerCase();
     if (l.includes('monte') || l.includes('estátua') || l.includes('mew')) return { ...MEW_STATUE_FRONT };
@@ -2898,8 +3034,9 @@ function drawMini(): void {
     if (l.includes('praça') || l.includes('mural')) return west({ x: 48, y: 37 });
     return null;
   };
+  const miniDay = refreshDay();
   for (const request of state.requests.items) {
-    if (request.done || request.day !== refreshDay()) continue;
+    if (request.done || request.day !== miniDay) continue;
     const point = requestPoint(request.location);
     if (!point) continue;
     ctx.font = `${MINI_K * 3}px ${'system-ui, "Segoe UI Emoji", "Noto Color Emoji", sans-serif'}`;
@@ -3066,7 +3203,7 @@ function give(item: ItemId): void {
 
 function pressB(): void {
   if (legendaryScene.value) { finishLegendaryCutscene(); return; }
-  if (hoOhWishScene.value) { hoOhWishScene.value = null; return; }
+  if (hoOhWishScene.value) { finishHoOhWish(); return; }
   if (recapScenes.value.length) { finishRecap(); return; }
   // Com o aviso de boas-vindas na tela, o B só fecha o aviso (antes ele também abria o menu junto).
   if (welcome.value) {
@@ -3088,7 +3225,7 @@ function pressB(): void {
 
 function pressMenu(): void {
   if (legendaryScene.value) return;
-  if (dialog.value || quiz.value || (sheet.value && sheet.value !== 'menu')) return;
+  if (dialog.value || quiz.value || quizOpen.value || (sheet.value && sheet.value !== 'menu')) return;
   if (sheet.value === 'menu') {
     if (tab.value !== 'inicio') tab.value = 'inicio';
     else closeVillageSheet();
@@ -3178,7 +3315,16 @@ function thumbOf(gif: VillageMon['gif']): string {
 
 // Saldo único: com a Vila aberta, a carteira mexe no estado vivo dela (ver `app/wallet.ts`).
 attachLiveVillage(state, () => changed());
-watch(() => state.coins, (value) => syncCoins(value));
+/** Quanto entrou de moedas agora: sobe um "+N" ao lado do contador. */
+const coinGain = ref<{ key: number; amount: number } | null>(null);
+let coinGainTimer: ReturnType<typeof setTimeout> | null = null;
+watch(() => state.coins, (value, previous) => {
+  syncCoins(value);
+  if (value <= previous) return;
+  coinGain.value = { key: (coinGain.value?.key ?? 0) + 1, amount: value - previous };
+  if (coinGainTimer) clearTimeout(coinGainTimer);
+  coinGainTimer = setTimeout(() => { coinGain.value = null; }, 1300);
+});
 // O 2D-HD usa uma resolução de renderização apropriada para pixel art. Recria
 // o canvas também ao ativar/desativar Rotom, que muda o efeito efetivo.
 watch(() => effectiveVisual.value.villageHd2d, () => {
@@ -3257,16 +3403,27 @@ onMounted(async () => {
   // O atlas de tilesets (chão, natureza, casas, prédios): mesma regra, sem ele a Vila usa o desenho por código.
   const [groundTile, atlas, trainerAtlas] = await Promise.all([getVillageGroundTile().catch(() => null), getVillageAtlas().catch(() => null), trainerAtlasPromise]);
   if (!canvasEl.value || !wrapEl.value) return;
-  game = new VillageGame(canvasEl.value, map, state, villagers, profile.sprite, groundTile, atlas, trainerAtlas, undefined, {
+  // O jogo lê o estado dezenas de vezes por quadro: o objeto cru evita o custo do proxy reativo a cada leitura.
+  const rawState = toRaw(state);
+  game = new VillageGame(canvasEl.value, map, rawState, villagers, profile.sprite, groundTile, atlas, trainerAtlas, undefined, {
     floor: dioramaFloorEl.value ?? undefined,
     props: dioramaPropsEl.value ?? undefined,
     bands: dioramaBands,
   });
-  game.harvestedToday = (x, y) => state.harvested[`${x},${y}`] === day.value;
-  game.onStep = () => { changed(); updateWorldProgress(); checkMewBlessing(); checkTapInteraction(); checkGuidedTrip(); };
+  game.harvestedToday = (x, y) => rawState.harvested[`${x},${y}`] === day.value;
+  game.onStep = () => { stepsUnsaved = true; updateWorldProgress(); checkMewBlessing(); checkTapInteraction(); checkGuidedTrip(); };
   game.onResidentEconomyChange = changed;
   // Suicune: chuva fixa pelo resto do dia (se o clima não estiver desligado nas opções).
-  game.weatherMode = () => (effectiveVisual.value.weather !== 'off' && (effects().rain || requestInfluence(state, refreshDay()).weather) ? (requestInfluence(state, refreshDay()).weather ?? 'chuva') : effectiveVisual.value.weather);
+  // A resposta muda devagar e a cena pergunta a cada quadro: calcula no máximo duas vezes por segundo.
+  type WeatherAnswer = ReturnType<VillageGame['weatherMode']>;
+  let weatherCache: { at: number; value: WeatherAnswer } = { at: -Infinity, value: effectiveVisual.value.weather };
+  game.weatherMode = () => {
+    const at = performance.now();
+    if (at - weatherCache.at < 500) return weatherCache.value;
+    const influenced = effectiveVisual.value.weather !== 'off' ? requestInfluence(state, refreshDay()).weather : undefined;
+    weatherCache = { at, value: effectiveVisual.value.weather !== 'off' && (effects().rain || influenced) ? (influenced ?? 'chuva') : effectiveVisual.value.weather };
+    return weatherCache.value;
+  };
   game.lampStorm = () => effects().lampStorm;
   game.animSpeed = () => effects().animSpeed;
   game.metallic = () => effectiveVisual.value.metallic;
@@ -3302,6 +3459,8 @@ onMounted(async () => {
     checkMewBlessing();
     // O companheiro pode chegar depois de você parar no destino: confere também a cada segundo, não só a cada passo.
     checkGuidedTrip();
+    // Toque em algo que ficou ao alcance sem você dar um passo (o morador chegou perto), ou alvo que deixou de existir.
+    checkTapInteraction();
     refreshLegendNearby();
     if (!document.hidden && visual.sound && !dialog.value && !sheet.value && !legendaryScene.value && !hoOhWishScene.value && !cutsceneOpen.value && Date.now() >= nextAmbientSoundAt) {
       nextAmbientSoundAt = Date.now() + 18000 + Math.random() * 26000;
@@ -3330,6 +3489,9 @@ onMounted(async () => {
       state.lastSeen = Date.now();
       dirty = true;
     }
+    // Andar não pode serializar o save inteiro a cada 1,5 s; ao sair da Vila, `onLeave` grava a posição final.
+    if (stepsUnsaved && beat % 8 === 0) dirty = true;
+    if (dirty) stepsUnsaved = false;
     if (dirty) {
       celebrateFriendMilestones();
       dirty = !persist();
@@ -3367,6 +3529,7 @@ onBeforeUnmount(() => {
   if (saveTimer) clearInterval(saveTimer);
   if (cropTimer) clearInterval(cropTimer);
   if (toastTimer) clearTimeout(toastTimer);
+  if (coinGainTimer) clearTimeout(coinGainTimer);
   // Saiu antes do peixe morder: o lance não acontece (nem gasta tentativa do dia).
   if (fishTimer) { clearTimeout(fishTimer); fishTimer = null; fishing = false; }
   saveVillage(state);
@@ -3410,8 +3573,8 @@ onBeforeUnmount(() => {
         </div>
         <canvas
           ref="miniEl"
-          :width="map.w * MINI_K"
-          :height="map.h * MINI_K"
+          :width="map.w * 3"
+          :height="map.h * 3"
           :aria-label="miniBig ? 'Mapa da Vila: toque num lugar para ir até lá' : 'Minimapa da Vila: toque para aumentar'"
           role="button"
           tabindex="0"
@@ -3436,7 +3599,7 @@ onBeforeUnmount(() => {
           <div class="village-top-title"><strong>Vila</strong><span>{{ clock }}</span></div>
         </div>
         <div class="village-top-status" aria-label="Progresso da Vila">
-          <span class="village-coins" aria-label="Moedas"><span class="coin-mark" aria-hidden="true"></span>{{ state.coins }}</span>
+          <span class="village-coins" aria-label="Moedas"><span class="coin-mark" aria-hidden="true"></span>{{ state.coins }}<b v-if="coinGain" :key="coinGain.key" class="coin-gain" aria-hidden="true">+{{ coinGain.amount }}</b></span>
           <span class="village-house" :title="`Cidade: ${stage.name}`">Nv {{ level }}</span>
         </div>
         <div class="village-top-actions">
@@ -3512,8 +3675,9 @@ onBeforeUnmount(() => {
           <strong>{{ dialog.name }}</strong>
           <p>{{ dialog.text }}</p>
           <div v-if="giftPick" class="village-choices icons">
-            <button v-for="i in giftable" :key="i.id" type="button" :title="i.name" @click="give(i.id)"><img :src="icon(i.id)" alt="" width="32" height="32" />{{ i.name }} ×{{ count(state, i.id) }}</button>
-            <span v-if="giftable.length === 0">A mochila está vazia. Colete frutas, flores ou conchas!</span>
+            <small class="gift-day-note">{{ giftDayNote }}</small>
+            <button v-for="i in giftable" :key="i.id" type="button" :title="i.name" @click="give(i.id)"><img :src="icon(i.id)" alt="" width="32" height="32" /><span>{{ i.name }} ×{{ count(state, i.id) }}<small v-if="i.note" class="gift-tag">{{ i.note }}</small></span></button>
+            <span v-if="giftable.length === 0">Nada para presentear ainda. Colete frutas, flores ou conchas!</span>
             <button type="button" @click="giftPick = false">Voltar</button>
           </div>
           <div v-else class="village-choices">
@@ -3670,6 +3834,18 @@ onBeforeUnmount(() => {
             <span>⭐ Nível <b>{{ level }}</b></span>
             <span>✨ <b>{{ state.digital.instances.length }}</b> Digital Pokémon</span>
           </p>
+          <section class="village-next" aria-label="O que fazer agora">
+            <span class="village-next-icon" aria-hidden="true">{{ nextStep.icon }}</span>
+            <div class="village-next-copy">
+              <small>Agora na Vila</small>
+              <strong>{{ nextStep.title }}</strong>
+              <p>{{ nextStep.detail }}</p>
+            </div>
+            <button v-if="nextStep.action.kind !== 'none'" type="button" class="primary" @click="followNextStep">{{ nextStep.action.kind === 'starter' || nextStep.action.kind === 'mail' || nextStep.action.kind === 'build' ? 'Abrir' : 'Ir até lá' }}</button>
+            <ul class="village-marks" aria-label="Progresso de hoje">
+              <li v-for="mark in todayMarks" :key="mark.label" :class="{ done: mark.done >= mark.total }"><span aria-hidden="true">{{ mark.icon }}</span> {{ mark.label }} <b>{{ mark.done }}/{{ mark.total }}</b></li>
+            </ul>
+          </section>
           <nav class="menu-section-tabs" aria-label="Categorias do menu da Vila" role="tablist">
             <button v-for="section in menuSections" :key="section.id" type="button" role="tab" :aria-selected="menuSection === section.id" :class="{ active: menuSection === section.id }" @click="menuSection = section.id">
               <span aria-hidden="true">{{ section.icon }}</span><span>{{ section.label }}</span>
@@ -4055,3 +4231,51 @@ onBeforeUnmount(() => {
   </div>
 </template>
 
+
+<style>
+/* Só o que é novo nesta tela; o restante da Vila continua em `styles.css`. */
+.village-next {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 4px 10px;
+  margin: 0 0 10px;
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 216, 106, 0.42);
+  border-radius: 14px;
+  background: linear-gradient(135deg, rgba(255, 196, 84, 0.2), rgba(120, 180, 255, 0.1));
+}
+.village-next-icon { font-size: 1.7rem; line-height: 1; }
+.village-next-copy { min-width: 0; }
+.village-next-copy small { display: block; font-size: 0.68rem; letter-spacing: 0.06em; text-transform: uppercase; opacity: 0.72; }
+.village-next-copy strong { display: block; overflow-wrap: anywhere; line-height: 1.2; }
+.village-next-copy p { margin: 2px 0 0; font-size: 0.78rem; line-height: 1.3; opacity: 0.86; overflow-wrap: anywhere; }
+.village-next > button { min-height: 44px; padding-inline: 12px; white-space: nowrap; }
+.village-marks { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 4px 12px; margin: 4px 0 0; padding: 0; list-style: none; font-size: 0.74rem; opacity: 0.9; }
+.village-marks li.done b { color: #8ee58f; }
+.village-coins { position: relative; }
+.coin-gain {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  color: #ffe27a;
+  font-size: 0.78rem;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+  pointer-events: none;
+  animation: village-coin-gain 1.25s ease-out both;
+}
+@keyframes village-coin-gain {
+  from { opacity: 0; transform: translateY(6px); }
+  18% { opacity: 1; transform: translateY(0); }
+  to { opacity: 0; transform: translateY(-4px); }
+}
+.gift-day-note { flex-basis: 100%; opacity: 0.8; }
+.gift-tag { display: block; font-size: 0.7rem; opacity: 0.85; }
+@media (max-width: 380px) {
+  .village-next { grid-template-columns: auto minmax(0, 1fr); }
+  .village-next > button { grid-column: 1 / -1; width: 100%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .coin-gain { animation: none; }
+}
+</style>
