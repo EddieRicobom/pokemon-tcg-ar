@@ -27,6 +27,8 @@ export interface StartBoxOptions {
   virtual?: boolean;
   canvas: HTMLCanvasElement;
   container: HTMLElement;
+  /** O céu atrás do canvas transparente (palco virtual): a cena pinta nele a hora do dia e o clima. */
+  sky?: HTMLElement | null;
   onModeChange?: (mode: OrientationMode) => void;
 }
 
