@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { SOLO_EMOTIONS, SocialDirector, allEmojis } from './social';
+import { MOOD_EMOTIONS, SOLO_EMOTIONS, SocialDirector, allEmojis } from './social';
 import type { SocialActor } from './social';
 import { createWander, stepWander } from './wander';
 
@@ -128,6 +128,33 @@ describe('vida social da Caixa', () => {
     for (const e of SOLO_EMOTIONS) expect(e.weight).toBeGreaterThan(0);
     const all = allEmojis();
     for (const e of SOLO_EMOTIONS) expect(all).toContain(e.emoji);
-    expect(all.length).toBeLessThan(40);
+    for (const mood of Object.values(MOOD_EMOTIONS)) for (const e of mood) expect(all).toContain(e.emoji);
+    expect(all.length).toBeLessThan(55);
+  });
+
+  it('o humor segue o tempo: à noite aparece o sono e na chuva o guarda-chuva', () => {
+    const rainy = new Set<string>();
+    const night = new Set<string>();
+    for (const [target, mood] of [[rainy, 'chuva'], [night, null]] as const) {
+      const rng = seeded(11);
+      const actors = crowd(1, 1.2, rng);
+      const d = new SocialDirector(rng, 0);
+      d.setMood(mood, mood === null);
+      const hooks = { bubble: (_: number, e: string) => { target.add(e); }, hop: () => undefined };
+      for (let t = 0; t < 400_000; t += 100) d.update(100, actors, 1.2, hooks);
+    }
+    expect(rainy.has('☔')).toBe(true);
+    expect(rainy.has('🌙')).toBe(false);
+    expect(night.has('🌙')).toBe(true);
+  });
+
+  it('o vencedor do duelo faz a torcida comemorar', () => {
+    const rng = seeded(4);
+    const actors = crowd(2, 1.2, rng);
+    const d = new SocialDirector(rng, 1);
+    let cheers = 0;
+    const hooks = { bubble: () => undefined, hop: () => undefined, cheer: () => { cheers++; } };
+    for (let t = 0; t < 600_000; t += 50) d.update(50, actors, 1.2, hooks);
+    expect(cheers).toBeGreaterThan(0);
   });
 });

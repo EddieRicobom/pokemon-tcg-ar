@@ -1,5 +1,6 @@
 import { stepToward } from './wander';
 import type { Rng, WanderState } from './wander';
+import type { WeatherKind } from '../core/weather';
 
 /**
  * Vida social da Caixa: de vez em quando dois Pokémon se encontram (cumprimento, dança, pega-pega ou desafio) e, sozinhos,
@@ -16,6 +17,8 @@ export interface SocialActor {
 export interface SocialHooks {
   bubble(index: number, emoji: string, ms: number): void;
   hop(index: number): void;
+  /** Um desfecho animado: a torcida do Coliseu comemora. */
+  cheer?(): void;
 }
 
 export type EncounterKind = 'greet' | 'dance' | 'chase' | 'duel';
@@ -28,6 +31,7 @@ interface Cue {
   emoji?: string;
   ms?: number;
   hop?: boolean;
+  cheer?: boolean;
 }
 
 interface Script {
@@ -84,7 +88,7 @@ function scriptFor(kind: EncounterKind, rng: Rng): Script {
         cues: [
           { at: 0, who: 'a', emoji: '😤', ms: 1500 },
           { at: 150, who: 'b', emoji: '😠', ms: 1500 },
-          { at: 1400, who: 'win', emoji: pick(['😎', '😏', '💪'], rng), ms: 1700, hop: true },
+          { at: 1400, who: 'win', emoji: pick(['😎', '😏', '💪'], rng), ms: 1700, hop: true, cheer: true },
           { at: 1550, who: 'lose', emoji: pick(['😰', '😅', '🙃'], rng), ms: 1600 },
         ],
       };
@@ -113,9 +117,34 @@ export const SOLO_EMOTIONS: readonly Solo[] = [
   { emoji: '😢', ms: 2400, hold: 1400, hop: false, weight: 0.7 },
 ];
 
+/** O que a turma sente com o tempo lá fora e à noite (sorteado no lugar de uma emoção comum, em cerca de metade das vezes). */
+export const MOOD_EMOTIONS: Record<'chuva' | 'neve' | 'sol' | 'noite', readonly Solo[]> = {
+  chuva: [
+    { emoji: '☔', ms: 2400, hold: 0, hop: false, weight: 3 },
+    { emoji: '💧', ms: 2000, hold: 900, hop: true, weight: 2 },
+    { emoji: '😖', ms: 2000, hold: 0, hop: false, weight: 1 },
+  ],
+  neve: [
+    { emoji: '⛄', ms: 2600, hold: 1400, hop: true, weight: 2 },
+    { emoji: '❄️', ms: 2200, hold: 1200, hop: false, weight: 3 },
+    { emoji: '🥶', ms: 2200, hold: 900, hop: false, weight: 1 },
+  ],
+  sol: [
+    { emoji: '😎', ms: 2400, hold: 0, hop: false, weight: 2 },
+    { emoji: '🌞', ms: 2200, hold: 1000, hop: true, weight: 1 },
+  ],
+  noite: [
+    { emoji: '💤', ms: 4800, hold: 5200, hop: false, weight: 4 },
+    { emoji: '🌙', ms: 2600, hold: 1500, hop: false, weight: 2 },
+    { emoji: '🥱', ms: 2200, hold: 1200, hop: false, weight: 2 },
+  ],
+};
+const MOOD_CHANCE = 0.5;
+
 /** Todos os emojis que a Caixa pode mostrar (para pré-desenhar os balões). */
 export function allEmojis(): string[] {
   const set = new Set<string>(SOLO_EMOTIONS.map((e) => e.emoji));
+  for (const mood of Object.values(MOOD_EMOTIONS)) for (const e of mood) set.add(e.emoji);
   const rng = (() => {
     let i = 0;
     return () => (i++ % 7) / 7;
@@ -157,6 +186,8 @@ function weighted<T>(items: readonly (readonly [T, number])[], rng: Rng): T {
 export class SocialDirector {
   private encounters: Encounter[] = [];
   private nextMs: number;
+  private weather: WeatherKind | null = null;
+  private night = false;
 
   constructor(
     private readonly rng: Rng,
@@ -173,6 +204,18 @@ export class SocialDirector {
 
   get active(): readonly { kind: EncounterKind; a: number; b: number }[] {
     return this.encounters;
+  }
+
+  /** O tempo agora, que colore as emoções de quem está sozinho (`null` = clima desligado). */
+  setMood(weather: WeatherKind | null, night: boolean): void {
+    this.weather = weather;
+    this.night = night;
+  }
+
+  private moodPool(): readonly Solo[] | null {
+    if (this.night) return MOOD_EMOTIONS.noite;
+    if (this.weather === 'chuva' || this.weather === 'neve' || this.weather === 'sol') return MOOD_EMOTIONS[this.weather];
+    return null;
   }
 
   /** Esquece tudo (a lista de Pokémon mudou, a batalha começou ou o recurso foi desligado). */
@@ -227,7 +270,9 @@ export class SocialDirector {
       return;
     }
     const index = pick(free, this.rng);
-    const solo = weighted(SOLO_EMOTIONS.map((e) => [e, e.weight] as const), this.rng);
+    const mood = this.moodPool();
+    const pool = mood && this.rng() < MOOD_CHANCE ? mood : SOLO_EMOTIONS;
+    const solo = weighted(pool.map((e) => [e, e.weight] as const), this.rng);
     const s = actors[index]!.state;
     if (solo.hold > 0) {
       s.vx = 0;
@@ -283,6 +328,7 @@ export class SocialDirector {
       const index = cue.who === 'a' ? e.a : cue.who === 'b' ? e.b : (cue.who === 'win') === (e.winner === 'a') ? e.a : e.b;
       if (cue.emoji) hooks.bubble(index, cue.emoji, cue.ms ?? 1800);
       if (cue.hop) hooks.hop(index);
+      if (cue.cheer) hooks.cheer?.();
     }
     if (e.kind === 'chase') {
       const fleeing = B.state;

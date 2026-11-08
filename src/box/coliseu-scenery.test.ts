@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import type { Mesh, MeshBasicMaterial, Sprite } from 'three';
-import { ColiseuScenery, paintFlame, paintPennant, paintSand, paintStands, paintWallTile, SCENERY_RADIUS, STANDS_H, STANDS_W, standsPoint } from './coliseu-scenery';
+import type { Mesh, MeshBasicMaterial, Points, PointsMaterial, Sprite } from 'three';
+import { ColiseuScenery, crowdLift, OLA_MS, paintFlame, paintPennant, paintSand, paintStands, paintWallTile, SCENERY_RADIUS, STANDS_H, STANDS_W, standsPoint } from './coliseu-scenery';
 import type { PixelBuf } from './ground-art';
 
 const px = (b: PixelBuf, x: number, y: number) => (b.data[(y * b.w + x) * 4]! << 16) | (b.data[(y * b.w + x) * 4 + 1]! << 8) | b.data[(y * b.w + x) * 4 + 2]!;
@@ -154,5 +154,38 @@ describe('ColiseuScenery', () => {
     scenery.dispose();
     expect(scenery.group.children).toHaveLength(0);
     expect(scenery.group.parent).toBeNull();
+  });
+
+  it('a torcida balança e a ola levanta quem está na frente da onda', () => {
+    expect(crowdLift(0, 0, 1000, -1)).toBeLessThan(0.05);
+    // A onda nasce no ângulo 0 e dá a volta: a um quarto do tempo ela está em π/2.
+    const start = 1000;
+    const at = start + OLA_MS / 4;
+    expect(crowdLift(Math.PI / 2, 0, at, start)).toBeGreaterThan(0.15);
+    expect(crowdLift(Math.PI * 1.5, 0, at, start)).toBeLessThan(0.05);
+    expect(crowdLift(Math.PI / 2, 0, start + OLA_MS + 1, start)).toBeLessThan(0.05);
+  });
+
+  it('a torcida e o brilho das tochas fazem parte do detalhe; o brilho só desenha à noite', () => {
+    const scenery = new ColiseuScenery();
+    const glow = scenery.group.children.find((c): c is Points => 'isPoints' in c)!;
+    expect(glow.material).toBeTruthy();
+    expect((glow.material as PointsMaterial).visible).toBe(false);
+    scenery.setGlow(1);
+    expect((glow.material as PointsMaterial).visible).toBe(true);
+    scenery.setGlow(0);
+    expect((glow.material as PointsMaterial).visible).toBe(false);
+    scenery.dispose();
+  });
+
+  it('a ola começa com cheer, não reinicia no meio e não roda em movimento reduzido', () => {
+    const scenery = new ColiseuScenery();
+    scenery.cheer(100);
+    expect(scenery.olaActive).toBe(true);
+    scenery.setCalm(true);
+    expect(scenery.olaActive).toBe(false);
+    scenery.cheer(200);
+    expect(scenery.olaActive).toBe(false);
+    scenery.dispose();
   });
 });

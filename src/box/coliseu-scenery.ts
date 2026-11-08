@@ -1,4 +1,7 @@
-import { CircleGeometry, CylinderGeometry, DataTexture, DoubleSide, Group, Mesh, MeshBasicMaterial, NearestFilter, RGBAFormat, RepeatWrapping, SRGBColorSpace, Sprite, SpriteMaterial, UnsignedByteType } from 'three';
+import {
+  AdditiveBlending, BufferAttribute, BufferGeometry, CircleGeometry, Color, CylinderGeometry, DataTexture, DoubleSide, Group, InstancedMesh, LinearFilter, Matrix4, Mesh,
+  MeshBasicMaterial, NearestFilter, PlaneGeometry, Points, PointsMaterial, RGBAFormat, RepeatWrapping, SRGBColorSpace, Sprite, SpriteMaterial, UnsignedByteType,
+} from 'three';
 import { createBuf } from './ground-art';
 import type { PixelBuf } from './ground-art';
 import { put, rect } from '../village/village-art';
@@ -28,12 +31,36 @@ export function standsPoint(angle: number, row: number, radius: number = SCENERY
   return { x: Math.sin(angle) * r, y: WALL_HEIGHT + t * STANDS_RISE, z: Math.cos(angle) * r };
 }
 const TORCHES = 12;
+const CROWD_ROWS = [0.2, 0.5, 0.8] as const;
+const CROWD_PER_ROW = 36;
+const PENNANTS = 16;
+/** A torcida e as bandeiras se mexem a 12 quadros por segundo: já parece viva e quase não custa. */
+const CROWD_STEP_MS = 80;
+/** Quanto dura a ola, dando a volta nas arquibancadas. */
+export const OLA_MS = 3400;
+const OLA_WIDTH_RAD = 0.42;
+const OLA_HEIGHT_M = 0.2;
+
+/**
+ * Quanto um torcedor sobe (m) no instante `nowMs`: um balanço miúdo e, se uma ola começou em `olaStartMs` (negativo =
+ * nenhuma), o pulo quando a onda passa por ele no ângulo `angle`.
+ */
+export function crowdLift(angle: number, phase: number, nowMs: number, olaStartMs: number): number {
+  const idle = 0.012 + 0.012 * Math.sin(nowMs / 420 + phase);
+  if (olaStartMs < 0) return idle;
+  const age = (nowMs - olaStartMs) / OLA_MS;
+  if (age < 0 || age >= 1) return idle;
+  const front = age * Math.PI * 2;
+  const away = Math.abs(Math.atan2(Math.sin(angle - front), Math.cos(angle - front)));
+  return idle + OLA_HEIGHT_M * Math.exp(-((away / OLA_WIDTH_RAD) ** 2));
+}
 
 const STONE = { light: 0xe0d4b2, mid: 0xc9bb96, dark: 0xa3956f, shade: 0x7a6e52, deep: 0x2a2218 } as const;
 const SAND = { base: 0xc9b78a, light: 0xd9c9a0, dark: 0xb8a578 } as const;
 const RED = { main: 0xd8463c, dark: 0xa02a24 } as const;
 const BLUE = { main: 0x3f6fd0, dark: 0x2a4a98 } as const;
 const CROWD = [0xf2c9a0, 0x3a2a22, 0x8a5a38, 0xf5f0e0, 0xffd84a, 0xd0804a] as const;
+const SKIN = [0xf2c9a0, 0xd0a070, 0x8a5a38, 0x5a3a28] as const;
 
 /** Areia: base lisa com pontinhos claros e escuros em posições fixas. */
 export function paintSand(size = 96): PixelBuf {
@@ -143,6 +170,9 @@ function texture(buf: PixelBuf, repeatX = 1): DataTexture {
   return t;
 }
 
+const flagMatrix = new Matrix4();
+const flagSway = new Matrix4();
+
 export class ColiseuScenery {
   readonly group = new Group();
   private readonly materials: MeshBasicMaterial[] = [];
@@ -151,6 +181,17 @@ export class ColiseuScenery {
   /** Muro, arquibancada e tochas (desligado fica só a areia). */
   private readonly detailParts: { visible: boolean }[] = [];
   private detailOn = true;
+  /** Torcida: duas chamadas de desenho (corpos e cabeças), a altura de cada um escrita direto na matriz. */
+  private readonly fans: { angle: number; phase: number; y: number }[] = [];
+  private bodies: InstancedMesh | null = null;
+  private heads: InstancedMesh | null = null;
+  private readonly flags: { mesh: InstancedMesh; x: number; y: number; z: number; yaw: number; phase: number; index: number }[] = [];
+  private glow: Points | null = null;
+  private olaStart = -1;
+  private lastCrowdAt = -Infinity;
+  private calm = false;
+  private calmSettled = false;
+  private night = 0;
 
   constructor(readonly radius: number = SCENERY_RADIUS) {
     const R = radius;
@@ -197,6 +238,154 @@ export class ColiseuScenery {
       this.detailParts.push(sprite);
       this.torches.push({ sprite, phase: i * 1.7 });
     }
+    this.buildGlow(R);
+    this.buildCrowd(R);
+  }
+
+  /** O brilho das tochas à noite: todos os halos num único `Points`, somado à imagem. Apagado de dia (não desenha). */
+  private buildGlow(R: number): void {
+    const size = 32;
+    const data = new Uint8Array(size * size * 4);
+    for (let y = 0; y < size; y++) {
+      for (let x = 0; x < size; x++) {
+        const d = Math.hypot(x + 0.5 - size / 2, y + 0.5 - size / 2) / (size / 2);
+        const i = (y * size + x) * 4;
+        data[i] = data[i + 1] = data[i + 2] = 255;
+        data[i + 3] = Math.round(255 * Math.max(0, 1 - d) ** 2);
+      }
+    }
+    const map = new DataTexture(data, size, size, RGBAFormat, UnsignedByteType);
+    map.magFilter = map.minFilter = LinearFilter;
+    map.needsUpdate = true;
+    const positions = new Float32Array(TORCHES * 3);
+    this.torches.forEach(({ sprite }, i) => {
+      positions[i * 3] = sprite.position.x * ((R - 0.3) / (R - 0.15));
+      positions[i * 3 + 1] = sprite.position.y + 0.32;
+      positions[i * 3 + 2] = sprite.position.z * ((R - 0.3) / (R - 0.15));
+    });
+    const geometry = new BufferGeometry();
+    geometry.setAttribute('position', new BufferAttribute(positions, 3));
+    const material = new PointsMaterial({ map, color: 0xff9a40, size: 1.5, transparent: true, depthWrite: false, blending: AdditiveBlending, opacity: 0, sizeAttenuation: true });
+    material.visible = false;
+    this.glow = new Points(geometry, material);
+    this.glow.frustumCulled = false;
+    this.disposables.push(map, geometry, material);
+    this.group.add(this.glow);
+    this.detailParts.push(this.glow);
+  }
+
+  /** A torcida em volta da arena e as bandeiras no topo. Sem textura para a torcida: são quadrados coloridos, como pixels. */
+  private buildCrowd(R: number): void {
+    const crowd = new Group();
+    const flat = (): MeshBasicMaterial => {
+      const m = new MeshBasicMaterial({ side: DoubleSide });
+      this.materials.push(m);
+      this.disposables.push(m);
+      return m;
+    };
+    const total = CROWD_ROWS.length * CROWD_PER_ROW;
+    const bodyGeo = new PlaneGeometry(0.2, 0.22);
+    const headGeo = new PlaneGeometry(0.13, 0.13);
+    const bodies = new InstancedMesh(bodyGeo, flat(), total);
+    const heads = new InstancedMesh(headGeo, flat(), total);
+    bodies.frustumCulled = heads.frustumCulled = false;
+    this.disposables.push(bodyGeo, headGeo, bodies, heads);
+    const matrix = new Matrix4();
+    const color = new Color();
+    let index = 0;
+    CROWD_ROWS.forEach((row, r) => {
+      for (let i = 0; i < CROWD_PER_ROW; i++) {
+        const angle = ((i + r * 0.33) / CROWD_PER_ROW) * Math.PI * 2;
+        const p = standsPoint(angle, row, R - 0.08);
+        const y = p.y + 0.11;
+        const yaw = Math.atan2(-p.x, -p.z);
+        matrix.makeRotationY(yaw).setPosition(p.x, y, p.z);
+        bodies.setMatrixAt(index, matrix);
+        matrix.setPosition(p.x, y + 0.17, p.z);
+        heads.setMatrixAt(index, matrix);
+        const pick = (i * 7 + r * 13) % 10;
+        const section = Math.floor((angle / (Math.PI * 2)) * 16) % 2 === 0 ? RED : BLUE;
+        bodies.setColorAt(index, color.setHex(pick < 7 ? section.main : CROWD[(pick + r) % CROWD.length]!));
+        heads.setColorAt(index, color.setHex(SKIN[(i * 3 + r) % SKIN.length]!));
+        this.fans.push({ angle, phase: (i * 2.399 + r * 1.3) % (Math.PI * 2), y });
+        index++;
+      }
+    });
+    crowd.add(bodies, heads);
+    this.bodies = bodies;
+    this.heads = heads;
+
+    const flagGeo = new PlaneGeometry(0.34, 0.5);
+    flagGeo.translate(0.17, 0.25, 0);
+    this.disposables.push(flagGeo);
+    const perTeam = Math.ceil(PENNANTS / 2);
+    const teams = ([0, 1] as const).map((team) => {
+      const material = new MeshBasicMaterial({ map: texture(paintPennant(team)), side: DoubleSide, alphaTest: 0.5 });
+      this.materials.push(material);
+      this.disposables.push(material, material.map!);
+      const mesh = new InstancedMesh(flagGeo, material, perTeam);
+      mesh.frustumCulled = false;
+      this.disposables.push(mesh);
+      crowd.add(mesh);
+      return mesh;
+    });
+    for (let i = 0; i < PENNANTS; i++) {
+      const angle = (i / PENNANTS) * Math.PI * 2;
+      const p = standsPoint(angle, 1, R - 0.05);
+      const flag = { mesh: teams[i % 2]!, x: p.x, y: p.y, z: p.z, yaw: Math.atan2(-p.x, -p.z), phase: i * 1.1, index: Math.floor(i / 2) };
+      this.flags.push(flag);
+      flag.mesh.setMatrixAt(flag.index, matrix.makeRotationY(flag.yaw).setPosition(p.x, p.y, p.z));
+    }
+    this.group.add(crowd);
+    this.detailParts.push(crowd);
+  }
+
+  /** Quanto o brilho das tochas pesa (0 de dia, 1 de noite). */
+  setGlow(night: number): void {
+    this.night = night;
+    if (this.glow) (this.glow.material as PointsMaterial).visible = night > 0.05;
+  }
+
+  /** Movimento reduzido: chamas, torcida e bandeiras ficam paradas. */
+  setCalm(on: boolean): void {
+    this.calm = on;
+    this.calmSettled = false;
+    if (on) this.olaStart = -1;
+  }
+
+  /** A torcida faz a ola (ignorado se uma já está passando). */
+  cheer(nowMs: number): void {
+    if (this.calm || !this.detailOn) return;
+    if (this.olaStart >= 0 && nowMs - this.olaStart < OLA_MS) return;
+    this.olaStart = nowMs;
+  }
+
+  get olaActive(): boolean {
+    return this.olaStart >= 0;
+  }
+
+  private animateCrowd(nowMs: number): void {
+    if (!this.bodies || !this.heads) return;
+    if (nowMs - this.lastCrowdAt < CROWD_STEP_MS) return;
+    this.lastCrowdAt = nowMs;
+    if (this.olaStart >= 0 && nowMs - this.olaStart >= OLA_MS) this.olaStart = -1;
+    const bodies = this.bodies.instanceMatrix.array;
+    const heads = this.heads.instanceMatrix.array;
+    for (let i = 0; i < this.fans.length; i++) {
+      const fan = this.fans[i]!;
+      const y = fan.y + crowdLift(fan.angle, fan.phase, nowMs, this.olaStart);
+      bodies[i * 16 + 13] = y;
+      heads[i * 16 + 13] = y + 0.17;
+    }
+    this.bodies.instanceMatrix.needsUpdate = true;
+    this.heads.instanceMatrix.needsUpdate = true;
+    for (const flag of this.flags) {
+      flagMatrix.makeRotationY(flag.yaw);
+      flagSway.makeRotationZ(0.16 * Math.sin(nowMs / 340 + flag.phase));
+      flagMatrix.multiply(flagSway).setPosition(flag.x, flag.y, flag.z);
+      flag.mesh.setMatrixAt(flag.index, flagMatrix);
+      flag.mesh.instanceMatrix.needsUpdate = true;
+    }
   }
 
   get detail(): boolean {
@@ -217,6 +406,17 @@ export class ColiseuScenery {
   /** As chamas tremem (só escala e brilho, de graça para a GPU). */
   update(nowMs: number): void {
     if (!this.detailOn) return;
+    if (this.glow) (this.glow.material as PointsMaterial).opacity = this.night * (this.calm ? 0.6 : 0.56 + 0.1 * Math.sin(nowMs / 120));
+    if (this.calm) {
+      if (this.calmSettled) return;
+      this.calmSettled = true;
+      for (const { sprite } of this.torches) {
+        sprite.scale.set(0.3, 0.6, 1);
+        sprite.material.opacity = 0.95;
+      }
+      return;
+    }
+    this.animateCrowd(nowMs);
     for (const { sprite, phase } of this.torches) {
       const wobble = 1 + 0.14 * Math.sin(nowMs / 85 + phase) + 0.06 * Math.sin(nowMs / 37 + phase * 2);
       sprite.scale.set(0.3 * (1 + 0.06 * Math.sin(nowMs / 61 + phase)), 0.6 * (1 + (wobble - 1) * 0.6), 1);
@@ -230,6 +430,10 @@ export class ColiseuScenery {
     this.materials.length = 0;
     this.torches.length = 0;
     this.detailParts.length = 0;
+    this.fans.length = 0;
+    this.flags.length = 0;
+    this.bodies = this.heads = null;
+    this.glow = null;
     this.group.removeFromParent();
     this.group.clear();
   }
