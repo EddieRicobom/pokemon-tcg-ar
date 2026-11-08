@@ -281,10 +281,6 @@ onBeforeUnmount(() => thumbUrls.splice(0).forEach((url) => URL.revokeObjectURL(u
       </div>
     </section>
 
-    <div v-else class="collection-shortcuts">
-      <a class="button" :href="routeHref('vila')">Ir para a Vila</a>
-      <a class="button" :href="routeHref('arena')">Arena</a>
-    </div>
     <details v-if="teamRows.length > 0" class="team-strip">
       <summary>Moradores da Vila · {{ teamRows.length }}/{{ TEAM_SIZE }}<small v-if="team.auto"> · automática</small></summary>
       <ul>
@@ -304,7 +300,7 @@ onBeforeUnmount(() => thumbUrls.splice(0).forEach((url) => URL.revokeObjectURL(u
         <button type="button" :class="{ active: viewMode === 'lista' }" :aria-pressed="viewMode === 'lista'" @click="viewMode = 'lista'">Lista</button>
         <button type="button" :class="{ active: viewMode === 'grade' }" :aria-pressed="viewMode === 'grade'" @click="viewMode = 'grade'">Grade</button>
       </div>
-      <input v-model="search" type="text" :placeholder="viewMode === 'box' ? 'Buscar nas caixas da coleção' : 'Buscar por nome, coleção ou número'" aria-label="Buscar nas cartas guardadas" autocomplete="off" />
+      <input v-model="search" type="text" :placeholder="viewMode === 'box' ? 'Buscar nas caixas' : 'Nome, coleção ou número'" aria-label="Buscar nas cartas guardadas" autocomplete="off" />
       <details class="collection-filters"><summary>Filtros de tipo e geração</summary>
       <div class="filter-row species-filters">
         <ElementTypeFilter v-model="typeFilter" />
@@ -341,6 +337,11 @@ onBeforeUnmount(() => thumbUrls.splice(0).forEach((url) => URL.revokeObjectURL(u
 
     <p v-if="loading" class="message">Carregando a lista…</p>
     <p v-else-if="rows.length === 0 && digital.length > 0" class="message">Ainda não há carta escaneada. <a :href="routeHref('escanear')">Escanear uma carta</a> adiciona a coleção sem tirar seus companheiros digitais da Vila.</p>
+
+    <p v-if="viewMode === 'box' && boxCards.length > 0 && visibleIdSet.size === 0" class="message" role="status">
+      Nenhuma carta com essa busca.
+      <button type="button" class="link" @click="clearFilters">Limpar filtros</button>
+    </p>
 
     <CardBox
       v-if="viewMode === 'box' && boxCards.length > 0"
@@ -432,6 +433,12 @@ onBeforeUnmount(() => thumbUrls.splice(0).forEach((url) => URL.revokeObjectURL(u
         </div>
       </li>
     </ul>
+
+    <!-- Atalhos depois da coleção: as cartas vêm primeiro, e a Vila já tem aba própria. -->
+    <div v-if="!loading && boxCards.length > 0" class="collection-shortcuts">
+      <a class="button" :href="routeHref('vila')">Ir para a Vila</a>
+      <a class="button" :href="routeHref('arena')">Arena</a>
+    </div>
 
     <details v-if="digital.length > 0" class="digital-list">
       <summary>Digital Pokémon · {{ digital.length }}</summary>
