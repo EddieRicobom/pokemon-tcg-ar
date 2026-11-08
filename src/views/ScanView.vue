@@ -1089,11 +1089,6 @@ const VERDICT_PT = { aceita: 'aceita', duvida: 'em dúvida', rejeitada: 'rejeita
       Mostre a carta inteira, com boa luz e sem reflexo na parte de baixo, onde fica o número.
     </p>
     <p v-else class="note">Abra a câmera e aponte para a mesma carta física para ver o Pokémon sobre ela.</p>
-    <aside v-if="!cardId && !cameraOn && !cameraBusy" class="scan-first-run" aria-label="Como começar">
-      <strong>Como funciona</strong>
-      <span>1. Abra a câmera. 2. Aponte para uma carta física. 3. Se a leitura falhar, use <b>Buscar a carta à mão</b> abaixo.</span>
-      <a :href="routeHref('vila')">Sem carta agora? Comece pela Vila com um companheiro digital.</a>
-    </aside>
 
     <div
       ref="stageEl"
@@ -1294,6 +1289,95 @@ const VERDICT_PT = { aceita: 'aceita', duvida: 'em dúvida', rejeitada: 'rejeita
 
     <p v-if="cameraMessage && !cameraOn" class="message error" role="alert">{{ cameraMessage }}</p>
 
+    <aside v-if="!cardId && !cameraOn && !cameraBusy" class="scan-first-run" aria-label="Como começar">
+      <strong>Como funciona</strong>
+      <span>1. Abra a câmera. 2. Aponte para uma carta física. 3. Se a leitura falhar, use <b>Buscar a carta à mão</b> abaixo.</span>
+      <a :href="routeHref('vila')">Sem carta agora? Comece pela Vila com um companheiro digital.</a>
+    </aside>
+
+    <p v-if="loadingEngine && !cameraOn" class="message" role="status">{{ loadingEngine }}</p>
+    <p v-if="scan.phase === 'preparing' && !cameraOn" class="message" role="status">{{ scan.message }}</p>
+    <p v-if="scan.phase === 'error' && !cameraOn" class="message error" role="alert">{{ scan.message }}</p>
+
+    <div v-if="arStage !== 'idle' && !cameraOn && !(scan.phase === 'ready' && scan.card)" class="ar-panel" role="status" aria-live="polite">
+      <ol class="ar-steps">
+        <li v-for="step in arSteps" :key="step.key" :class="step.state">{{ step.label }}</li>
+      </ol>
+      <p v-if="arStage === 'selected'" class="message">Carta escolhida. Abra a câmera para ver o Pokémon sobre ela.</p>
+      <template v-if="arStage === 'error'">
+        <p class="message error" role="alert">{{ arError }}</p>
+        <div class="actions">
+          <button type="button" class="primary" @click="startArFor(pendingArCardId as string)">Tentar de novo</button>
+          <button type="button" @click="recompileAr">Recompilar o alvo da carta</button>
+          <button type="button" @click="dismissAr">Escolher outra carta</button>
+        </div>
+      </template>
+    </div>
+
+    <div v-if="scan.card && scan.phase === 'ready' && !cameraOn" class="result" role="status">
+      <h3>{{ scan.card.name }} <CardMarks :card="scan.card" /></h3>
+      <section class="scan-saved" aria-label="Carta salva">
+        <strong>✓ Carta salva em Minhas cartas</strong>
+        <span>Ela fica guardada neste aparelho. Você pode vê-la na coleção, colocá-la na Vila ou apontar a câmera para a mesma carta física e vê-la em AR.</span>
+      </section>
+      <p v-if="scan.card.scanCount === 1 && isShiny(scan.card) && scan.origin !== 'cache'" class="message shiny-news">Esta carta saiu shiny! O brilho dourado fica com ela para sempre.</p>
+      <p>
+        {{ scan.card.setName }} · nº {{ scan.card.localId }}/{{ scan.card.setOfficial }} ·
+        <code>{{ scan.card.id }}</code>
+        <template v-if="scan.card.dexIds[0]"> · Pokédex nº {{ scan.card.dexIds[0] }}</template>
+      </p>
+      <p class="origin">
+        {{ scan.origin === 'escolha' ? 'Escolhida por você entre as candidatas.' : scan.origin === 'manual' ? 'Escolhida por você na busca manual (não foi reconhecida pela câmera).' : scan.origin === 'cache' ? 'Aberta do cache do aparelho.' : 'Reconhecida automaticamente.' }}
+      </p>
+      <p v-if="spriteText" class="message" :class="{ error: spriteState?.kind === 'error' }">{{ spriteText }}</p>
+      <button v-if="spriteState?.kind === 'error'" type="button" @click="retrySprite">Tentar baixar o GIF de novo</button>
+      <div class="actions result-actions">
+        <button type="button" class="primary" :disabled="teamAction === 'loading' || teamAction === 'added' || teamAction === 'already' || teamAction === 'full' || teamAction === 'unavailable'" @click="takeScannedCardToVillage">
+          {{ teamAction === 'loading' ? 'Levando para a Vila…' : teamAction === 'added' ? 'Na Vila ✓' : teamAction === 'already' ? 'Já mora na Vila ✓' : teamAction === 'full' ? 'Vila cheia' : teamAction === 'unavailable' ? 'Pokémon não carregado' : 'Próximo passo: levar para a Vila' }}
+        </button>
+        <a class="button" :href="routeHref('cartas')">Ver em Minhas cartas</a>
+        <a class="button" :href="routeHref('escanear', scan.card.id)">Ver esta carta em AR</a>
+        <a class="button" :href="routeHref('arena')">Abrir a Arena</a>
+        <button type="button" @click="scanAnother">Escanear outra carta</button>
+      </div>
+      <p v-if="teamAction === 'added'" class="message" role="status">{{ scan.card.name }} agora mora na Vila e pode lutar na Arena.</p>
+      <p v-else-if="teamAction === 'already'" class="message" role="status">{{ scan.card.name }} já mora na Vila e pode lutar na Arena.</p>
+      <p v-else-if="teamAction === 'full'" class="message error" role="alert">A Vila chegou ao limite. <a :href="routeHref('cartas')">Abra Minhas cartas para trocar moradores.</a></p>
+      <p v-else-if="teamAction === 'unavailable'" class="message" role="status">O Pokémon desta carta ainda não está carregado. <a :href="routeHref('cartas')">Veja o status em Minhas cartas.</a></p>
+      <p v-else-if="teamAction === 'error'" class="message error" role="alert">Não consegui atualizar os moradores da Vila. Tente novamente ou abra <a :href="routeHref('cartas')">Minhas cartas</a>.</p>
+    </div>
+
+    <!-- Busca à mão: plano B quando a leitura automática não acha a carta. Com a câmera ligada vira uma folha («Buscar»). -->
+    <StageSheet v-if="!cardId" :docked="immersive" :host="dockEl" :open="sheet === 'manual'" title="Buscar a carta à mão" @close="sheet = null">
+      <component
+        :is="immersive ? 'div' : 'details'"
+        class="layout manual"
+        v-bind="immersive ? {} : { open: manualOpen, onToggle: (e: Event) => (manualOpen = (e.target as HTMLDetailsElement).open) }"
+      >
+        <summary v-if="!immersive">Não está lendo? Buscar a carta à mão</summary>
+        <label>Nome da carta (inglês, português ou japonês, ex.: Pikachu)
+          <input v-model="manualName" type="text" autocomplete="off" @keyup.enter="searchManual()" />
+        </label>
+        <label>Número da carta (opcional, ex.: 58)
+          <input v-model="manualNumber" type="text" inputmode="numeric" autocomplete="off" @keyup.enter="searchManual()" />
+        </label>
+        <button type="button" class="primary" @click="searchManual()">Buscar</button>
+        <p v-if="manualMessage" class="message">{{ manualMessage }}</p>
+        <p v-if="manualTotal > 0" class="meta">Mostrando {{ manualResults.length }} de {{ manualTotal }} cartas.</p>
+        <button v-for="match in manualResults" :key="match.id" type="button" class="manual-result" @click="pickManual(match.id)">
+          <CardArtwork v-if="match.thumb" :src="match.thumb" :alt="`Carta ${match.name}, ${match.setName}`" />
+          <span v-else class="thumb-missing" aria-hidden="true">sem imagem</span>
+          <span class="manual-result-text">
+            <strong>{{ match.name }}<template v-if="match.altName"> · {{ match.altName }}</template></strong>
+            <small>{{ match.setName }} · {{ match.localId }}/{{ match.setOfficial }}{{ match.release ? ` · ${match.release.slice(0, 4)}` : '' }}</small>
+          </span>
+        </button>
+        <button v-if="manualResults.length < manualTotal" type="button" class="link" @click="searchManual(true)">
+          Mostrar mais ({{ manualTotal - manualResults.length }} restantes)
+        </button>
+      </component>
+    </StageSheet>
+
     <!-- Com a câmera desligada, esta ferramenta fica aqui; com ela ligada, vira uma folha sobre a imagem (botão «Teste»). -->
     <StageSheet v-if="!cardId" :docked="immersive" :host="dockEl" :open="sheet === 'tools'" title="Teste e diagnóstico" @close="sheet = null">
       <!-- Com a câmera desligada, recolhido: quem só quer escanear não vê caixas de depuração embaixo do botão. -->
@@ -1391,89 +1475,6 @@ const VERDICT_PT = { aceita: 'aceita', duvida: 'em dúvida', rejeitada: 'rejeita
         </label>
         <p v-if="photoMessage" class="message" role="status">{{ photoMessage }}</p>
       </div>
-      </component>
-    </StageSheet>
-
-    <p v-if="loadingEngine && !cameraOn" class="message" role="status">{{ loadingEngine }}</p>
-    <p v-if="scan.phase === 'preparing' && !cameraOn" class="message" role="status">{{ scan.message }}</p>
-    <p v-if="scan.phase === 'error' && !cameraOn" class="message error" role="alert">{{ scan.message }}</p>
-
-    <div v-if="arStage !== 'idle' && !cameraOn && !(scan.phase === 'ready' && scan.card)" class="ar-panel" role="status" aria-live="polite">
-      <ol class="ar-steps">
-        <li v-for="step in arSteps" :key="step.key" :class="step.state">{{ step.label }}</li>
-      </ol>
-      <p v-if="arStage === 'selected'" class="message">Carta escolhida. Abra a câmera para ver o Pokémon sobre ela.</p>
-      <template v-if="arStage === 'error'">
-        <p class="message error" role="alert">{{ arError }}</p>
-        <div class="actions">
-          <button type="button" class="primary" @click="startArFor(pendingArCardId as string)">Tentar de novo</button>
-          <button type="button" @click="recompileAr">Recompilar o alvo da carta</button>
-          <button type="button" @click="dismissAr">Escolher outra carta</button>
-        </div>
-      </template>
-    </div>
-
-    <div v-if="scan.card && scan.phase === 'ready' && !cameraOn" class="result" role="status">
-      <h3>{{ scan.card.name }} <CardMarks :card="scan.card" /></h3>
-      <section class="scan-saved" aria-label="Carta salva">
-        <strong>✓ Carta salva em Minhas cartas</strong>
-        <span>Ela fica guardada neste aparelho. Você pode vê-la na coleção, colocá-la na Vila ou apontar a câmera para a mesma carta física e vê-la em AR.</span>
-      </section>
-      <p v-if="scan.card.scanCount === 1 && isShiny(scan.card) && scan.origin !== 'cache'" class="message shiny-news">Esta carta saiu shiny! O brilho dourado fica com ela para sempre.</p>
-      <p>
-        {{ scan.card.setName }} · nº {{ scan.card.localId }}/{{ scan.card.setOfficial }} ·
-        <code>{{ scan.card.id }}</code>
-        <template v-if="scan.card.dexIds[0]"> · Pokédex nº {{ scan.card.dexIds[0] }}</template>
-      </p>
-      <p class="origin">
-        {{ scan.origin === 'escolha' ? 'Escolhida por você entre as candidatas.' : scan.origin === 'manual' ? 'Escolhida por você na busca manual (não foi reconhecida pela câmera).' : scan.origin === 'cache' ? 'Aberta do cache do aparelho.' : 'Reconhecida automaticamente.' }}
-      </p>
-      <p v-if="spriteText" class="message" :class="{ error: spriteState?.kind === 'error' }">{{ spriteText }}</p>
-      <button v-if="spriteState?.kind === 'error'" type="button" @click="retrySprite">Tentar baixar o GIF de novo</button>
-      <div class="actions result-actions">
-        <button type="button" class="primary" :disabled="teamAction === 'loading' || teamAction === 'added' || teamAction === 'already' || teamAction === 'full' || teamAction === 'unavailable'" @click="takeScannedCardToVillage">
-          {{ teamAction === 'loading' ? 'Levando para a Vila…' : teamAction === 'added' ? 'Na Vila ✓' : teamAction === 'already' ? 'Já mora na Vila ✓' : teamAction === 'full' ? 'Vila cheia' : teamAction === 'unavailable' ? 'Pokémon não carregado' : 'Próximo passo: levar para a Vila' }}
-        </button>
-        <a class="button" :href="routeHref('cartas')">Ver em Minhas cartas</a>
-        <a class="button" :href="routeHref('escanear', scan.card.id)">Ver esta carta em AR</a>
-        <a class="button" :href="routeHref('arena')">Abrir a Arena</a>
-        <button type="button" @click="scanAnother">Escanear outra carta</button>
-      </div>
-      <p v-if="teamAction === 'added'" class="message" role="status">{{ scan.card.name }} agora mora na Vila e pode lutar na Arena.</p>
-      <p v-else-if="teamAction === 'already'" class="message" role="status">{{ scan.card.name }} já mora na Vila e pode lutar na Arena.</p>
-      <p v-else-if="teamAction === 'full'" class="message error" role="alert">A Vila chegou ao limite. <a :href="routeHref('cartas')">Abra Minhas cartas para trocar moradores.</a></p>
-      <p v-else-if="teamAction === 'unavailable'" class="message" role="status">O Pokémon desta carta ainda não está carregado. <a :href="routeHref('cartas')">Veja o status em Minhas cartas.</a></p>
-      <p v-else-if="teamAction === 'error'" class="message error" role="alert">Não consegui atualizar os moradores da Vila. Tente novamente ou abra <a :href="routeHref('cartas')">Minhas cartas</a>.</p>
-    </div>
-
-    <!-- Busca à mão: plano B quando a leitura automática não acha a carta. Com a câmera ligada vira uma folha («Buscar»). -->
-    <StageSheet v-if="!cardId" :docked="immersive" :host="dockEl" :open="sheet === 'manual'" title="Buscar a carta à mão" @close="sheet = null">
-      <component
-        :is="immersive ? 'div' : 'details'"
-        class="layout manual"
-        v-bind="immersive ? {} : { open: manualOpen, onToggle: (e: Event) => (manualOpen = (e.target as HTMLDetailsElement).open) }"
-      >
-        <summary v-if="!immersive">Não está lendo? Buscar a carta à mão</summary>
-        <label>Nome da carta (inglês, português ou japonês, ex.: Pikachu)
-          <input v-model="manualName" type="text" autocomplete="off" @keyup.enter="searchManual()" />
-        </label>
-        <label>Número da carta (opcional, ex.: 58)
-          <input v-model="manualNumber" type="text" inputmode="numeric" autocomplete="off" @keyup.enter="searchManual()" />
-        </label>
-        <button type="button" class="primary" @click="searchManual()">Buscar</button>
-        <p v-if="manualMessage" class="message">{{ manualMessage }}</p>
-        <p v-if="manualTotal > 0" class="meta">Mostrando {{ manualResults.length }} de {{ manualTotal }} cartas.</p>
-        <button v-for="match in manualResults" :key="match.id" type="button" class="manual-result" @click="pickManual(match.id)">
-          <CardArtwork v-if="match.thumb" :src="match.thumb" :alt="`Carta ${match.name}, ${match.setName}`" />
-          <span v-else class="thumb-missing" aria-hidden="true">sem imagem</span>
-          <span class="manual-result-text">
-            <strong>{{ match.name }}<template v-if="match.altName"> · {{ match.altName }}</template></strong>
-            <small>{{ match.setName }} · {{ match.localId }}/{{ match.setOfficial }}{{ match.release ? ` · ${match.release.slice(0, 4)}` : '' }}</small>
-          </span>
-        </button>
-        <button v-if="manualResults.length < manualTotal" type="button" class="link" @click="searchManual(true)">
-          Mostrar mais ({{ manualTotal - manualResults.length }} restantes)
-        </button>
       </component>
     </StageSheet>
   </section>
