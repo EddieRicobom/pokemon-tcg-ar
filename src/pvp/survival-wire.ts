@@ -118,7 +118,7 @@ function parseSideSnap(v: unknown): ArenaSnapshot['sides'][0] | null {
   if (!isNum(v.fireMs, 0, 5000) || !isNum(v.switchCdMs, 0, 60000) || !isNum(v.shieldMs, 0, 10000)) return null;
   const side: ArenaSnapshot['sides'][0] = { hp: v.hp as number[], active: v.active, x: v.x, y: v.y, fireMs: v.fireMs, switchCdMs: v.switchCdMs, shieldMs: v.shieldMs };
   // Escudo, órbita, Trilha e efeitos: opcionais (um anfitrião mais antigo não manda), mas se vierem têm de estar nos limites.
-  const optional: [keyof ArenaSnapshot['sides'][0], number][] = [['guardMs', 3000], ['guardCdMs', 20000], ['orbitAngle', 7], ['trailCharge', 1], ['trailMs', 6000], ['focusCharge', 1], ['burnMs', 5000], ['slowMs', 5000], ['stunMs', 5000]];
+  const optional: [keyof ArenaSnapshot['sides'][0], number][] = [['guardMs', 3000], ['guardCdMs', 20000], ['orbitAngle', 7], ['trailCharge', 1], ['trailMs', 6000], ['focusCharge', 1], ['swapMs', 3500], ['burnMs', 5000], ['slowMs', 5000], ['stunMs', 5000]];
   for (const [key, max] of optional) {
     if (v[key] === undefined) continue;
     if (!isNum(v[key], 0, max)) return null;

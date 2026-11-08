@@ -20,7 +20,7 @@ import type { ScreenPoint } from '../village/survivor-attack-art';
 import { TYPE_COLORS, TYPE_LABELS_PT } from '../core/pokemon-data';
 import type { PokemonType } from '../core/pokemon-data';
 import {
-  aliveCount, arenaCameraTarget, SV_TELEGRAPH_MS, attackSwapBlockReason, guardBlockReason, offscreenPointer, SV_ARENA_H, SV_ARENA_W, SV_ATTACK_SWAP_CD_MS, SV_GUARD_COOLDOWN_MS, SV_MON_RADIUS, SV_SWITCH_COOLDOWN_MS, SV_VIEW_H, SV_VIEW_W, switchBlockReason,
+  aliveCount, arenaCameraTarget, SV_SWAP_RECALL_MS, SV_SWAP_SEND_MS, SV_SWAP_TOTAL_MS, SV_TELEGRAPH_MS, attackSwapBlockReason, guardBlockReason, offscreenPointer, SV_ARENA_H, SV_ARENA_W, SV_ATTACK_SWAP_CD_MS, SV_GUARD_COOLDOWN_MS, SV_MON_RADIUS, SV_SWITCH_COOLDOWN_MS, SV_VIEW_H, SV_VIEW_W, switchBlockReason,
 } from '../core/survivor-pvp';
 import { SURVIVOR_CONE_HALF_ANGLE } from '../core/survivor-shapes';
 import type { ArenaEvent, ArenaSide, ArenaState, ArenaTeamState, ArenaWinner } from '../core/survivor-pvp';
@@ -73,8 +73,9 @@ interface Unit {
   hit: boolean;
   /** O rival está à direita: o sprite, que olha para a esquerda, vira para ele. */
   faceRight: boolean;
-  /** Acabou de entrar em campo (cresce do nada). */
-  enter: boolean;
+  /** Troca em andamento: voltando à bola (laser vermelho) ou saindo dela; `sw` é o quanto dele aparece (0 a 1). */
+  swap: 'recall' | 'send' | null;
+  sw: number;
   /** Acabou de desmaiar (cai e some). */
   down: boolean;
   /** Pouca vida (a sua): a barra pisca. */
@@ -178,7 +179,109 @@ function later(fn: () => void, ms: number): void {
   }, ms);
   timers.add(t);
 }
+/** Quando a troca (ou a entrada forçada) de cada lado começou, no relógio local: as fases rodam suaves mesmo entre dois instantâneos. */
 const enteredAt: [number, number] = [-Infinity, -Infinity];
+const swapStart: [number | null, number | null] = [null, null];
+const lastPhase: [string | null, string | null] = [null, null];
+
+/**
+ * Fase da troca de Pokémon: 1,5 s de volta à bola e 1,5 s de saída. `p` anda de 0 a 1 em cada fase; `visible` é quanto do
+ * Pokémon aparece (some na volta, cresce na saída). A entrada forçada por desmaio só tem a saída.
+ */
+function swapPhase(side: ArenaSide, now: number): { phase: 'recall' | 'send'; p: number; visible: number } | null {
+  const team = state.sides[side];
+  let phase: 'recall' | 'send' | null = null;
+  let p = 0;
+  if (team.swapMs > 0) {
+    swapStart[side] ??= now - (SV_SWAP_TOTAL_MS - team.swapMs);
+    const elapsed = Math.max(0, now - (swapStart[side] as number));
+    if (elapsed < SV_SWAP_RECALL_MS) {
+      phase = 'recall';
+      p = elapsed / SV_SWAP_RECALL_MS;
+    } else {
+      phase = 'send';
+      p = Math.min(1, (elapsed - SV_SWAP_RECALL_MS) / SV_SWAP_SEND_MS);
+    }
+  } else {
+    swapStart[side] = null;
+    const forced = now - enteredAt[side];
+    if (forced >= 0 && forced < SV_SWAP_SEND_MS) {
+      phase = 'send';
+      p = forced / SV_SWAP_SEND_MS;
+    }
+  }
+  if (!phase) {
+    lastPhase[side] = null;
+    return null;
+  }
+  if (phase === 'send' && lastPhase[side] !== 'send') playCue({ kind: 'enter' });
+  lastPhase[side] = phase;
+  return { phase, p, visible: phase === 'recall' ? 1 - p : Math.min(1, p * 1.25) };
+}
+
+/** Pokébola da troca e o laser vermelho que puxa o Pokémon para dentro ou o solta (como nos jogos). */
+function drawSwap(ctx: CanvasRenderingContext2D, map: (x: number, y: number, z?: number) => ScreenPoint, k: number, at: { x: number; y: number }, sp: { phase: 'recall' | 'send'; p: number }): void {
+  const ball = map(at.x, at.y, 46);
+  const body = map(at.x, at.y, 12);
+  const r = 8 * k;
+  const ease = 1 - (1 - sp.p) * (1 - sp.p);
+  // Ponta do laser: na volta acompanha o Pokémon sendo puxado; na saída acompanha o Pokémon descendo.
+  const tip = sp.phase === 'recall'
+    ? { x: body.x + (ball.x - body.x) * ease, y: body.y + (ball.y - body.y) * ease }
+    : { x: ball.x + (body.x - ball.x) * ease, y: ball.y + (body.y - ball.y) * ease };
+  const alpha = sp.phase === 'recall' ? 0.95 : 1 - sp.p * 0.75;
+  ctx.save();
+  ctx.lineCap = 'round';
+  const beam = (width: number, a: number, color: string): void => {
+    ctx.globalAlpha = a * alpha;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = width;
+    ctx.beginPath();
+    ctx.moveTo(ball.x, ball.y + r * 0.3);
+    ctx.lineTo(tip.x, tip.y);
+    ctx.stroke();
+  };
+  const thick = (0.6 + 0.4 * Math.sin(sp.p * Math.PI)) * k;
+  beam(11 * thick, 0.25, '#ff2a2a');
+  beam(5 * thick, 0.85, '#ff3b3b');
+  beam(1.8 * thick, 1, '#ffd9d9');
+  // Clarão vermelho e branco na bola quando ela fecha ou abre.
+  const flash = sp.phase === 'recall' ? Math.max(0, (sp.p - 0.75) / 0.25) : Math.max(0, 1 - sp.p / 0.4);
+  if (flash > 0.02) {
+    const g = ctx.createRadialGradient(ball.x, ball.y, 0, ball.x, ball.y, r * 3.2);
+    g.addColorStop(0, `rgba(255,255,255,${0.9 * flash})`);
+    g.addColorStop(0.35, `rgba(255,60,60,${0.55 * flash})`);
+    g.addColorStop(1, 'rgba(255,0,0,0)');
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(ball.x, ball.y, r * 3.2, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  // A bola: metade vermelha, metade branca, botão no meio; ao soltar o Pokémon a tampa levanta.
+  const open = sp.phase === 'send' ? Math.min(1, sp.p * 3) * (sp.p > 0.7 ? 1 - (sp.p - 0.7) / 0.3 : 1) : sp.p > 0.85 ? (1 - sp.p) / 0.15 : 0;
+  ctx.globalAlpha = 1;
+  ctx.lineWidth = Math.max(1.2, r * 0.18);
+  ctx.strokeStyle = '#1a1010';
+  ctx.fillStyle = '#f4f4f4';
+  ctx.beginPath();
+  ctx.arc(ball.x, ball.y + open * r * 0.15, r, 0, Math.PI);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = '#e33a3a';
+  ctx.beginPath();
+  ctx.arc(ball.x, ball.y - open * r * 0.9, r, Math.PI, Math.PI * 2);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = '#ffffff';
+  ctx.beginPath();
+  ctx.arc(ball.x, ball.y - open * r * 0.35, r * 0.3, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  ctx.restore();
+}
 const shake = ref(false);
 let shakeFrame = 0;
 /** Super efetivo: um clarão de tela muito leve, baixo por acessibilidade. */
@@ -357,9 +460,9 @@ function handleEvents(events: ArenaEvent[]): void {
       toast(e.side === mySide ? `${name} desmaiou` : `${name} (${props.friendName}) desmaiou`, e.side === mySide ? 'bad' : 'good', 2600);
     } else if (e.k === 'switch') {
       const name = mons[e.index]?.name ?? 'Pokémon';
-      enteredAt[e.side] = clockNow();
-      if (fxOn()) addArtFx('pulse', posOf(e.side).x, posOf(e.side).y, 30, mons[e.index]?.attackType ?? 'normal', 380);
-      if (e.side === mySide) toast(e.forced ? `Entrou ${name}` : `Você trocou para ${name}`, 'info', 1800, `sw:${name}`);
+      // Troca voluntária: a animação de 3 s vem do estado (`swapMs`). Entrada forçada por desmaio: só a saída da bola.
+      if (e.forced) enteredAt[e.side] = clockNow();
+      if (e.side === mySide) toast(e.forced ? `Entrou ${name}` : `Trocando para ${name}…`, 'info', 1800, `sw:${name}`);
       else toast(`${props.friendName} trocou para ${name}`, 'info', 1800, `fsw:${name}`);
     } else if (e.k === 'attack') {
       if (fxOn()) addArtFx('pulse', posOf(e.side).x, posOf(e.side).y, 34, mons[e.index]?.attackType ?? 'normal', 360);
@@ -480,7 +583,7 @@ function buildScene(now: number): void {
     const ghost = now - faintAt[side] < 650 ? team.mons[faintIndex[side]] : undefined;
     if (ghost && ghost.hp <= 0) {
       const g = toView(view.sides[side].x, view.sides[side].y);
-      out.push({ down: true, low: false, kx: '0cqw', ky: '0cqw', hit: false, enter: false, faceRight: false, key: `ghost-${side}`, mine: side === mySide, x: (g.x / SV_VIEW_W) * 100, y: (g.y / SV_VIEW_H) * 100, dexId: ghost.dexId, shiny: ghost.shiny, name: ghost.name, hpPct: 0, shield: false, guard: false, status: '' });
+      out.push({ down: true, low: false, kx: '0cqw', ky: '0cqw', hit: false, swap: null, sw: 1, faceRight: false, key: `ghost-${side}`, mine: side === mySide, x: (g.x / SV_VIEW_W) * 100, y: (g.y / SV_VIEW_H) * 100, dexId: ghost.dexId, shiny: ghost.shiny, name: ghost.name, hpPct: 0, shield: false, guard: false, status: '' });
     }
     if (!mon || mon.hp <= 0) continue;
     const p = toView(view.sides[side].x, view.sides[side].y);
@@ -489,12 +592,13 @@ function buildScene(now: number): void {
     const away = { x: p.x - other.x, y: p.y - other.y };
     const awayLen = Math.hypot(away.x, away.y) || 1;
     const isHit = fxOn() && now - hitAt[side] < 140;
-    out.push({ down: false, low: side === mySide && mon.hp / mon.maxHp <= 0.25, kx: isHit ? `${((away.x / awayLen) * 1.4).toFixed(2)}cqw` : '0cqw', ky: isHit ? `${((away.y / awayLen) * 1.4).toFixed(2)}cqw` : '0cqw', hit: isHit, enter: now - enteredAt[side] < 420, faceRight: other.x > p.x + 2, key: side === mySide ? 'me' : 'foe', mine: side === mySide, x: (p.x / SV_VIEW_W) * 100, y: (p.y / SV_VIEW_H) * 100, dexId: mon.dexId, shiny: mon.shiny, name: mon.name, hpPct: Math.round((100 * mon.hp) / mon.maxHp), shield: team.shieldMs > 0, guard: team.guardMs > 0, status });
+    const sp = swapPhase(side, now);
+    out.push({ swap: sp?.phase ?? null, sw: sp ? sp.visible : 1, down: false, low: side === mySide && mon.hp / mon.maxHp <= 0.25, kx: isHit ? `${((away.x / awayLen) * 1.4).toFixed(2)}cqw` : '0cqw', ky: isHit ? `${((away.y / awayLen) * 1.4).toFixed(2)}cqw` : '0cqw', hit: isHit, faceRight: other.x > p.x + 2, key: side === mySide ? 'me' : 'foe', mine: side === mySide, x: (p.x / SV_VIEW_W) * 100, y: (p.y / SV_VIEW_H) * 100, dexId: mon.dexId, shiny: mon.shiny, name: mon.name, hpPct: Math.round((100 * mon.hp) / mon.maxHp), shield: team.shieldMs > 0, guard: team.guardMs > 0, status });
   }
   const prev = units.value;
   const same = prev.length === out.length && out.every((u, i) => {
     const o = prev[i]!;
-    return u.key === o.key && Math.abs(u.x - o.x) < 0.05 && Math.abs(u.y - o.y) < 0.05 && u.hpPct === o.hpPct && u.hit === o.hit && u.enter === o.enter && u.down === o.down && u.low === o.low && u.shield === o.shield && u.guard === o.guard && u.status === o.status && u.faceRight === o.faceRight && u.dexId === o.dexId && u.kx === o.kx;
+    return u.key === o.key && Math.abs(u.x - o.x) < 0.05 && Math.abs(u.y - o.y) < 0.05 && u.hpPct === o.hpPct && u.hit === o.hit && u.swap === o.swap && Math.abs(u.sw - o.sw) < 0.01 && u.down === o.down && u.low === o.low && u.shield === o.shield && u.guard === o.guard && u.status === o.status && u.faceRight === o.faceRight && u.dexId === o.dexId && u.kx === o.kx;
   });
   if (!same) units.value = out;
   drawArt(now, view);
@@ -667,6 +771,10 @@ function drawArt(now: number, view: ArenaView): void {
         drawElementProjectile(ctx, mon.attackType, p, { ...p, y: p.y + 4 }, 3.5, 0.7, now, detailed, i);
       });
     }
+  }
+  for (const side of [mySide, foeSide] as const) {
+    const sp = swapPhase(side, now);
+    if (sp) drawSwap(ctx, map, k, view.sides[side], sp);
   }
   if (beamMarks.some((b) => now - b.born >= b.lifeMs + (b.fired ? 0 : 60))) beamMarks = beamMarks.filter((b) => now - b.born < b.lifeMs + (b.fired ? 0 : 60));
   for (const b of beamMarks) {
@@ -902,7 +1010,7 @@ function onBlur(): void {
   keys.up = keys.down = keys.left = keys.right = false;
 }
 
-const unitStyle = (u: Unit): Record<string, string> => ({ left: `${u.x}%`, top: `${u.y}%`, '--kx': u.kx, '--ky': u.ky });
+const unitStyle = (u: Unit): Record<string, string> => ({ left: `${u.x}%`, top: `${u.y}%`, '--kx': u.kx, '--ky': u.ky, '--sw': String(u.sw) });
 
 onMounted(() => {
   window.addEventListener('keydown', onKey);
@@ -953,7 +1061,7 @@ onBeforeUnmount(() => {
       @pointercancel="joyUp"
     >
       <div class="svp-floor" :style="floorStyle" aria-hidden="true"></div>
-      <div v-for="u in units" :key="u.key" class="svp-unit" :class="{ mine: u.mine, shield: u.shield, guard: u.guard, hit: u.hit, enter: u.enter, down: u.down, low: u.low, 'face-right': u.faceRight }" :style="unitStyle(u)">
+      <div v-for="u in units" :key="u.key" class="svp-unit" :class="{ mine: u.mine, shield: u.shield, guard: u.guard, hit: u.hit, swap: !!u.swap, down: u.down, low: u.low, 'face-right': u.faceRight }" :style="unitStyle(u)">
         <span class="svp-shadow" aria-hidden="true"></span>
         <span class="svp-bubble" aria-hidden="true"></span>
         <span class="svp-ring"></span>
@@ -963,7 +1071,7 @@ onBeforeUnmount(() => {
       </div>
 
       <canvas ref="artCanvas" class="svp-art" aria-hidden="true"></canvas>
-      <div v-for="u in units" :key="`bar-${u.key}`" class="svp-bars" :class="{ low: u.low, down: u.down }" :style="unitStyle(u)" aria-hidden="true">
+      <div v-for="u in units" :key="`bar-${u.key}`" class="svp-bars" :class="{ low: u.low, down: u.down, swap: !!u.swap }" :style="unitStyle(u)" aria-hidden="true">
         <i class="svp-bar floating"><b :style="{ width: `${u.hpPct}%` }"></b></i>
       </div>
 
@@ -1411,12 +1519,16 @@ onBeforeUnmount(() => {
   from { scale: 1.8; opacity: 0; }
 }
 
-.svp-unit.enter .svp-sprite {
-  animation: svp-enter 0.4s cubic-bezier(0.2, 1.4, 0.4, 1);
+.svp-unit.swap .svp-sprite {
+  scale: var(--sw, 1);
+  opacity: var(--sw, 1);
+  translate: 0 calc((1 - var(--sw, 1)) * -9cqw);
+  filter: brightness(calc(1.2 + (1 - var(--sw, 1)))) saturate(2.2) drop-shadow(0 0 4px #ff2a2a);
 }
 
-@keyframes svp-enter {
-  from { opacity: 0; scale: 0.2; }
+.svp-unit.swap .svp-shadow,
+.svp-bars.swap {
+  opacity: var(--sw, 1);
 }
 
 .svp-arena.shake {
@@ -1513,7 +1625,7 @@ onBeforeUnmount(() => {
 
 @media (prefers-reduced-motion: reduce) {
   .svp-fx.dmg { animation-duration: 0.01s; }
-  .svp-arena.shake, .svp-unit.enter .svp-sprite, .svp-unit.down .svp-sprite, .svp-bars.low .svp-bar b, .svp-count { animation: none; }
+  .svp-arena.shake, .svp-unit.down .svp-sprite, .svp-bars.low .svp-bar b, .svp-count { animation: none; }
   .svp-unit.hit .svp-sprite { translate: none; filter: none; }
   .svp-bubble { animation: none; }
   .svp-arena.hurt { outline-width: 2px; }

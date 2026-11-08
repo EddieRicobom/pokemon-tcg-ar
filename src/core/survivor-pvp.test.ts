@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   aliveCount, applyArenaSnapshot, canSwitch, createArena, guardBlockReason, NO_INPUT, arenaCamera, arenaCameraTarget, offscreenPointer, SV_ARENA_H, SV_ARENA_W, SV_START_OFFSET, SV_VIEW_H, SV_VIEW_W, SV_COUNTDOWN_MS, SV_ENTRY_SHIELD_MS, SV_GUARD_COOLDOWN_MS,
-  SV_GUARD_MS, SV_MAX_MS, SV_SUDDEN_DEATH_MS, SV_SWITCH_COOLDOWN_MS, snapshotArena, stepArena, svMonFromRun, svRunScore, switchBlockReason,
+  SV_GUARD_MS, SV_MAX_MS, SV_SUDDEN_DEATH_MS, SV_SWAP_RECALL_MS, SV_SWAP_SEND_MS, SV_SWAP_TOTAL_MS, SV_SWITCH_COOLDOWN_MS, snapshotArena, stepArena, svMonFromRun, svRunScore, switchBlockReason,
 } from './survivor-pvp';
 import type { ArenaEvent, ArenaInput, ArenaState, SvMonSpec, SvRunResult } from './survivor-pvp';
 
@@ -144,10 +144,12 @@ describe('survival pvp: a arena', () => {
     const hurt = s.sides[0].mons[0]!.hp;
     expect(hurt).toBeLessThan(100);
     stepArena(s, [{ dx: 0, dy: 0, switchTo: 1 }, NO_INPUT], 20);
+    run60(s, SV_SWAP_TOTAL_MS + 100);
     expect(s.sides[0].active).toBe(1);
     expect(s.sides[0].mons[0]!.hp).toBe(hurt);
     run60(s, SV_SWITCH_COOLDOWN_MS + 200);
     stepArena(s, [{ dx: 0, dy: 0, switchTo: 0 }, NO_INPUT], 20);
+    run60(s, SV_SWAP_TOTAL_MS + 100);
     expect(s.sides[0].active).toBe(0);
     expect(s.sides[0].mons[0]!.hp).toBeLessThanOrEqual(hurt);
   });
@@ -162,8 +164,14 @@ describe('survival pvp: a arena', () => {
     expect(switchBlockReason(s, 0, 7)).not.toBeNull();
     expect(canSwitch(s, 0, 1)).toBe(true);
     stepArena(s, [{ dx: 0, dy: 0, switchTo: 1 }, NO_INPUT], 20);
-    expect(s.sides[0].active).toBe(1);
+    // A troca leva 3 s: nada muda de lugar no começo, o campo é do novo só depois da volta à bola.
+    expect(s.sides[0].active).toBe(0);
+    expect(s.sides[0].swapMs).toBeGreaterThan(SV_SWAP_TOTAL_MS - 100);
     expect(s.sides[0].switchCdMs).toBeGreaterThan(SV_SWITCH_COOLDOWN_MS - 100);
+    expect(switchBlockReason(s, 0, 2)).toMatch(/acontecendo/);
+    run60(s, SV_SWAP_TOTAL_MS + 100);
+    expect(s.sides[0].active).toBe(1);
+    expect(s.sides[0].swapMs).toBe(0);
     stepArena(s, [{ dx: 0, dy: 0, switchTo: 2 }, NO_INPUT], 20);
     expect(s.sides[0].active).toBe(1);
     expect(switchBlockReason(s, 0, 2)).toMatch(/Troca em/);
@@ -182,8 +190,11 @@ describe('survival pvp: a arena', () => {
     };
     const shielded = make();
     stepArena(shielded, [{ dx: 0, dy: 0, switchTo: 1 }, NO_INPUT], 20);
-    expect(shielded.sides[0].shieldMs).toBeGreaterThan(SV_ENTRY_SHIELD_MS - 100);
-    run60(shielded, 800);
+    // Parado e protegido durante a troca inteira; ao entrar ganha ainda a proteção de quem chega.
+    run60(shielded, SV_SWAP_RECALL_MS + 100);
+    expect(shielded.sides[0].active).toBe(1);
+    expect(shielded.sides[0].shieldMs).toBeGreaterThan(SV_ENTRY_SHIELD_MS - 300);
+    run60(shielded, SV_SWAP_SEND_MS);
     expect(shielded.sides[0].mons[1]!.hp).toBe(100);
     const control = make();
     run60(control, 800);

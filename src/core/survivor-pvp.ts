@@ -39,7 +39,11 @@ export const SV_SHOT_LIFE_MS = 1600;
 /** Área e golpes que travam no alvo avisam no chão antes de acertar. */
 export const SV_TELEGRAPH_MS = 1500;
 /** Recarga entre trocas voluntárias (a troca forçada por desmaio não paga recarga). */
-export const SV_SWITCH_COOLDOWN_MS = 5000;
+export const SV_SWITCH_COOLDOWN_MS = 10_000;
+/** Troca de Pokémon: 1,5 s para o atual voltar à bola (laser vermelho) e 1,5 s para o novo sair. Quem troca fica parado e protegido. */
+export const SV_SWAP_RECALL_MS = 1500;
+export const SV_SWAP_SEND_MS = 1500;
+export const SV_SWAP_TOTAL_MS = SV_SWAP_RECALL_MS + SV_SWAP_SEND_MS;
 /** Recarga entre duas trocas de ataque, para o botão não virar dois golpes de graça. */
 export const SV_ATTACK_SWAP_CD_MS = 1500;
 /** Quem entra fica protegido por um instante, para a troca nunca virar uma armadilha. */
@@ -284,6 +288,9 @@ export interface ArenaTeamState {
   trailTickMs: number;
   /** Foco: carga do feixe (0–1). */
   focusCharge: number;
+  /** Troca em andamento: tempo que falta (0 = sem troca) e quem vai entrar. O Pokémon em campo muda quando faltam `SV_SWAP_SEND_MS`. */
+  swapMs: number;
+  swapTo: number;
   /** Efeitos do golpe do rival no Pokémon em campo. */
   burnMs: number;
   burnDps: number;
@@ -408,7 +415,7 @@ function teamState(side: ArenaSide, specs: readonly SvMonSpec[]): ArenaTeamState
   const mons: ArenaMon[] = specs.map((s) => ({ ...s, types: [...s.types], ...(s.alt ? { alt: { ...s.alt } } : {}), hp: clamp(s.startHp ?? s.maxHp, 0, s.maxHp) }));
   return {
     mons, active: Math.max(0, mons.findIndex((m) => m.hp > 0)), x, y, fireMs: 600, switchCdMs: 0, attackSwapCdMs: 0, shieldMs: 0,
-    guardMs: 0, guardCdMs: 0, orbitAngle: 0, orbitCdMs: 0, rapidPending: 0, rapidDelayMs: 0, trailCharge: 0, trailMs: 0, trail: [], trailTickMs: 0, focusCharge: 0,
+    guardMs: 0, guardCdMs: 0, orbitAngle: 0, orbitCdMs: 0, rapidPending: 0, rapidDelayMs: 0, trailCharge: 0, trailMs: 0, trail: [], trailTickMs: 0, focusCharge: 0, swapMs: 0, swapTo: -1,
     burnMs: 0, burnDps: 0, slowMs: 0, stunMs: 0, stunCdMs: 0, pushCdMs: 0,
   };
 }
@@ -430,7 +437,7 @@ export const activeMon = (team: ArenaTeamState): ArenaMon | undefined => team.mo
 export function canSwitch(state: ArenaState, side: ArenaSide, to: number): boolean {
   const team = state.sides[side];
   const mon = team.mons[to];
-  return state.winner === null && state.countdownMs <= 0 && !!mon && mon.hp > 0 && to !== team.active && team.switchCdMs <= 0;
+  return state.winner === null && state.countdownMs <= 0 && !!mon && mon.hp > 0 && to !== team.active && team.switchCdMs <= 0 && team.swapMs <= 0;
 }
 
 /** Por que a troca não vale agora; null quando vale. Alimenta o aviso curto da tela. */
@@ -442,6 +449,7 @@ export function switchBlockReason(state: ArenaState, side: ArenaSide, to: number
   if (mon.hp <= 0) return `${mon.name} está fora de combate.`;
   if (state.countdownMs > 0) return 'A luta ainda não começou.';
   if (state.winner !== null) return 'A luta acabou.';
+  if (team.swapMs > 0) return 'A troca já está acontecendo.';
   if (team.switchCdMs > 0) return `Troca em ${Math.ceil(team.switchCdMs / 1000)} s.`;
   return null;
 }
@@ -719,7 +727,7 @@ function fireAttack(state: ArenaState, side: ArenaSide, events: ArenaEvent[]): v
 function stepOrbit(state: ArenaState, side: ArenaSide, dt: number, events: ArenaEvent[]): void {
   const team = state.sides[side];
   const mon = team.mons[team.active];
-  if (!mon || mon.hp <= 0 || categoryOf(mon) !== 'orbit') return;
+  if (!mon || mon.hp <= 0 || categoryOf(mon) !== 'orbit' || team.swapMs > 0) return;
   team.orbitAngle = (team.orbitAngle + survivorOrbitAngularSpeed(mon.fireMs) * dt) % (Math.PI * 2);
   team.orbitCdMs = Math.max(0, team.orbitCdMs - dt);
   if (team.orbitCdMs > 0) return;
@@ -737,7 +745,7 @@ function stepOrbit(state: ArenaState, side: ArenaSide, dt: number, events: Arena
 function stepTrail(state: ArenaState, side: ArenaSide, moved: number, dt: number, events: ArenaEvent[]): void {
   const team = state.sides[side];
   const mon = team.mons[team.active];
-  if (!mon || mon.hp <= 0 || categoryOf(mon) !== 'trilha') return;
+  if (!mon || mon.hp <= 0 || categoryOf(mon) !== 'trilha' || team.swapMs > 0) return;
   if (team.trailMs <= 0) {
     team.trailCharge = Math.min(1, team.trailCharge + moved / SV_TRAIL_DISTANCE);
     if (team.trailCharge >= 1) {
@@ -766,7 +774,7 @@ function stepTrail(state: ArenaState, side: ArenaSide, moved: number, dt: number
 function stepFocus(state: ArenaState, side: ArenaSide, dt: number, events: ArenaEvent[]): void {
   const team = state.sides[side];
   const mon = team.mons[team.active];
-  if (!mon || mon.hp <= 0 || categoryOf(mon) !== 'foco' || team.stunMs > 0) return;
+  if (!mon || mon.hp <= 0 || categoryOf(mon) !== 'foco' || team.stunMs > 0 || team.swapMs > 0) return;
   if (state.beams.some((b) => b.side === side)) return;
   team.focusCharge = Math.min(1, team.focusCharge + dt / Math.max(SV_FOCUS_MIN_CHARGE_MS, mon.fireMs * 1.6));
   if (team.focusCharge < 1) return;
@@ -838,8 +846,20 @@ export function stepArena(state: ArenaState, inputs: readonly [ArenaInput | unde
     team.guardCdMs = Math.max(0, team.guardCdMs - dt);
     team.stunCdMs = Math.max(0, team.stunCdMs - dt);
     team.pushCdMs = Math.max(0, team.pushCdMs - dt);
+    // A troca por vontade própria leva 3 s: o atual volta à bola, o novo sai dela e só então assume o campo.
+    if (team.swapMs > 0) {
+      team.swapMs = Math.max(0, team.swapMs - dt);
+      if (team.swapTo >= 0 && team.swapMs <= SV_SWAP_SEND_MS) {
+        enter(team, team.swapTo);
+        team.swapTo = -1;
+      }
+      team.shieldMs = Math.max(team.shieldMs, 60);
+    }
     if (input.switchTo >= 0 && canSwitch(state, side, input.switchTo)) {
-      enter(team, input.switchTo);
+      team.swapTo = input.switchTo;
+      team.swapMs = SV_SWAP_TOTAL_MS;
+      team.rapidPending = 0;
+      team.focusCharge = 0;
       team.switchCdMs = SV_SWITCH_COOLDOWN_MS;
       events.push({ k: 'switch', side, index: input.switchTo, forced: false });
     }
@@ -872,7 +892,7 @@ export function stepArena(state: ArenaState, inputs: readonly [ArenaInput | unde
     if (!mon || mon.hp <= 0) continue;
     const beforeX = team.x;
     const beforeY = team.y;
-    if (team.stunMs <= 0) {
+    if (team.stunMs <= 0 && team.swapMs <= 0) {
       const len = Math.hypot(input.dx, input.dy);
       const scale = len > 1 ? 1 / len : 1;
       const speed = mon.speed * (team.slowMs > 0 ? 0.5 : 1) * (team.trailMs > 0 ? SV_TRAIL_SPEED_MULTIPLIER : 1);
@@ -905,7 +925,7 @@ export function stepArena(state: ArenaState, inputs: readonly [ArenaInput | unde
   for (const side of [0, 1] as const) {
     const team = state.sides[side];
     const mon = team.mons[team.active];
-    if (!mon || mon.hp <= 0 || team.stunMs > 0) continue;
+    if (!mon || mon.hp <= 0 || team.stunMs > 0 || team.swapMs > 0) continue;
     if (team.rapidPending > 0) {
       team.rapidDelayMs -= dt;
       if (team.rapidDelayMs <= 0) {
@@ -977,6 +997,8 @@ export interface ArenaTeamSnap {
   trail?: { x: number; y: number }[];
   /** Carga do feixe do Foco (0–1). */
   focusCharge?: number;
+  /** Troca de Pokémon em andamento (ms que faltam). */
+  swapMs?: number;
   /** Efeitos em andamento (só para mostrar o ícone). */
   burnMs?: number;
   slowMs?: number;
@@ -1024,7 +1046,7 @@ export function snapshotArena(state: ArenaState, tick: number): ArenaSnapshot {
     hp: t.mons.map((m) => Math.round(m.hp)), active: t.active, x: round1(t.x), y: round1(t.y),
     fireMs: Math.round(t.fireMs), switchCdMs: Math.round(t.switchCdMs), shieldMs: Math.round(t.shieldMs),
     guardMs: Math.round(t.guardMs), guardCdMs: Math.round(t.guardCdMs), orbitAngle: Math.round(t.orbitAngle * 1000) / 1000,
-    trailCharge: Math.round(t.trailCharge * 100) / 100, trailMs: Math.round(t.trailMs), focusCharge: Math.round(t.focusCharge * 100) / 100,
+    trailCharge: Math.round(t.trailCharge * 100) / 100, trailMs: Math.round(t.trailMs), focusCharge: Math.round(t.focusCharge * 100) / 100, swapMs: Math.round(t.swapMs),
     trail: t.trail.slice(-SV_TRAIL_MAX_POINTS).map((p) => ({ x: round1(p.x), y: round1(p.y) })),
     burnMs: Math.round(t.burnMs), slowMs: Math.round(t.slowMs), stunMs: Math.round(t.stunMs),
     ...(t.mons.some((m) => m.alt) ? { alt: t.mons.map((m) => m.altOn === true), attackSwapCdMs: Math.round(t.attackSwapCdMs) } : {}),
@@ -1064,6 +1086,7 @@ export function applyArenaSnapshot(state: ArenaState, snap: ArenaSnapshot): bool
     team.trailCharge = s.trailCharge ?? 0;
     team.trailMs = s.trailMs ?? 0;
     team.focusCharge = s.focusCharge ?? 0;
+    team.swapMs = s.swapMs ?? 0;
     team.trail = (s.trail ?? []).map((p) => ({ x: p.x, y: p.y, bornMs: snap.timeMs }));
     team.burnMs = s.burnMs ?? 0;
     team.slowMs = s.slowMs ?? 0;

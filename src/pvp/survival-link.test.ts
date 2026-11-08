@@ -90,7 +90,7 @@ describe('survival pvp: ligação anfitrião ↔ convidado', () => {
     const t = setup();
     for (let i = 0; i < 260; i++) t.frame();
     t.frame(NO_INPUT, { dx: 0, dy: 0, switchTo: 2 });
-    for (let i = 0; i < 10; i++) t.frame();
+    for (let i = 0; i < 260; i++) t.frame();
     expect(t.host.state.sides[1].active).toBe(2);
     expect(t.guest.state.sides[1].active).toBe(2);
     expect(t.guest.events.some((e) => e.k === 'switch' && e.side === 1 && e.index === 2 && !e.forced)).toBe(true);

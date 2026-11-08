@@ -51,6 +51,8 @@ describe('arena do PvP do Survival: montagem das duas telas', () => {
     expect(el.querySelector('.svp-summary')?.textContent).toMatch(/\d:\d\d/);
     (el.querySelectorAll('.svp-swap')[1] as HTMLButtonElement).click();
     await vi.advanceTimersByTimeAsync(100);
+    expect(host.state.sides[0].swapMs).toBeGreaterThan(0);
+    await vi.advanceTimersByTimeAsync(3300);
     expect(host.state.sides[0].active).toBe(1);
     expect(host.state.sides[1].active).toBe(0);
     expect(toGuest.some((m) => m.t === 'sv-snap')).toBe(true);
@@ -62,7 +64,7 @@ describe('arena do PvP do Survival: montagem das duas telas', () => {
     const el = mount(host);
     await vi.advanceTimersByTimeAsync(4000);
     (el.querySelectorAll('.svp-swap')[1] as HTMLButtonElement).click();
-    await vi.advanceTimersByTimeAsync(100);
+    await vi.advanceTimersByTimeAsync(3300);
     (el.querySelectorAll('.svp-swap')[0] as HTMLButtonElement).click();
     await vi.advanceTimersByTimeAsync(100);
     await nextTick();
