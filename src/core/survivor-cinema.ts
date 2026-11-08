@@ -6,6 +6,20 @@
 
 const clamp01 = (v: number): number => Math.min(1, Math.max(0, v));
 
+/** Maior passo do motor. Acima disso um tiro rápido atravessa o inimigo sem encostar, e o Ritmo acelerado dobra o passo. */
+export const MAX_SIM_STEP_MS = 34;
+
+/** Quantos passos iguais cobrem `dtMs` sem passar de `MAX_SIM_STEP_MS`: celular lento não pode mudar as colisões. */
+export function simulationSteps(dtMs: number): { count: number; stepMs: number } {
+  const count = Math.max(1, Math.ceil(dtMs / MAX_SIM_STEP_MS));
+  return { count, stepMs: dtMs / count };
+}
+
+/** A apresentação de treinador só devolve o jogo se nada mais estiver pedindo a pausa. */
+export function presentationMayResume(blockers: { leaveConfirm: boolean; summary: boolean; typeAffinityOffer: boolean }): boolean {
+  return !blockers.leaveConfirm && !blockers.summary && !blockers.typeAffinityOffer;
+}
+
 const FINALE_MS = 20 * 60_000;
 const LEVEL_CAP = 40;
 

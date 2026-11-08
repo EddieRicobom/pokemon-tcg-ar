@@ -4,7 +4,7 @@ import MusicControls from './MusicControls.vue';
 import SurvivorDebug from './SurvivorDebug.vue';
 import AttackIcon from './AttackIcon.vue';
 import { MusicPlayer } from '../app/music-player';
-import { cinemaLook, cinemaPower } from '../core/survivor-cinema';
+import { cinemaLook, cinemaPower, presentationMayResume, simulationSteps } from '../core/survivor-cinema';
 import { flashAlpha, impactFromFx, moveLight } from '../core/survivor-impacts';
 import { drawCastShadows, drawLights, drawNight } from '../village/survivor-cinema-art';
 import { ImpactSparks } from '../village/survivor-impact-art';
@@ -59,7 +59,7 @@ import {
   SURVIVOR_LANDSCAPE_TILE_H,
   SURVIVOR_LANDSCAPE_TILE_W,
 } from '../core/survivor';
-import type { SurvivorEnemy, SurvivorEvolutionOption, SurvivorState, SurvivorSummary, SurvivorSupportCandidate, SurvivorUpgradeOption, SurvivorUpgradeRarity } from '../core/survivor';
+import type { SurvivorEnemy, SurvivorEvent, SurvivorEvolutionOption, SurvivorState, SurvivorSummary, SurvivorSupportCandidate, SurvivorUpgradeOption, SurvivorUpgradeRarity } from '../core/survivor';
 import { attackProfile, moveEffectForType, moveFor, moveWith, rankedCategories, MOVE_CATEGORY_LABELS_PT, MOVE_EFFECT_LABELS_PT, profileBars } from '../core/survivor-moves';
 import { survivorAttackChoices, survivorAttackOf, survivorSupportMove } from '../core/survivor-loadout';
 import { TYPE_LABELS_PT } from '../core/pokemon-data';
@@ -826,7 +826,7 @@ function clearTrainerPresentation(resume = false): void {
   if (trainerPresentationTimer) clearTimeout(trainerPresentationTimer);
   trainerPresentationTimer = null;
   trainerPresentation.value = null;
-  if (resume && !leaveConfirm.value && !summary.value) {
+  if (resume && presentationMayResume({ leaveConfirm: leaveConfirm.value, summary: !!summary.value, typeAffinityOffer: !!typeAffinityOffer.value })) {
     paused.value = false;
     lastTs = performance.now();
   }
@@ -3037,7 +3037,6 @@ function loop(ts: number): void {
   const s = toRaw(state.value!);
   preloadVisibleEnemyRegions(s.elapsedMs, s.runSeed, s.enemies);
   if (!s.over && !s.pendingUpgrade && !evolving.value) {
-    const attackTimerBefore = s.player.attackTimerMs;
     const projectilesBefore = s.projectiles.length;
     const hpBefore = s.player.hp;
     const xpBefore = s.player.xp;
@@ -3058,13 +3057,24 @@ function loop(ts: number): void {
     if (bonkRun.value && Math.abs(dx) > 0.15) bonkFacing = dx < 0 ? -1 : 1;
     // O Ritmo acelerado comprime a partida, mas não a animação: somente o relógio e o motor avançam 2×.
     const simulationDt = s.fast ? dt * FAST_TIME_SCALE : dt;
-    const events = stepSurvivor(s, { airborne: bonkRun.value && (bonkPhysics.value?.z ?? 0) > 34, dx: move.dx, dy: move.dy, special: specialQueued, charge: chargeHeld.value || (autoCharge.value && !!chargeStyle.value && autoChargeHeld(chargeStyle.value, s.charge)), cancelCharge: cancelChargeQueued, visibleEnemies: visibleEnemyCountForDanger(s), ...(bonkRun.value && bonkPhysics.value ? { aimAngle: bonkPhysics.value.cameraYaw } : {}) }, simulationDt);
+    // Quadro longo vira passos curtos: tiro rápido não atravessa inimigo em celular lento nem no Ritmo acelerado.
+    const steps = simulationSteps(simulationDt);
+    const events: SurvivorEvent[] = [];
+    let criticalThisFrame = false;
+    let attackedThisFrame = false;
+    for (let index = 0; index < steps.count && !s.over && !s.pendingUpgrade; index++) {
+      const timerBeforeStep = s.player.attackTimerMs;
+      const first = index === 0;
+      events.push(...stepSurvivor(s, { airborne: bonkRun.value && (bonkPhysics.value?.z ?? 0) > 34, dx: move.dx, dy: move.dy, special: first && specialQueued, charge: chargeHeld.value || (autoCharge.value && !!chargeStyle.value && autoChargeHeld(chargeStyle.value, s.charge)), cancelCharge: first && cancelChargeQueued, visibleEnemies: visibleEnemyCountForDanger(s), ...(bonkRun.value && bonkPhysics.value ? { aimAngle: bonkPhysics.value.cameraYaw } : {}) }, steps.stepMs));
+      criticalThisFrame ||= s.criticalHits.length > 0;
+      attackedThisFrame ||= s.player.attackTimerMs > timerBeforeStep;
+    }
     if (trackEnemyDamage) showEnemyDamage(enemyDamageSince(enemyHpSnapshot, s));
-    if (survivorAudio.attackSounds && s.criticalHits.length > 0 && animMs - lastCriticalSoundAt >= 200) {
+    if (survivorAudio.attackSounds && criticalThisFrame && animMs - lastCriticalSoundAt >= 200) {
       lastCriticalSoundAt = animMs;
       playSound('survivor-critical');
     }
-    if (s.player.attackTimerMs > attackTimerBefore) {
+    if (attackedThisFrame) {
       playerAttackAt = animMs;
       playAttackSound(s.player.move, ts);
     }
@@ -3334,7 +3344,9 @@ async function evolveTo(dexId: number, name: string): Promise<void> {
   evolving.value = `${avatarName.value} evoluiu para ${name}!`;
   const epoch = runEpoch;
   const shiny = runShiny;
-  const [sprite, back] = await Promise.all([loadSpriteOrNull(dexId, shiny), bonkRun.value ? loadBackSpriteOrNull(dexId, shiny) : Promise.resolve(null), new Promise((r) => setTimeout(r, 900))]);
+  // Rede ruim não prende a corrida na tela de evolução: sem resposta em 5 s, segue com a forma neutra de sprite ausente.
+  const orMissing = <T,>(load: Promise<T | null>): Promise<T | null> => Promise.race([load, new Promise<null>((r) => setTimeout(() => r(null), 5000))]);
+  const [sprite, back] = await Promise.all([orMissing(loadSpriteOrNull(dexId, shiny)), bonkRun.value ? orMissing(loadBackSpriteOrNull(dexId, shiny)) : Promise.resolve(null), new Promise((r) => setTimeout(r, 900))]);
   if (disposed || epoch !== runEpoch) return;
   normalPlayerSprite = sprite;
   normalPlayerBackSprite = back;
@@ -3358,8 +3370,9 @@ function requestLeave(): void {
     return;
   }
   heldKeys.clear(); joyUp(); specialQueued = false; cancelCharge();
+  // A pausa da apresentação não é do jogador: se ele desistir de sair, a corrida precisa voltar a andar.
+  wasPausedBeforeLeave = paused.value && !trainerPresentation.value;
   clearTrainerPresentation();
-  wasPausedBeforeLeave = paused.value;
   paused.value = true;
   leaveConfirm.value = true;
 }
@@ -3680,14 +3693,14 @@ function confirmOmegaAttack(category: MoveCategory): void {
 function acceptTypeAffinity(type: PokemonType): void {
   if (!state.value || !typeAffinityOffer.value || !chooseSurvivorTypeAffinity(state.value, type)) return;
   typeAffinityOffer.value = null;
-  paused.value = false;
+  paused.value = !!trainerPresentation.value;
   say(`✨ Afinidade de ${TYPE_LABELS_PT[type]} ativada: ${MOVE_EFFECT_LABELS_PT[moveEffectForType(type)]}.`, 4200);
 }
 
 function skipTypeAffinity(): void {
   if (!typeAffinityOffer.value) return;
   typeAffinityOffer.value = null;
-  paused.value = false;
+  paused.value = !!trainerPresentation.value;
   say('Você guardou a afinidade para outra corrida.', 2600);
 }
 watch(() => torre.value.infiniteUnlocked, (ok) => { if (!ok) { infiniteWanted.value = false; fastWanted.value = false; } });
