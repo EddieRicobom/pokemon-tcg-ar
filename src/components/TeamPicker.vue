@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import CardMarks from './CardMarks.vue';
+import ElementTypeFilter from './ElementTypeFilter.vue';
 import { pokemonSpriteUrl } from '../ar/sprite-url';
 import { currentDexId } from '../app/moveset-store';
 import { getCache } from '../app/services';
@@ -8,6 +9,8 @@ import { resolveTeam, TEAM_SIZE, toggleMember } from '../app/team';
 import { savedTeam, setSavedTeam } from '../app/team-store';
 import type { CachedCard } from '../cache/types';
 import { boxSummary } from '../core/box-summary';
+import type { PokemonType } from '../core/pokemon-data';
+import { cardMatchesSpecies } from '../core/species-filter';
 import { spriteIdOf } from '../core/dex-form';
 import { isShiny } from '../core/shiny';
 import { digitalBoxRows } from '../app/digital-members';
@@ -22,6 +25,8 @@ const rows = ref<Row[]>([]);
 const loading = ref(true);
 const search = ref('');
 const onlySelected = ref(false);
+/** Filtro rápido por tipo elemental: só esconde da grade, a equipe não muda. */
+const typeFilter = ref<PokemonType | ''>('');
 const notice = ref('');
 const loadError = ref('');
 const urls: string[] = [];
@@ -31,7 +36,7 @@ const usable = computed(() => rows.value.filter((row) => row.sprite.state === 'o
 const team = computed(() => resolveTeam(savedTeam.value, rows.value, props.max));
 const shown = computed(() => {
   const q = search.value.trim().toLowerCase();
-  return usable.value.filter((row) => (!onlySelected.value || team.value.ids.includes(row.id)) && (!q || `${row.name} ${row.setName}`.toLowerCase().includes(q)));
+  return usable.value.filter((row) => (!onlySelected.value || team.value.ids.includes(row.id)) && (!q || `${row.name} ${row.setName}`.toLowerCase().includes(q)) && cardMatchesSpecies(row, { type: typeFilter.value || undefined }));
 });
 const missingSprite = computed(() => rows.value.length - usable.value.length);
 
@@ -118,6 +123,8 @@ onBeforeUnmount(() => { disposed = true; urls.splice(0).forEach((url) => URL.rev
         <input v-model="search" type="text" placeholder="Buscar por nome ou coleção" aria-label="Buscar carta" autocomplete="off" />
         <button v-if="!team.auto" type="button" class="link" @click="useAuto">Usar as mais recentes</button>
       </div>
+      <ElementTypeFilter v-model="typeFilter" />
+      <p v-if="typeFilter && shown.length === 0" class="hint" role="status">Nenhum Pokémon desse tipo{{ onlySelected ? ' na equipe' : '' }}. Toque em «Todos» para ver os outros.</p>
       <ol class="box-party" :aria-label="`${groupLabel}: quem já foi escolhido`">
         <li v-for="(row, index) in party" :key="row?.id ?? `vaga-${index}`">
           <button v-if="row" type="button" class="box-slot filled" :class="{ focused: focusedId === row.id }" :aria-label="`Ver a ficha de ${row.name}`" @click="focusedId = row.id">
