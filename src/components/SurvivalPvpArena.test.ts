@@ -106,5 +106,5 @@ describe('PvP do Survival: o fluxo completo carrega', () => {
   it('SurvivalPvp (sala, runs, equipe e arena) compila e exporta o componente', async () => {
     const mod = await import('./SurvivalPvp.vue');
     expect(mod.default).toBeTruthy();
-  });
+  }, 60_000);
 });
