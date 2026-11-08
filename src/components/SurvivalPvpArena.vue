@@ -1,11 +1,20 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, reactive, ref, shallowRef } from 'vue';
+import AttackIcon from './AttackIcon.vue';
 import { pokemonSpriteUrl } from '../ar/sprite-url';
+import { effectiveVisual } from '../app/visual-settings';
+import type { SurvivorFx } from '../core/survivor';
+import { MOVE_CATEGORY_LABELS_PT } from '../core/survivor-moves';
+import type { MoveCategory } from '../core/survivor-moves';
+import { TYPE_GLYPHS } from '../core/type-glyphs';
+import { drawElementAuraField, drawElementFx, drawElementOrbiter, drawElementProjectile, drawOrbitPath } from '../village/survivor-attack-art';
+import type { ScreenPoint } from '../village/survivor-attack-art';
 import { TYPE_COLORS, TYPE_LABELS_PT } from '../core/pokemon-data';
+import type { PokemonType } from '../core/pokemon-data';
 import {
   aliveCount, arenaCameraTarget, attackSwapBlockReason, guardBlockReason, offscreenPointer, SV_ARENA_H, SV_ARENA_W, SV_ATTACK_SWAP_CD_MS, SV_GUARD_COOLDOWN_MS, SV_MON_RADIUS, SV_SWITCH_COOLDOWN_MS, SV_VIEW_H, SV_VIEW_W, switchBlockReason,
 } from '../core/survivor-pvp';
-import { SURVIVOR_CONE_HALF_ANGLE, survivorOrbiterHitRadius, survivorOrbiters } from '../core/survivor-shapes';
+import { SURVIVOR_CONE_HALF_ANGLE } from '../core/survivor-shapes';
 import type { ArenaEvent, ArenaSide, ArenaState, ArenaTeamState, ArenaWinner } from '../core/survivor-pvp';
 import { SurvivalGuestLink, SurvivalHostLink } from '../pvp/survival-link';
 import type { ArenaView } from '../pvp/survival-link';
@@ -67,20 +76,25 @@ interface Orb {
 }
 interface Fx {
   id: number;
-  kind: 'cone' | 'pulse' | 'blink' | 'dmg';
+  kind: 'blink' | 'dmg';
   /** Número do dano (só no `dmg`). */
   text?: string;
   mine: boolean;
   color: string;
   style: Record<string, string>;
 }
-interface Bullet {
-  id: number;
-  mine: boolean;
-  x: number;
-  y: number;
-  color: string;
-  size: string;
+/** Marca do golpe desenhada na tela de arte (a mesma arte elemental do Survivor), em coordenadas do campo. */
+interface ArtFx {
+  fx: SurvivorFx;
+  born: number;
+}
+interface AttackFace {
+  type: PokemonType;
+  glyph: string;
+  typeLabel: string;
+  category: MoveCategory;
+  categoryLabel: string;
+  name: string;
 }
 interface Marker {
   id: number;
@@ -103,7 +117,7 @@ interface Hud {
   guardSec: number;
   guardOn: boolean;
   /** Botão de trocar de ataque; nulo quando quem está em campo só tem um. */
-  attack: { now: string; next: string; color: string; pct: number; sec: number; alt: boolean } | null;
+  attack: { now: AttackFace; next: AttackFace; color: string; pct: number; sec: number; alt: boolean } | null;
 }
 
 const rowsOf = (team: ArenaTeamState): Row[] => team.mons.map((m, index) => ({
@@ -111,14 +125,20 @@ const rowsOf = (team: ArenaTeamState): Row[] => team.mons.map((m, index) => ({
   active: index === team.active && m.hp > 0, fainted: m.hp <= 0,
 }));
 
+const attackFace = (type: PokemonType, category: MoveCategory | undefined, name: string | undefined): AttackFace => ({
+  type, glyph: TYPE_GLYPHS[type], typeLabel: TYPE_LABELS_PT[type], category: category ?? 'projetil', categoryLabel: MOVE_CATEGORY_LABELS_PT[category ?? 'projetil'], name: name ?? 'Golpe',
+});
+
 const clock = (ms: number): string => `${Math.floor(ms / 60000)}:${String(Math.floor(ms / 1000) % 60).padStart(2, '0')}`;
 
 const hud = shallowRef<Hud>({ mine: [], foe: [], summary: '', hint: '', count: 0, switchPct: 0, switchSec: 0, guardPct: 0, guardSec: 0, guardOn: false, attack: null });
 const units = shallowRef<Unit[]>([]);
-const orbs = shallowRef<Orb[]>([]);
 const trailDots = shallowRef<Orb[]>([]);
 const fx = shallowRef<Fx[]>([]);
-const bullets = shallowRef<Bullet[]>([]);
+const artCanvas = ref<HTMLCanvasElement | null>(null);
+let artFx: ArtFx[] = [];
+/** Última posição e direção de cada disparo: o rastro da arte segue o caminho que ele fez. */
+const shotTrack = new Map<number, { x: number; y: number; dx: number; dy: number }>();
 const markers = shallowRef<Marker[]>([]);
 const floorStyle = shallowRef<Record<string, string>>({});
 const pointer = shallowRef<{ x: number; y: number; angle: number } | null>(null);
@@ -215,6 +235,9 @@ function handleEvents(events: ArenaEvent[]): void {
     if (e.k === 'hit') {
       hitAt[e.side] = performance.now();
       showDamage(e.side, e.damage, e.mult);
+      const striker = state.sides[e.side === 0 ? 1 : 0];
+      const strike = striker.mons[striker.active];
+      if (strike && e.damage > 0) addArtFx('blast', state.sides[e.side].x, state.sides[e.side].y, 34, strike.attackType, 420);
       if (e.side === mySide) {
         hurt.value = true;
         if (hurtTimer) clearTimeout(hurtTimer);
@@ -234,7 +257,7 @@ function handleEvents(events: ArenaEvent[]): void {
     } else if (e.k === 'attack') {
       if (e.side === mySide) {
         const mon = mons[e.index];
-        if (mon) toast(`Ataque: ${TYPE_LABELS_PT[mon.attackType]}${mon.moveName ? ` · ${mon.moveName}` : ''}`, 'info', 1500, `atk:${mon.attackType}:${mon.moveCategory}`);
+        if (mon) toast(`${TYPE_GLYPHS[mon.attackType]} Ataque: ${TYPE_LABELS_PT[mon.attackType]}${mon.moveName ? ` · ${mon.moveName}` : ''}`, 'info', 1500, `atk:${mon.attackType}:${mon.moveCategory}`);
       } else toast(`${props.friendName} trocou de ataque`, 'info', 1500, 'foe-attack');
     } else if (e.k === 'guard') {
       toast(e.side === mySide ? 'Escudo ativo!' : `${props.friendName} ativou o escudo`, e.side === mySide ? 'good' : 'info', 1600, `guard:${e.side}`);
@@ -255,29 +278,25 @@ function showDamage(side: ArenaSide, damage: number, mult: number): void {
   addFx('dmg', side !== mySide, color, { left: `${((p.x + jitter) / SV_VIEW_W) * 100}%`, top: `${((p.y - 26) / SV_VIEW_H) * 100}%` }, 700, mult === 0 ? '0' : String(damage));
 }
 
-/** Efeitos de golpe de quem ataca: o desenho usa a geometria real (cone, raio da aura, caminho do teleporte). */
+/** Marca na tela de arte: nasce agora e some sozinha quando passa a vida. */
+function addArtFx(kind: SurvivorFx['kind'], x: number, y: number, r: number, type: PokemonType, lifeMs: number, extra: Partial<SurvivorFx> = {}): void {
+  artFx = [...artFx.slice(-14), { born: performance.now(), fx: { kind, x, y, r, color: TYPE_COLORS[type], ageMs: 0, lifeMs, moveType: type, ...extra } }];
+}
+
+/** Efeitos de golpe de quem ataca: a mesma arte elemental do Survivor, sobre a geometria real (cone, raio da aura); o teleporte é um traço. */
 function showFx(e: Extract<ArenaEvent, { k: 'cone' | 'pulse' | 'blink' }>): void {
   const team = state.sides[e.side];
   const mon = team.mons[team.active];
-  const color = mon ? TYPE_COLORS[mon.attackType] : '#fff';
-  const mine = e.side === mySide;
-  const cqw = (length: number): string => `${(length / SV_VIEW_W) * 100}cqw`;
-  if (e.k === 'pulse') {
-    const p = toView(team.x, team.y);
-    addFx('pulse', mine, color, { left: `${(p.x / SV_VIEW_W) * 100}%`, top: `${(p.y / SV_VIEW_H) * 100}%`, width: cqw(e.radius * 2) });
-  } else if (e.k === 'cone') {
-    const p = toView(team.x, team.y);
-    const angle = flip ? e.angle + Math.PI : e.angle;
-    addFx('cone', mine, color, {
-      left: `${(p.x / SV_VIEW_W) * 100}%`, top: `${(p.y / SV_VIEW_H) * 100}%`, width: cqw(e.range),
-      height: cqw(2 * e.range * Math.tan(SURVIVOR_CONE_HALF_ANGLE)), transform: `translate(0, -50%) rotate(${angle}rad)`,
-    }, 300);
-  } else {
+  const type: PokemonType = mon?.attackType ?? 'normal';
+  const color = TYPE_COLORS[type];
+  if (e.k === 'pulse') addArtFx('pulse', team.x, team.y, e.radius, type, 460);
+  else if (e.k === 'cone') addArtFx('cone', team.x, team.y, e.range, type, 420, { angle: e.angle, spread: SURVIVOR_CONE_HALF_ANGLE });
+  else {
     const a = toView(e.x0, e.y0);
     const b = toView(e.x1, e.y1);
     const len = Math.hypot(b.x - a.x, b.y - a.y);
-    addFx('blink', mine, color, {
-      left: `${(a.x / SV_VIEW_W) * 100}%`, top: `${(a.y / SV_VIEW_H) * 100}%`, width: cqw(len),
+    addFx('blink', e.side === mySide, color, {
+      left: `${(a.x / SV_VIEW_W) * 100}%`, top: `${(a.y / SV_VIEW_H) * 100}%`, width: `${(len / SV_VIEW_W) * 100}cqw`,
       transform: `translate(0, -50%) rotate(${Math.atan2(b.y - a.y, b.x - a.x)}rad)`,
     }, 350);
   }
@@ -321,41 +340,97 @@ function buildScene(now: number): void {
     out.push({ hit: now - hitAt[side] < 140, faceRight: other.x > p.x + 2, key: side === mySide ? 'me' : 'foe', mine: side === mySide, x: (p.x / SV_VIEW_W) * 100, y: (p.y / SV_VIEW_H) * 100, dexId: mon.dexId, shiny: mon.shiny, name: mon.name, hpPct: Math.round((100 * mon.hp) / mon.maxHp), shield: team.shieldMs > 0, guard: team.guardMs > 0, status });
   }
   units.value = out;
-  // Orbitais e faixa da Trilha: as mesmas posições que decidem o dano.
-  const orbOut: Orb[] = [];
+  // Faixa da Trilha: os mesmos pontos que decidem o dano.
   const dots: Orb[] = [];
   for (const side of [mySide, foeSide] as const) {
     const team = state.sides[side];
     const mon = team.mons[team.active];
-    if (!mon || mon.hp <= 0) continue;
-    const mine = side === mySide;
+    if (!mon || mon.hp <= 0 || mon.moveCategory !== 'trilha') continue;
     const color = TYPE_COLORS[mon.attackType];
-    if (mon.moveCategory === 'orbit') {
-      const shape = { x: view.sides[side].x, y: view.sides[side].y, shots: Math.max(1, mon.shots ?? 1), attackRadius: mon.attackRadius ?? SV_MON_RADIUS * 2, orbitAngle: team.orbitAngle };
-      const size = `${((survivorOrbiterHitRadius(shape) * 1.4) / SV_VIEW_W) * 100}%`;
-      survivorOrbiters(shape).forEach((o, i) => {
-        const p = toView(o.x, o.y);
-        orbOut.push({ key: `${side}-o${i}`, mine, x: (p.x / SV_VIEW_W) * 100, y: (p.y / SV_VIEW_H) * 100, color, size });
-      });
-    }
-    if (mon.moveCategory === 'trilha') {
-      const size = `${((Math.min(mon.attackRadius ?? SV_MON_RADIUS * 2, 36) * 2) / SV_VIEW_W) * 100}%`;
-      team.trail.forEach((t, i) => {
-        const p = toView(t.x, t.y);
-        dots.push({ key: `${side}-t${i}`, mine, x: (p.x / SV_VIEW_W) * 100, y: (p.y / SV_VIEW_H) * 100, color, size });
-      });
-    }
+    const size = `${((Math.min(mon.attackRadius ?? SV_MON_RADIUS * 2, 36) * 2) / SV_VIEW_W) * 100}%`;
+    team.trail.forEach((t, i) => {
+      const p = toView(t.x, t.y);
+      dots.push({ key: `${side}-t${i}`, mine: side === mySide, x: (p.x / SV_VIEW_W) * 100, y: (p.y / SV_VIEW_H) * 100, color, size });
+    });
   }
-  orbs.value = orbOut;
   trailDots.value = dots;
-  bullets.value = view.shots.map((s) => {
-    const p = toView(s.x, s.y);
-    return { id: s.id, mine: s.side === mySide, x: (p.x / SV_VIEW_W) * 100, y: (p.y / SV_VIEW_H) * 100, color: TYPE_COLORS[s.type], size: `${Math.max(2.5, (s.radius * 2 / SV_VIEW_W) * 100)}%` };
-  });
   markers.value = view.markers.map((m) => {
     const p = toView(m.x, m.y);
     return { id: m.id, mine: m.side === mySide, x: (p.x / SV_VIEW_W) * 100, y: (p.y / SV_VIEW_H) * 100, color: TYPE_COLORS[m.type], size: `${(m.radius * 2 / SV_VIEW_W) * 100}%`, leftMs: m.leftMs };
   });
+  drawArt(now, view);
+}
+
+/** Tela de arte: disparos, órbitas, aura e marcas de golpe com a arte elemental do Survivor (chama, gota, faísca…). */
+function drawArt(now: number, view: ArenaView): void {
+  const canvas = artCanvas.value;
+  const host = arenaEl.value;
+  if (!canvas || !host || !host.clientWidth) return;
+  const w = host.clientWidth;
+  const h = (w * SV_VIEW_H) / SV_VIEW_W;
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  if (canvas.width !== Math.round(w * dpr) || canvas.height !== Math.round(h * dpr)) {
+    canvas.width = Math.round(w * dpr);
+    canvas.height = Math.round(h * dpr);
+  }
+  let ctx: CanvasRenderingContext2D | null = null;
+  try {
+    ctx = canvas.getContext('2d');
+  } catch {
+    ctx = null;
+  }
+  if (!ctx) return;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, w, h);
+  const k = w / SV_VIEW_W;
+  const map = (x: number, y: number, z = 0): ScreenPoint => {
+    const p = toView(x, y);
+    return { x: p.x * k, y: p.y * k - z * k * 0.5, s: k };
+  };
+  const detailed = !effectiveVisual.value.rotomMode;
+  for (const side of [mySide, foeSide] as const) {
+    const team = state.sides[side];
+    const mon = team.mons[team.active];
+    if (!mon || mon.hp <= 0) continue;
+    const at = { x: view.sides[side].x, y: view.sides[side].y };
+    if (mon.moveCategory === 'aura') drawElementAuraField(ctx, { ...at, attackRadius: mon.attackRadius ?? SV_MON_RADIUS * 2 }, mon.attackType, map, now, detailed);
+    else if (mon.moveCategory === 'orbit') {
+      const shape = { ...at, shots: Math.max(1, mon.shots ?? 1), attackRadius: mon.attackRadius ?? SV_MON_RADIUS * 2, orbitAngle: team.orbitAngle };
+      drawOrbitPath(ctx, shape, mon.attackType, map);
+      for (let i = 0; i < shape.shots; i++) drawElementOrbiter(ctx, shape, mon.attackType, map, i, now, detailed);
+    }
+  }
+  const seen = new Set<number>();
+  for (const s of view.shots) {
+    seen.add(s.id);
+    const before = shotTrack.get(s.id);
+    let dx = before?.dx ?? 0;
+    let dy = before?.dy ?? (s.side === 0 ? -1 : 1);
+    if (before && Math.hypot(s.x - before.x, s.y - before.y) > 0.4) {
+      const len = Math.hypot(s.x - before.x, s.y - before.y);
+      dx = (s.x - before.x) / len;
+      dy = (s.y - before.y) / len;
+    }
+    shotTrack.set(s.id, { x: s.x, y: s.y, dx, dy });
+    const head = map(s.x, s.y, 10);
+    const tail = map(s.x - dx * 16, s.y - dy * 16, 10);
+    const size = Math.max(3, Math.min(14, s.radius * k * 0.9));
+    ctx.save();
+    ctx.globalAlpha = 0.85;
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = s.side === mySide ? '#ffffff' : '#e0524f';
+    ctx.beginPath();
+    ctx.arc(head.x, head.y, size * 1.5, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+    drawElementProjectile(ctx, s.type, head, tail, size, 1, now, detailed, s.id);
+  }
+  for (const id of shotTrack.keys()) if (!seen.has(id)) shotTrack.delete(id);
+  artFx = artFx.filter((a) => now - a.born < a.fx.lifeMs);
+  for (const a of artFx) {
+    a.fx.ageMs = now - a.born;
+    drawElementFx(ctx, a.fx, map, now, detailed);
+  }
 }
 
 function buildHud(): void {
@@ -378,8 +453,8 @@ function buildHud(): void {
     guardPct: mine.guardCdMs > 0 ? Math.round((100 * mine.guardCdMs) / SV_GUARD_COOLDOWN_MS) : 0, guardSec: Math.ceil(mine.guardCdMs / 1000), guardOn: mine.guardMs > 0,
     attack: current?.alt
       ? {
-        now: `${TYPE_LABELS_PT[current.attackType]}${current.moveName ? ` · ${current.moveName}` : ''}`,
-        next: `${TYPE_LABELS_PT[current.alt.attackType]} · ${current.alt.moveName}`,
+        now: attackFace(current.attackType, current.moveCategory, current.moveName),
+        next: attackFace(current.alt.attackType, current.alt.moveCategory, current.alt.moveName),
         color: TYPE_COLORS[current.attackType], alt: current.altOn === true,
         pct: mine.attackSwapCdMs > 0 ? Math.round((100 * mine.attackSwapCdMs) / SV_ATTACK_SWAP_CD_MS) : 0, sec: Math.ceil(mine.attackSwapCdMs / 1000),
       }
@@ -543,13 +618,6 @@ onBeforeUnmount(() => {
     >
       <div class="svp-floor" :style="floorStyle" aria-hidden="true"></div>
       <span
-        v-for="b in bullets"
-        :key="b.id"
-        class="svp-shot"
-        :class="{ mine: b.mine }"
-        :style="{ left: `${b.x}%`, top: `${b.y}%`, background: b.color, width: b.size }"
-      ></span>
-      <span
         v-for="d in trailDots"
         :key="d.key"
         class="svp-trail"
@@ -565,14 +633,6 @@ onBeforeUnmount(() => {
         :style="{ left: `${m.x}%`, top: `${m.y}%`, color: m.color, width: m.size, '--mark-pulse': `${Math.max(0.45, m.leftMs / 1500)}s` }"
         aria-hidden="true"
       ></span>
-      <span
-        v-for="o in orbs"
-        :key="o.key"
-        class="svp-orb"
-        :class="{ mine: o.mine }"
-        :style="{ left: `${o.x}%`, top: `${o.y}%`, width: o.size, color: o.color }"
-        aria-hidden="true"
-      ></span>
       <div v-for="u in units" :key="u.key" class="svp-unit" :class="{ mine: u.mine, shield: u.shield, guard: u.guard, hit: u.hit, 'face-right': u.faceRight }" :style="unitStyle(u)">
         <span class="svp-bubble" aria-hidden="true"></span>
         <span class="svp-ring"></span>
@@ -581,6 +641,8 @@ onBeforeUnmount(() => {
         <span v-else class="svp-fallback big" role="img" :aria-label="`${u.name} (sem sprite)`">{{ u.name.slice(0, 2) }}</span>
         <i class="svp-bar floating"><b :style="{ width: `${u.hpPct}%` }"></b></i>
       </div>
+
+      <canvas ref="artCanvas" class="svp-art" aria-hidden="true"></canvas>
 
       <span
         v-for="f in fx"
@@ -630,13 +692,21 @@ onBeforeUnmount(() => {
         class="svp-guard svp-attack"
         :class="{ alt: hud.attack.alt, wait: hud.attack.pct > 0 }"
         :style="{ '--attack-color': hud.attack.color }"
-        :aria-label="`Ataque em uso: ${hud.attack.now}. Toque para trocar para ${hud.attack.next}`"
+        :aria-label="`Ataque em uso: ${hud.attack.now.typeLabel}, ${hud.attack.now.categoryLabel}, ${hud.attack.now.name}. Toque para trocar para ${hud.attack.next.typeLabel}, ${hud.attack.next.categoryLabel}, ${hud.attack.next.name}`"
         @pointerdown.stop
         @click="requestAttackSwap"
       >
-        <span class="svp-guard-icon" aria-hidden="true">⇄</span>
-        <small>{{ hud.attack.pct > 0 ? `${hud.attack.sec} s` : hud.attack.alt ? 'Secund.' : 'Principal' }}</small>
-        <small class="svp-attack-now">{{ hud.attack.now }}</small>
+        <span class="svp-atk-pair" aria-hidden="true">
+          <span class="svp-atk on" :style="{ '--c': TYPE_COLORS[hud.attack.now.type] }" :title="`${hud.attack.now.typeLabel} · ${hud.attack.now.categoryLabel}`">
+            <b>{{ hud.attack.now.glyph }}</b><AttackIcon :category="hud.attack.now.category" :size="18" />
+          </span>
+          <span class="svp-atk-arrow">⇄</span>
+          <span class="svp-atk" :style="{ '--c': TYPE_COLORS[hud.attack.next.type] }" :title="`${hud.attack.next.typeLabel} · ${hud.attack.next.categoryLabel}`">
+            <b>{{ hud.attack.next.glyph }}</b><AttackIcon :category="hud.attack.next.category" :size="18" />
+          </span>
+        </span>
+        <small class="svp-attack-now">{{ hud.attack.now.name }}</small>
+        <small>{{ hud.attack.pct > 0 ? `${hud.attack.sec} s` : 'Toque: trocar' }}</small>
         <span v-if="hud.attack.pct > 0" class="svp-cd" :style="{ height: `${hud.attack.pct}%` }" aria-hidden="true"></span>
       </button>
       <div class="svp-team mine" role="group" aria-label="Sua equipe: toque para trocar de Pokémon">
@@ -913,7 +983,22 @@ onBeforeUnmount(() => {
   pointer-events: none;
 }
 
-.svp-orb,
+.svp-art {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.svp-trail {
+  position: absolute;
+  aspect-ratio: 1;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  pointer-events: none;
+}
+
 .svp-trail {
   position: absolute;
   aspect-ratio: 1;
@@ -936,22 +1021,6 @@ onBeforeUnmount(() => {
 .svp-fx {
   position: absolute;
   pointer-events: none;
-}
-
-.svp-fx.pulse {
-  aspect-ratio: 1;
-  transform: translate(-50%, -50%);
-  border-radius: 50%;
-  border: 3px solid currentColor;
-  background: color-mix(in srgb, currentColor 16%, transparent);
-  animation: svp-fx-pulse 0.38s ease-out forwards;
-}
-
-.svp-fx.cone {
-  transform-origin: 0 50%;
-  background: linear-gradient(90deg, color-mix(in srgb, currentColor 80%, transparent), transparent);
-  clip-path: polygon(0 50%, 100% 0, 100% 100%);
-  animation: svp-fx-fade 0.3s ease-out forwards;
 }
 
 .svp-fx.dmg {
@@ -1042,11 +1111,6 @@ onBeforeUnmount(() => {
   animation: svp-fx-fade 0.35s ease-out forwards;
 }
 
-@keyframes svp-fx-pulse {
-  from { opacity: 0.95; scale: 0.3; }
-  to { opacity: 0; scale: 1; }
-}
-
 @keyframes svp-fx-fade {
   from { opacity: 0.95; }
   to { opacity: 0; }
@@ -1069,21 +1133,6 @@ onBeforeUnmount(() => {
   left: 0;
   top: 0;
   transform: translate(-50%, -50%);
-}
-
-.svp-shot {
-  position: absolute;
-  aspect-ratio: 1;
-  transform: translate(-50%, -50%);
-  border-radius: 50%;
-  border: 2px solid #e0524f;
-  pointer-events: none;
-  width: 3.75cqw;
-  min-width: 8px;
-}
-
-.svp-shot.mine {
-  border-color: #fff;
 }
 
 .svp-marker {
@@ -1249,7 +1298,44 @@ onBeforeUnmount(() => {
 
 .svp-attack {
   border-color: var(--attack-color, #fff);
-  max-width: 76px;
+  min-width: 104px;
+  max-width: 120px;
+  gap: 3px;
+  padding: 4px;
+}
+
+.svp-atk-pair {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.svp-atk {
+  display: grid;
+  justify-items: center;
+  gap: 1px;
+  padding: 2px 3px;
+  border-radius: 8px;
+  border: 1.5px solid color-mix(in srgb, var(--c) 55%, transparent);
+  color: var(--c);
+  opacity: 0.6;
+  line-height: 1;
+}
+
+.svp-atk.on {
+  opacity: 1;
+  background: color-mix(in srgb, var(--c) 24%, transparent);
+  border-color: var(--c);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--c) 60%, transparent);
+}
+
+.svp-atk b {
+  font-size: 1rem;
+}
+
+.svp-atk-arrow {
+  font-size: 1rem;
+  font-weight: 900;
 }
 
 .svp-attack.wait {
@@ -1257,7 +1343,7 @@ onBeforeUnmount(() => {
 }
 
 .svp-attack-now {
-  max-width: 68px;
+  max-width: 108px;
   overflow: hidden;
   font-size: 0.62rem;
   text-overflow: ellipsis;

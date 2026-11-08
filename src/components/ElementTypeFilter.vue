@@ -1,13 +1,10 @@
 <script setup lang="ts">
 import { POKEMON_TYPES, TYPE_COLORS, TYPE_LABELS_PT } from '../core/pokemon-data';
 import type { PokemonType } from '../core/pokemon-data';
+import { TYPE_GLYPHS as GLYPHS } from '../core/type-glyphs';
 
 const props = defineProps<{ modelValue: PokemonType | '' }>();
 const emit = defineEmits<{ 'update:modelValue': [value: PokemonType | ''] }>();
-const GLYPHS: Record<PokemonType, string> = {
-  normal: '◉', fire: '🔥', water: '💧', electric: '⚡', grass: '🍃', ice: '❄️', fighting: '🥊', poison: '☠️',
-  ground: '⛰️', flying: '🪽', psychic: '🔮', bug: '🪲', rock: '🪨', ghost: '👻', dragon: '🐉', dark: '🌑', steel: '⚙️', fairy: '✨',
-};
 </script>
 
 <template>
