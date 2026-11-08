@@ -92,4 +92,16 @@ describe('SoundEngine', () => {
     engine.dispose();
     expect(log.closed).toBe(1);
   });
+
+  it('depois de dispose, uma nova sessão toca de novo (as vozes da anterior não contam)', () => {
+    const log = installFakeAudio();
+    const engine = new SoundEngine();
+    engine.unlock();
+    for (let i = 0; i < 40; i++) engine.play({ kind: 'victory', personality: 'equilibrado' });
+    engine.dispose();
+    const before = log.started;
+    engine.unlock();
+    engine.play({ kind: 'victory', personality: 'equilibrado' });
+    expect(log.started).toBeGreaterThan(before);
+  });
 });

@@ -187,10 +187,16 @@ export class WeatherFx {
     this.cloudTex.repeat.set(repeat, repeat);
   }
 
+  /** Filtro dos mapas de água e neve: em blocos sobre o chão em pixel art, macio no disco grande da areia. */
+  private setMapFilter(filter: typeof NearestFilter | typeof LinearFilter): void {
+    for (const tex of [this.puddleTex, this.snowTex]) tex.magFilter = tex.minFilter = filter;
+  }
+
   /** Liga as camadas ao chão da caixa (ou tira, com `null`). Chame de novo quando o chão for refeito. */
   setGround(ground: Ground | null, half: number): void {
     this.dropArena();
     this.resetLayers(ground, half, half, BOX_VOLUME);
+    this.setMapFilter(NearestFilter);
     for (let y = 0; y < MAP; y++) {
       for (let x = 0; x < MAP; x++) {
         // Célula → ponto da caixa (a textura do chão tem v para cima = −z).
@@ -208,8 +214,9 @@ export class WeatherFx {
   setArena(radius: number, particleHalf: number): void {
     this.dropArena();
     this.resetLayers(null, radius, particleHalf, ARENA_VOLUME);
+    this.setMapFilter(LinearFilter);
     for (let y = 0; y < MAP; y++) {
-      for (let x = 0; x < MAP; x++) this.depth[y * MAP + x] = 0.2 + 0.8 * tileNoise(x / 10, y / 10, 1e6, 9);
+      for (let x = 0; x < MAP; x++) this.depth[y * MAP + x] = 0.2 + 0.8 * tileNoise(x / 5, y / 5, 1e6, 9);
     }
     const geometry = new CircleGeometry(radius, 48);
     geometry.rotateX(-Math.PI / 2);
@@ -353,6 +360,12 @@ export class WeatherFx {
       this.snowPos[o + 2] = Math.max(-this.half, Math.min(this.half, this.snowPos[o + 2]! + state.windZ * dt));
     }
     if (flakes > 0) this.snow.geometry.attributes.position!.needsUpdate = true;
+  }
+
+  /** A água e a neve seguem a luz da cena: sem isso a neve ficava branca e ofuscante à noite. */
+  setTint(r: number, g: number, b: number): void {
+    this.puddleMat.color.setRGB(r, g, b);
+    this.snowMat.color.setRGB(r, g, b);
   }
 
   /** Movimento reduzido (`prefers-reduced-motion`): as camadas no chão ficam, o que cai e o que treme para. */

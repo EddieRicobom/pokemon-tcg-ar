@@ -121,6 +121,8 @@ const bookList = ref<{ id: string; name: string; real: string }[]>([]);
 const bookMons = computed(() => bookList.value.map((r) => ({ id: r.id, name: r.name, real: r.real, types: bookTypes.get(r.id) ?? [], thumb: bookThumbs.get(r.id) })));
 const bondOf = (id: string): number => friendLevel(village.friends[id]?.points ?? 0).level;
 
+const wornNow = new WeakMap<BoxCreature, string | null>();
+
 /** Ao montar a caixa: acessórios da Vila, corações dos mais próximos e a ajuda diária dos amigos. */
 function applyVillage(): void {
   village = loadVillage();
@@ -130,8 +132,12 @@ function applyVillage(): void {
   const notes: { text: string; tone: 'ok' | 'warn' }[] = [];
   for (const c of current.scene.creatureList) {
     const acc = village.wear.mons[c.info.id];
-    const accDef = acc ? itemDef(acc) : undefined;
-    c.setAccessory(acc ? paintAccessory(acc) : null, accDef?.pos, accDef?.nudge);
+    // Quem continua na caixa com o mesmo acessório não repinta nada.
+    if (wornNow.get(c) !== (acc ?? null)) {
+      wornNow.set(c, acc ?? null);
+      const accDef = acc ? itemDef(acc) : undefined;
+      c.setAccessory(acc ? paintAccessory(acc) : null, accDef?.pos, accDef?.nudge);
+    }
     const help = dailyHelp(village, c.info.id, today, Math.random);
     if (help.items.length > 0 || help.rare) {
       if (effectiveVisual.value.social) c.say('🎁', 2600);
@@ -329,8 +335,12 @@ function close(): void {
 }
 
 function showPicked(creature: BoxCreature): void {
-  if (effectiveVisual.value.social) creature.react();
-  else creature.poke();
+  if (effectiveVisual.value.social) {
+    creature.react();
+    box?.scene.reactAround(creature);
+  } else {
+    creature.poke();
+  }
   picked.value = { name: shown(creature.info.id, creature.info.name), detail: creature.info.detail, dexId: creature.info.dexId, shiny: creature.info.shiny, mega: creature.info.mega };
   if (pickedTimer) clearTimeout(pickedTimer);
   pickedTimer = setTimeout(() => (picked.value = null), 5000);
