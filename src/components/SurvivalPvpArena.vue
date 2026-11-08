@@ -842,6 +842,8 @@ onBeforeUnmount(() => {
 .svp {
   position: relative;
   display: grid;
+  min-width: 0;
+  max-width: 100%;
   gap: 6px;
   width: 100%;
   user-select: none;
@@ -866,7 +868,7 @@ onBeforeUnmount(() => {
   margin: 0;
   padding: 0;
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 6px;
 }
 
@@ -1356,18 +1358,30 @@ onBeforeUnmount(() => {
 
 .svp-bottom {
   display: flex;
+  flex-wrap: wrap;
   align-items: stretch;
   gap: 8px;
+  min-width: 0;
+}
+
+/* Escudo e troca de ataque dividem a primeira linha; a equipe ocupa a linha de baixo, sem estourar a largura. */
+.svp-bottom > .svp-guard {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 62px;
 }
 
 .svp-bottom .svp-team {
-  flex: 1;
+  flex: 1 1 100%;
+  order: 2;
+  min-width: 0;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
 }
 
 /* Seis de cada lado: a fila do rival vira uma linha só, e a sua, duas linhas de três com botões mais baixos. */
 .svp.six .svp-top .svp-team {
-  grid-template-columns: repeat(6, 1fr);
+  grid-template-columns: repeat(6, minmax(0, 1fr));
 }
 
 .svp.six .svp-pip img {
@@ -1400,8 +1414,7 @@ onBeforeUnmount(() => {
 
 .svp-attack {
   border-color: var(--attack-color, #fff);
-  min-width: 104px;
-  max-width: 120px;
+  flex: 2 1 0 !important;
   gap: 3px;
   padding: 4px;
 }
@@ -1445,7 +1458,7 @@ onBeforeUnmount(() => {
 }
 
 .svp-attack-now {
-  max-width: 108px;
+  max-width: 100%;
   overflow: hidden;
   font-size: 0.62rem;
   text-overflow: ellipsis;
