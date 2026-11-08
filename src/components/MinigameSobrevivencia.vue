@@ -709,6 +709,7 @@ const shadowBossSprite = ref<string | null>(null);
 let specialQueued = false;
 /** Botão de carga (Foco e Teleporte) apertado agora; o motor lê se está segurado a cada passo. */
 const chargeHeld = ref(false);
+let chargePointerId: number | null = null;
 const autoCharge = ref(false);
 let cancelChargeQueued = false;
 const chargeStyle = computed(() => {
@@ -730,21 +731,28 @@ const chargeLabel = computed(() => {
   return charge.level >= 1 ? 'MÁXIMO' : charge.level > 0 || chargeHeld.value ? `${Math.floor(charge.level * 100)}%` : 'SEGURE';
 });
 function pressCharge(event?: PointerEvent): void {
-  if (!state.value || state.value.over || paused.value || !chargeStyle.value) return;
-  if (event?.currentTarget instanceof HTMLElement) event.currentTarget.setPointerCapture?.(event.pointerId);
+  if (!state.value || state.value.over || paused.value || !chargeStyle.value || chargeHeld.value) return;
+  if (event) {
+    if (event.button !== 0 || !(event.currentTarget instanceof HTMLElement)) return;
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    chargePointerId = event.pointerId;
+  }
   unlockSound();
   chargeHeld.value = true;
 }
-function releaseCharge(): void {
+function releaseCharge(event?: PointerEvent): void {
+  if ((event?.pointerId ?? null) !== chargePointerId) return;
+  chargePointerId = null;
   chargeHeld.value = false;
 }
 function cancelCharge(): void {
+  chargePointerId = null;
   chargeHeld.value = false;
   cancelChargeQueued = true;
 }
 /** `lostpointercapture` também vem logo depois de um `pointerup` normal: só cancela se o botão ainda estava apertado. */
-function lostChargeCapture(): void {
-  if (chargeHeld.value) cancelCharge();
+function cancelChargePointer(event: PointerEvent): void {
+  if (event.pointerId === chargePointerId) cancelCharge();
 }
 /** Tudo que mexe a câmera ou desacelera respeita "Impactos", Modo Rotom e movimento reduzido. */
 const cinemaMotion = computed(() => effectiveVisual.value.impactFx && !reducedMotion && !effectiveVisual.value.rotomMode);
@@ -1273,7 +1281,7 @@ function onGamepadMenu(event: Event): void {
 
 function joyDown(e: PointerEvent): void {
   if (finishRunOutro()) return;
-  if (joystick.active || paused.value || shadowCutsceneOpen.value || !ready.value || summary.value || pickOptions.value || specialModalOpen.value) return;
+  if (e.button !== 0 || joystick.active || paused.value || shadowCutsceneOpen.value || !ready.value || summary.value || pickOptions.value || specialModalOpen.value) return;
   // Botões das cartas (escolha, upgrades, resumo) continuam sendo botões: o joystick não pega esse toque.
   if ((e.target as HTMLElement | null)?.closest?.('button, .card')) return;
   unlockSound();
@@ -1285,7 +1293,7 @@ function joyDown(e: PointerEvent): void {
   joystick.cy = e.clientY;
   joystick.lx = e.clientX - rect.left;
   joystick.ly = e.clientY - rect.top;
-  if (bonkRun.value && e.button === 0) bonkPointerStart = { pointerId: e.pointerId, x: e.clientX, y: e.clientY, at: e.timeStamp };
+  if (bonkRun.value) bonkPointerStart = { pointerId: e.pointerId, x: e.clientX, y: e.clientY, at: e.timeStamp };
   el.setPointerCapture?.(e.pointerId);
   joyMove(e);
 }
@@ -3656,6 +3664,7 @@ async function beginRun(dexId: number, name: string, picked?: PokemonType, infin
     guardianSprite.value = null;
     shadowBossSprite.value = null;
     specialQueued = false;
+    chargePointerId = null;
     chargeHeld.value = false;
     bonkJumpQueued = false;
     clearBonkTap();
@@ -3867,25 +3876,25 @@ onMounted(() => {
   }
   window.addEventListener('keydown', onKey);
   window.addEventListener('keyup', onKey);
+  window.addEventListener('blur', onBlur);
   window.addEventListener('tcg-gamepad-direction', onGamepadDirection);
   window.addEventListener('tcg-gamepad-action', onGamepadAction);
   window.addEventListener('tcg-gamepad-back', onGamepadBack);
   window.addEventListener('tcg-gamepad-menu', onGamepadMenu);
   void openPicker();
 });
+function onBlur(): void {
+  heldKeys.clear();
+  cancelCharge();
+  joyUp();
+  clearBonkTap();
+}
+
 /** Saiu do app (outra aba, tela apagada): ninguém fica andando sozinho com uma tecla "presa" ao voltar. */
 function onVisibility(): void {
   sound.setPaused(document.hidden);
   syncMusic();
-  if (document.hidden) {
-    heldKeys.clear();
-    cancelCharge();
-    joystick.active = false;
-    joystick.pointerId = null;
-    joystick.dx = 0;
-    joystick.dy = 0;
-    clearBonkTap();
-  }
+  if (document.hidden) onBlur();
 }
 document.addEventListener('visibilitychange', onVisibility);
 
@@ -3897,6 +3906,7 @@ onBeforeUnmount(() => {
   rafId = 0;
   window.removeEventListener('keydown', onKey);
   window.removeEventListener('keyup', onKey);
+  window.removeEventListener('blur', onBlur);
   window.removeEventListener('tcg-gamepad-direction', onGamepadDirection);
   window.removeEventListener('tcg-gamepad-action', onGamepadAction);
   window.removeEventListener('tcg-gamepad-back', onGamepadBack);
@@ -4066,8 +4076,14 @@ onBeforeUnmount(() => {
           <div class="survivor-joy-stick" :style="{ transform: `translate(${joystick.dx * JOY_MAX}px, ${joystick.dy * JOY_MAX}px)` }"></div>
         </div>
         <div v-if="paused && !trainerPresentation && !typeAffinityOffer && !leaveConfirm" class="survivor-overlay" role="dialog" aria-label="Jogo pausado" aria-modal="true">
-          <div class="card survivor-pause">
-            <h2>Jogo pausado</h2>
+          <div class="card survivor-pause survivor-pause-panel">
+            <header class="survivor-pause-header">
+              <span class="survivor-pause-eyebrow">TORRE SURVIVOR</span>
+              <h2>Jogo pausado</h2>
+              <p>Respire e prepare sua próxima jogada.</p>
+            </header>
+            <button type="button" class="primary survivor-pause-resume" @pointerdown.stop @click.stop="togglePause">▶ Retomar partida</button>
+            <div class="survivor-pause-content">
             <MusicControls v-model:enabled="survivorAudio.enabled" v-model:volume="survivorAudio.volume" v-model:attack-sounds="survivorAudio.attackSounds" :track="survivorMusicTitle(state?.elapsedMs ?? 0, state?.runSeed ?? 0)" :unavailable="musicUnavailable" regional @unlock="unlockMusic" />
             <p class="note">O relógio, os inimigos e os projéteis estão parados.</p>
             <details class="survivor-help" :open="helpOpen" @toggle="helpOpen = ($event.target as HTMLDetailsElement).open">
@@ -4095,9 +4111,11 @@ onBeforeUnmount(() => {
               </div>
               <small>Empilhados deixa os dois mais perto da borda; Trocados põe o Pular no canto e o Especial ao lado.</small>
             </section>
-            <button type="button" class="primary" @pointerdown.stop @click.stop="togglePause">▶ Retomar</button>
+            </div>
+            <div class="survivor-pause-actions">
             <button type="button" class="link survivor-back" @pointerdown.stop @click.stop="requestBack">← Voltar</button>
             <button type="button" class="link survivor-exit" @pointerdown.stop @click.stop="requestLeave">Sair da Torre</button>
+            </div>
           </div>
         </div>
 
@@ -4341,7 +4359,7 @@ onBeforeUnmount(() => {
           type="button" class="survivor-charge-button" :class="{ 'is-held': chargeHeld, 'is-full': state.charge.level >= 1 || (chargeStyle === 'teleporte' && state.charge.teleportHoldMs >= 1200), 'is-rush': chargeStyle === 'teleporte' && state.charge.teleportHoldMs >= 1200 }"
           :style="{ '--special-color': state.player.move.color, '--charge': `${chargeMeter * 100}%` }"
           :aria-label="chargeStyle === 'foco' ? `Foco: segure para carregar, solte para disparar; carga ${Math.floor(state.charge.level * 100)}%; tecla R` : chargeStyle === 'trilha' ? `Trilha: ande para carregar; ${chargeLabel}; toque para desenhar` : `Teleporte: segure para carregar e solte para usar; ${chargeLabel}; tecla R`"
-          @pointerdown.stop.prevent="pressCharge" @pointerup.stop.prevent="releaseCharge" @pointercancel="cancelCharge" @lostpointercapture="lostChargeCapture">
+          @pointerdown.stop.prevent="pressCharge" @pointerup.stop.prevent="releaseCharge" @pointercancel="cancelChargePointer" @lostpointercapture="cancelChargePointer">
           <span class="special-icon" aria-hidden="true">{{ chargeStyle === 'foco' ? '◎' : chargeStyle === 'trilha' ? '〰' : '»' }}</span>
           <strong>{{ chargeLabel }}</strong>
           <small>{{ chargeStyle === 'foco' ? 'Foco' : chargeStyle === 'trilha' ? 'Trilha' : 'Teleporte' }}</small>

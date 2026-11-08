@@ -242,15 +242,21 @@ describe('esquiva e Especial no fio', () => {
     expect(sent.map((m) => (m.t === 'sv-input' ? [m.dodge, m.special] : null))).toEqual([[true, false], [false, true]]);
   });
 
-  it('o toque do convidado vale uma vez só', () => {
+  it('a esquiva e o escudo do convidado sobrevivem a outro pacote de movimento e valem uma vez só', () => {
     const host = new SurvivalHostLink({ send: () => true }, [mon('a')], [mon('x')]);
     host.state.countdownMs = 0;
-    host.receive({ t: 'sv-input', seq: 1, dx: 0, dy: 0, switchTo: -1, dodge: true });
+    host.receive({ t: 'sv-input', seq: 1, dx: 1, dy: 0, switchTo: -1, dodge: true });
+    host.receive({ t: 'sv-input', seq: 2, dx: 1, dy: 0, switchTo: -1, shield: true });
+    host.receive({ t: 'sv-input', seq: 3, dx: -1, dy: 0, switchTo: -1 });
     const first = host.step(16, { dx: 0, dy: 0, switchTo: -1 });
     host.state.sides[1].dodgeCdMs = 0;
+    host.state.sides[1].guardCdMs = 0;
+    host.state.sides[1].guardMs = 0;
     const second = host.step(16, { dx: 0, dy: 0, switchTo: -1 });
-    expect(first.filter((e) => e.k === 'dodge')).toHaveLength(1);
-    expect(second.filter((e) => e.k === 'dodge')).toHaveLength(0);
+    const dodge = first.find((e) => e.k === 'dodge');
+    expect(dodge?.x1).toBeLessThan(dodge?.x0 ?? 0);
+    expect(first).toContainEqual({ k: 'guard', side: 1 });
+    expect(second.filter((e) => e.k === 'dodge' || e.k === 'guard')).toHaveLength(0);
   });
 
   it('aceita os eventos novos e recusa os malformados', () => {
