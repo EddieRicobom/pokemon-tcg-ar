@@ -440,3 +440,41 @@ e Teleporte (físico rápido). A carga vem da distância real percorrida: 2.250 
 desenho contínuo; a faixa se apaga suavemente após 3,5 s. Seu dano usa a média dos dois
 ataques. Como todas as formas, recebe cinco buffs específicos: quatro degraus da árvore
 e **Passos ressonantes**, que reduz a distância necessária para carregar.
+
+## Golpe Supremo — 08/11/2026
+
+Hipótese: faltava um momento de virada escolhido pela pessoa. O Especial tem recarga fixa e o medidor de carga serve só a
+Foco, Teleporte e Trilha. O **Golpe Supremo** (`src/core/survivor-supreme.ts`) é um recurso da corrida, não uma carta: um
+medidor enche com abates, dano causado e dano recebido, e um toque solta um golpe próprio de cada um dos 18 tipos.
+
+**Limites, para não virar vitória automática:** o medidor leva no mínimo 45 s de jogo para encher (`SUPREME_MIN_FILL_MS`);
+a energia guardada tem teto de 40%; abates do próprio Supremo não recarregam; o Meowth ladrão não é atingido. O dano fica
+numa faixa por classe, em fração da vida máxima: comum a partir de 55%, elite de 12% a 32%, chefe de 5% a 14% (Lutador tem
+teto 1,5× maior, com raio menor). Efeito extra custa dano; um teste confere esse orçamento e que nenhum efeito se repete.
+Cura respeita o bloqueio digital. A carga dura 420 ms, com o jogador andando e protegido por mais 420 ms depois da soltura.
+
+**Comparação** (`FORMS_TYPES=0 FORMS_SECONDS=10 FORMS_RUNS=8 FORMS_RUN_MIN=12`, política de alcance, mesmas sementes, com e
+sem `FORMS_SUPREME=1`; média restrita de sobrevivência em segundos, teto de 720):
+
+| Forma | Sem Supremo | Com Supremo | p10 sem → com |
+| --- | ---: | ---: | ---: |
+| Projétil | 548 | 566 | 275 → 338 |
+| Aura | 454 | 515 | 265 → 287 |
+| Área | 575 | 608 | 356 → 378 |
+| Cone | 633 | 678 | 420 → 484 |
+| Órbita | 579 | 537 | 326 → 281 |
+| Foco | 380 | 375 | 204 → 246 |
+| Rajada | 526 | 586 | 327 → 350 |
+| Teleporte | 440 | 435 | 74 → 74 |
+
+Seis formas melhoram o p10 e nenhuma dispara: a diferença da melhor para a pior forma fica em 1,67× sem e 1,81× com. Quase
+tudo está dentro da variação de cerca de ±10% com 8 sementes, inclusive as quedas de Órbita, Foco e Teleporte, em que
+a mudança das sementes pesa mais que o golpe. O robô só usa o Supremo com três inimigos a até 300 de distância e não
+escolhe o momento como uma pessoa; a política evasiva quase não abate e mal enche o medidor. Falta sessão humana em celular.
+
+**Custo:** a queda dos comuns adianta XP e abre espaço, o que pode favorecer quem já vai bem. **Quem pode ser prejudicado:**
+formas que abatem pouco enchem mais devagar. Por isso o dano recebido também enche o medidor.
+
+**Correções de justiça na mesma rodada:** tiros e golpes não gastam mais acerto em quem já caiu no mesmo passo, os tiros
+inimigos ficam suspensos no Relógio parado, a Inversão polar não empurra inimigos para fora da arena e quadros longos viram
+passos de até 34 ms, para um tiro rápido não atravessar um alvo em celular lento ou no Ritmo acelerado.
