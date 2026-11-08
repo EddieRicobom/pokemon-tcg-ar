@@ -479,8 +479,18 @@ onBeforeUnmount(() => {
 .pn-lobby details > summary {
   display: flex;
   align-items: center;
+  gap: 6px;
   min-height: 44px;
   cursor: pointer;
+}
+
+.pn-lobby details > summary::before {
+  content: '▸';
+  color: var(--gold);
+}
+
+.pn-lobby details[open] > summary::before {
+  content: '▾';
 }
 
 .pn-lobby-actions.row {

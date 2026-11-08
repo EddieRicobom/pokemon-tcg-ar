@@ -399,9 +399,9 @@ onBeforeUnmount(() => { disposed = true; urls.splice(0).forEach((url) => URL.rev
 .box-party {
   display: grid;
   grid-template-columns: repeat(6, 1fr);
-  gap: 4px;
+  gap: 3px;
   margin: 0;
-  padding: 6px;
+  padding: 4px;
   list-style: none;
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
@@ -598,9 +598,20 @@ onBeforeUnmount(() => { disposed = true; urls.splice(0).forEach((url) => URL.rev
   margin: 0;
 }
 
+/* Duas linhas em vez de esmagar a busca no celular. */
 .team-auto {
   flex: none;
+  max-width: 6.5rem;
   min-height: 44px;
+  font-size: 0.8rem;
+  line-height: 1.1;
+  white-space: normal;
+}
+
+.selection-tabs button {
+  padding-inline: 6px;
+  font-size: 0.92rem;
+  white-space: nowrap;
 }
 
 .team-insight {
