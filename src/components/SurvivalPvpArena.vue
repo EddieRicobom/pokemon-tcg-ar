@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref, shallowRef } from 'vue';
 import AttackIcon from './AttackIcon.vue';
 import { pokemonSpriteUrl } from '../ar/sprite-url';
+import type { GamepadDirection } from '../app/gamepad';
 import { vibrate } from '../app/haptics';
 import { effectiveVisual, maxVisualFps, visual } from '../app/visual-settings';
 import { isFrameDue } from '../core/frame-rate';
@@ -362,6 +363,7 @@ let joyId: number | null = null;
 let joyVx = 0;
 let joyVy = 0;
 const keys = { up: false, down: false, left: false, right: false };
+const gamepadKeys = new Set<GamepadDirection>();
 let queuedSwitch = -1;
 let queuedGuard = false;
 let queuedAttack = false;
@@ -484,8 +486,8 @@ function addFx(kind: Fx['kind'], mine: boolean, color: string, style: Record<str
 }
 
 function inputVector(): { dx: number; dy: number } {
-  const dx = (keys.right ? 1 : 0) - (keys.left ? 1 : 0) + joyVx;
-  const dy = (keys.down ? 1 : 0) - (keys.up ? 1 : 0) + joyVy;
+  const dx = Number(keys.right || gamepadKeys.has('right')) - Number(keys.left || gamepadKeys.has('left')) + joyVx;
+  const dy = Number(keys.down || gamepadKeys.has('down')) - Number(keys.up || gamepadKeys.has('up')) + joyVy;
   const len = Math.hypot(dx, dy);
   return len > 1 ? { dx: dx / len, dy: dy / len } : { dx, dy };
 }
@@ -1243,6 +1245,7 @@ const KEY_DIR: Record<string, keyof typeof keys> = {
 };
 
 function onKey(e: KeyboardEvent): void {
+  if (e.defaultPrevented || result.value || props.friendLeft) return;
   const dir = KEY_DIR[e.key];
   const down = e.type === 'keydown';
   if (dir) {
@@ -1260,8 +1263,55 @@ function onKey(e: KeyboardEvent): void {
   }
 }
 
+function canUseGamepadInArena(): boolean {
+  return state.winner === null && !result.value && !props.friendLeft;
+}
+
+function onGamepadDirection(event: Event): void {
+  const detail = (event as CustomEvent<{ handled: boolean; direction: GamepadDirection; pressed?: boolean }>).detail;
+  if (detail.pressed === false) gamepadKeys.delete(detail.direction);
+  if (detail.handled || detail.pressed === undefined || !canUseGamepadInArena()) return;
+  if (detail.pressed) gamepadKeys.add(detail.direction);
+  detail.handled = true;
+}
+
+function onGamepadAction(event: Event): void {
+  const detail = (event as CustomEvent<{ handled: boolean }>).detail;
+  if (detail.handled || !canUseGamepadInArena()) return;
+  detail.handled = true;
+  requestSpecial();
+}
+
+function cyclePokemon(direction: -1 | 1): void {
+  const { active, mons } = state.sides[mySide];
+  for (let offset = 1; offset < mons.length; offset++) {
+    const index = (active + direction * offset + mons.length) % mons.length;
+    if ((mons[index]?.hp ?? 0) > 0) {
+      requestSwitch(index);
+      return;
+    }
+  }
+}
+
+function onGamepadButton(event: Event): void {
+  const detail = (event as CustomEvent<{ handled: boolean; button: number; pressed: boolean }>).detail;
+  if (detail.handled || !detail.pressed || !canUseGamepadInArena()) return;
+  if (detail.button === 2) requestDodge();
+  else if (detail.button === 3) requestAttackSwap();
+  else if (detail.button === 4) cyclePokemon(-1);
+  else if (detail.button === 5) cyclePokemon(1);
+  else if (detail.button === 6) requestGuard();
+  else return;
+  detail.handled = true;
+}
+
+function onGamepadMenu(): void {
+  gamepadKeys.clear();
+}
+
 function onBlur(): void {
   keys.up = keys.down = keys.left = keys.right = false;
+  gamepadKeys.clear();
   // Sem isto, um dedo que estava arrastando quando o app perdeu o foco continuaria andando sozinho.
   joyUp();
 }
@@ -1272,6 +1322,10 @@ onMounted(() => {
   window.addEventListener('keydown', onKey);
   window.addEventListener('keyup', onKey);
   window.addEventListener('blur', onBlur);
+  window.addEventListener('tcg-gamepad-direction', onGamepadDirection);
+  window.addEventListener('tcg-gamepad-action', onGamepadAction);
+  window.addEventListener('tcg-gamepad-button', onGamepadButton);
+  window.addEventListener('tcg-gamepad-menu', onGamepadMenu);
   buildScene(performance.now());
   buildHud();
   raf = requestAnimationFrame(frame);
@@ -1282,6 +1336,10 @@ onBeforeUnmount(() => {
   window.removeEventListener('keydown', onKey);
   window.removeEventListener('keyup', onKey);
   window.removeEventListener('blur', onBlur);
+  window.removeEventListener('tcg-gamepad-direction', onGamepadDirection);
+  window.removeEventListener('tcg-gamepad-action', onGamepadAction);
+  window.removeEventListener('tcg-gamepad-button', onGamepadButton);
+  window.removeEventListener('tcg-gamepad-menu', onGamepadMenu);
   if (resultTimer) clearTimeout(resultTimer);
   if (hurtTimer) clearTimeout(hurtTimer);
   if (shakeTimer) clearTimeout(shakeTimer);
@@ -1391,6 +1449,7 @@ onBeforeUnmount(() => {
         @click="keyClick($event, requestGuard)"
       >
         <span class="svp-guard-icon" aria-hidden="true">🛡</span>
+        <small class="gamepad-hint" aria-hidden="true">LT</small>
         <small>{{ hud.guardOn ? 'Ativo' : hud.guardPct > 0 ? `${hud.guardSec} s` : 'Escudo' }}</small>
         <span v-if="hud.guardPct > 0 && !hud.guardOn" class="svp-cd" :style="{ height: `${hud.guardPct}%` }" aria-hidden="true"></span>
       </button>
@@ -1404,6 +1463,7 @@ onBeforeUnmount(() => {
         @click="keyClick($event, requestDodge)"
       >
         <span class="svp-guard-icon" aria-hidden="true">💨</span>
+        <small class="gamepad-hint" aria-hidden="true">X</small>
         <small>{{ hud.dodgePct > 0 ? `${hud.dodgeSec} s` : 'Esquiva' }}</small>
         <span v-if="hud.dodgePct > 0" class="svp-cd" :style="{ height: `${hud.dodgePct}%` }" aria-hidden="true"></span>
       </button>
@@ -1420,6 +1480,7 @@ onBeforeUnmount(() => {
       >
         <span class="svp-fill" :style="{ height: `${hud.special.pct}%` }" aria-hidden="true"></span>
         <span class="svp-guard-icon" aria-hidden="true">✨</span>
+        <small class="gamepad-hint" aria-hidden="true">A</small>
         <small>{{ hud.special.ready ? 'Especial!' : `${hud.special.pct}%` }}</small>
       </button>
       <button
@@ -1444,10 +1505,12 @@ onBeforeUnmount(() => {
           </span>
         </span>
         <small class="svp-attack-now">{{ hud.attack.now.name }}</small>
+        <small class="gamepad-hint" aria-hidden="true">Y</small>
         <small>{{ hud.attack.pct > 0 ? `Trocar em ${hud.attack.sec} s` : 'Toque: trocar' }}</small>
         <span v-if="hud.attack.pct > 0" class="svp-cd" :style="{ height: `${hud.attack.pct}%` }" aria-hidden="true"></span>
       </button>
       <div class="svp-team mine" role="group" aria-label="Sua equipe: toque para trocar de Pokémon">
+        <small class="gamepad-hint svp-team-hint" aria-hidden="true">LB / RB · Trocar Pokémon</small>
         <button
           v-for="r in hud.mine"
           :key="r.index"
@@ -1550,6 +1613,7 @@ onBeforeUnmount(() => {
 
 .svp-pip img,
 .svp-swap img {
+  image-rendering: var(--game-image-rendering, pixelated);
   height: 30px;
   max-width: 100%;
   object-fit: contain;
@@ -1727,7 +1791,7 @@ onBeforeUnmount(() => {
   height: 30cqw;
   max-width: 38cqw;
   object-fit: contain;
-  image-rendering: pixelated;
+  image-rendering: var(--game-image-rendering, pixelated);
 }
 
 .svp-vs-side.foe img {
@@ -1806,7 +1870,7 @@ onBeforeUnmount(() => {
   height: 26cqw;
   max-width: 30cqw;
   object-fit: contain;
-  image-rendering: pixelated;
+  image-rendering: var(--game-image-rendering, pixelated);
 }
 
 .svp-cutin b {
@@ -1918,7 +1982,7 @@ onBeforeUnmount(() => {
   height: 96px;
   max-width: 80%;
   object-fit: contain;
-  image-rendering: pixelated;
+  image-rendering: var(--game-image-rendering, pixelated);
   animation: svp-pose 0.6s cubic-bezier(0.2, 1.4, 0.4, 1) both, svp-hop 0.9s ease-in-out 0.6s infinite alternate;
 }
 
@@ -2247,7 +2311,7 @@ onBeforeUnmount(() => {
   object-fit: contain;
   transform: translate(-50%, -62%);
   pointer-events: none;
-  image-rendering: pixelated;
+  image-rendering: var(--game-image-rendering, pixelated);
 }
 
 .svp-unit .svp-fallback {
@@ -2394,6 +2458,11 @@ onBeforeUnmount(() => {
   min-width: 0;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
+}
+
+.svp-team-hint {
+  grid-column: 1 / -1;
+  justify-self: center;
 }
 
 /* Seis de cada lado: a fila do rival vira uma linha só, e a sua, duas linhas de três com botões mais baixos. */

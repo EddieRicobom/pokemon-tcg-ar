@@ -192,7 +192,10 @@ describe('BoxScene', () => {
     const scene = sceneLookingDown();
     scene.setCreatures([entry(0)]);
     const dims = (i: number) => (scene.creatureList[i]!.mesh.material.map!.image as { width: number }).width;
+    expect(dims(0)).toBe(8);
+    scene.setSmoothing('bordas');
     const smooth = dims(0);
+    expect(smooth).toBeGreaterThan(8);
     scene.setSmoothing('nitido');
     expect(dims(0)).toBeLessThan(smooth);
     scene.setCreatures([entry(1)]);
@@ -434,6 +437,7 @@ describe('BoxScene: custo e vida', () => {
 
   it('com muita gente os quadros não são ampliados; a textura volta ao tamanho cheio com poucos', () => {
     const scene = arena(2);
+    scene.setSmoothing('bordas');
     const width = () => (scene.creatureList[0]!.mesh.material.map!.image as { width: number }).width;
     const full = width();
     const first = scene.creatureList[0]!;
