@@ -3,7 +3,9 @@ import { onBeforeUnmount, onMounted, reactive, ref, shallowRef } from 'vue';
 import AttackIcon from './AttackIcon.vue';
 import { pokemonSpriteUrl } from '../ar/sprite-url';
 import { vibrate } from '../app/haptics';
-import { effectiveVisual, visual } from '../app/visual-settings';
+import { effectiveVisual, maxVisualFps, visual } from '../app/visual-settings';
+import { isFrameDue } from '../core/frame-rate';
+import type { SoundCue } from '../box/sound-recipes';
 import { SoundEngine } from '../box/sound';
 import { impactFromFx } from '../core/survivor-impacts';
 import { ImpactSparks } from '../village/survivor-impact-art';
@@ -16,7 +18,7 @@ import type { ScreenPoint } from '../village/survivor-attack-art';
 import { TYPE_COLORS, TYPE_LABELS_PT } from '../core/pokemon-data';
 import type { PokemonType } from '../core/pokemon-data';
 import {
-  aliveCount, arenaCameraTarget, attackSwapBlockReason, guardBlockReason, offscreenPointer, SV_ARENA_H, SV_ARENA_W, SV_ATTACK_SWAP_CD_MS, SV_GUARD_COOLDOWN_MS, SV_MON_RADIUS, SV_SWITCH_COOLDOWN_MS, SV_VIEW_H, SV_VIEW_W, switchBlockReason,
+  aliveCount, arenaCameraTarget, SV_TELEGRAPH_MS, attackSwapBlockReason, guardBlockReason, offscreenPointer, SV_ARENA_H, SV_ARENA_W, SV_ATTACK_SWAP_CD_MS, SV_GUARD_COOLDOWN_MS, SV_MON_RADIUS, SV_SWITCH_COOLDOWN_MS, SV_VIEW_H, SV_VIEW_W, switchBlockReason,
 } from '../core/survivor-pvp';
 import { SURVIVOR_CONE_HALF_ANGLE } from '../core/survivor-shapes';
 import type { ArenaEvent, ArenaSide, ArenaState, ArenaTeamState, ArenaWinner } from '../core/survivor-pvp';
@@ -71,6 +73,13 @@ interface Unit {
   faceRight: boolean;
   /** Acabou de entrar em campo (cresce do nada). */
   enter: boolean;
+  /** Acabou de desmaiar (cai e some). */
+  down: boolean;
+  /** Pouca vida (a sua): a barra pisca. */
+  low: boolean;
+  /** Recuo do golpe, em largura da arena. */
+  kx: string;
+  ky: string;
 }
 interface Fx {
   id: number;
@@ -169,6 +178,13 @@ function later(fn: () => void, ms: number): void {
 }
 const enteredAt: [number, number] = [-Infinity, -Infinity];
 const shake = ref(false);
+const faintAt: [number, number] = [-Infinity, -Infinity];
+const faintIndex: [number, number] = [0, 0];
+/** Áreas marcadas que estavam na tela: quando uma some, o golpe caiu e vira um clarão. */
+const markerPrev = new Map<number, { x: number; y: number; radius: number; type: PokemonType }>();
+let lastCount = -1;
+let lastFloor = '';
+let lastDue = 0;
 /** Última posição e direção de cada disparo: o rastro da arte segue o caminho que ele fez. */
 const shotTrack = new Map<number, { x: number; y: number; dx: number; dy: number }>();
 const floorStyle = shallowRef<Record<string, string>>({});
@@ -224,6 +240,23 @@ function toast(text: string, tone: 'good' | 'bad' | 'info' = 'info', ms = 2200, 
 function wake(): void {
   sound.setEnabled(visual.sound);
   sound.unlock();
+}
+
+function playCue(cue: SoundCue): void {
+  sound.setEnabled(visual.sound);
+  sound.play(cue);
+}
+
+let lastAttackSoundAt = -Infinity;
+const shotHeard = new Set<number>();
+/** Som do golpe por tipo e forma, com limite de frequência (rajadas não viram ruído contínuo). */
+function attackSound(side: ArenaSide, now: number): void {
+  if (now - lastAttackSoundAt < 70) return;
+  const team = state.sides[side];
+  const mon = team.mons[team.active];
+  if (!mon) return;
+  lastAttackSoundAt = now;
+  playCue({ kind: 'survivor-attack', type: mon.attackType, category: mon.moveCategory ?? 'projetil' });
 }
 
 function playSound(cue: 'survivor-hit' | 'survivor-critical' | 'survivor-hurt' | 'survivor-level' | 'survivor-gameover'): void {
@@ -305,6 +338,10 @@ function handleEvents(events: ArenaEvent[]): void {
       const name = mons[e.index]?.name ?? 'Pokémon';
       playSound(e.side === mySide ? 'survivor-gameover' : 'survivor-level');
       vibrate({ kind: 'out', mine: e.side === mySide }, visual.sound);
+      playCue({ kind: 'faint' });
+      faintAt[e.side] = clockNow();
+      faintIndex[e.side] = e.index;
+      if (fxOn()) addArtFx('blast', posOf(e.side).x, posOf(e.side).y, 46, mons[e.index]?.attackType ?? 'normal', 600, {}, 14);
       toast(e.side === mySide ? `${name} desmaiou` : `${name} (${props.friendName}) desmaiou`, e.side === mySide ? 'bad' : 'good', 2600);
     } else if (e.k === 'switch') {
       const name = mons[e.index]?.name ?? 'Pokémon';
@@ -313,11 +350,16 @@ function handleEvents(events: ArenaEvent[]): void {
       if (e.side === mySide) toast(e.forced ? `Entrou ${name}` : `Você trocou para ${name}`, 'info', 1800, `sw:${name}`);
       else toast(`${props.friendName} trocou para ${name}`, 'info', 1800, `fsw:${name}`);
     } else if (e.k === 'attack') {
+      if (fxOn()) addArtFx('pulse', posOf(e.side).x, posOf(e.side).y, 34, mons[e.index]?.attackType ?? 'normal', 360);
       if (e.side === mySide) {
+        playCue({ kind: 'ui', cue: 'survivor-pickup' });
         const mon = mons[e.index];
         if (mon) toast(`${TYPE_GLYPHS[mon.attackType]} Ataque: ${TYPE_LABELS_PT[mon.attackType]}${mon.moveName ? ` · ${mon.moveName}` : ''}`, 'info', 1500, `atk:${mon.attackType}:${mon.moveCategory}`);
       } else toast(`${props.friendName} trocou de ataque`, 'info', 1500, 'foe-attack');
     } else if (e.k === 'guard') {
+      playCue({ kind: 'guard' });
+      if (fxOn()) addArtFx('pulse', posOf(e.side).x, posOf(e.side).y, 34, 'normal', 360);
+      if (e.side === mySide) vibrate({ kind: 'bumper' }, visual.sound);
       toast(e.side === mySide ? 'Escudo ativo!' : `${props.friendName} ativou o escudo`, e.side === mySide ? 'good' : 'info', 1600, `guard:${e.side}`);
     } else if (e.k === 'block') {
       playSound('survivor-hit');
@@ -343,7 +385,10 @@ function showDamage(side: ArenaSide, damage: number, mult: number): void {
 function addArtFx(kind: SurvivorFx['kind'], x: number, y: number, r: number, type: PokemonType, lifeMs: number, extra: Partial<SurvivorFx> = {}, z = 0): void {
   const fxMark: SurvivorFx = { kind, x, y, r, color: TYPE_COLORS[type], ageMs: 0, lifeMs, moveType: type, ...extra };
   artFx = [...artFx.slice(-14), { born: clockNow(), fx: fxMark, z }];
-  if (fxOn() && kind !== 'pulse') pendingImpacts.push({ fx: fxMark, z });
+  if (fxOn() && kind !== 'pulse') {
+    if (pendingImpacts.length > 12) pendingImpacts.shift();
+    pendingImpacts.push({ fx: fxMark, z });
+  }
 }
 /** Marcas que ainda vão soltar faíscas: a conversão para a tela acontece no desenho, onde a câmera é conhecida. */
 const pendingImpacts: { fx: SurvivorFx; z: number }[] = [];
@@ -358,6 +403,7 @@ function showBeam(e: Extract<ArenaEvent, { k: 'beam' }>): void {
     beamMarks = [...beamMarks.filter((b) => b.mine !== mine || b.fired), { mine, x0: e.x0, y0: e.y0, x1: e.x1, y1: e.y1, width: e.width, type, born: now, lifeMs: e.leftMs, fired: false }];
     if (!mine) toast('Feixe marcado: saia da linha!', 'bad', 1600, `beam:${e.side}`);
   } else {
+    attackSound(e.side, now);
     beamMarks = [...beamMarks.filter((b) => b.mine !== mine || b.fired), { mine, x0: e.x0, y0: e.y0, x1: e.x1, y1: e.y1, width: e.width, type, born: now, lifeMs: 380, fired: true }];
   }
 }
@@ -368,6 +414,7 @@ function showFx(e: Extract<ArenaEvent, { k: 'cone' | 'pulse' | 'blink' }>): void
   const mon = team.mons[team.active];
   const type: PokemonType = mon?.attackType ?? 'normal';
   const at = posOf(e.side);
+  attackSound(e.side, clockNow());
   if (e.k === 'pulse') addArtFx('pulse', at.x, at.y, e.radius, type, 460);
   else if (e.k === 'cone') addArtFx('cone', at.x, at.y, e.range, type, 420, { angle: e.angle, spread: SURVIVOR_CONE_HALF_ANGLE });
   else blinkMarks = [...blinkMarks.slice(-4), { x0: e.x0, y0: e.y0, x1: e.x1, y1: e.y1, type, born: clockNow() }];
@@ -391,6 +438,12 @@ function buildScene(now: number): void {
     }
     : (guestLink as SurvivalGuestLink).view(now);
   lastView = view;
+  for (const sh of view.shots) {
+    if (shotHeard.has(sh.id)) continue;
+    if (shotHeard.size > 400) shotHeard.clear();
+    shotHeard.add(sh.id);
+    attackSound(sh.side, now);
+  }
   const me = toField(view.sides[mySide].x, view.sides[mySide].y);
   // A câmera desliza até o alvo em vez de pular: segue quem joga e puxa um pouco para o rival.
   const target = arenaCameraTarget(me, toField(view.sides[foeSide].x, view.sides[foeSide].y));
@@ -398,20 +451,39 @@ function buildScene(now: number): void {
   camera = { x: camera.x + (target.x - camera.x) * follow, y: camera.y + (target.y - camera.y) * follow };
   cameraAt = now;
   cameraReady = true;
-  floorStyle.value = { transform: `translate(${(-camera.x / SV_ARENA_W) * 100}%, ${(-camera.y / SV_ARENA_H) * 100}%)` };
+  const floor = `translate(${((-camera.x / SV_ARENA_W) * 100).toFixed(3)}%, ${((-camera.y / SV_ARENA_H) * 100).toFixed(3)}%)`;
+  if (floor !== lastFloor) {
+    lastFloor = floor;
+    floorStyle.value = { transform: floor };
+  }
   const foeAt = toView(view.sides[foeSide].x, view.sides[foeSide].y);
-  pointer.value = offscreenPointer(foeAt.x, foeAt.y);
+  const ptr = offscreenPointer(foeAt.x, foeAt.y);
+  if (!ptr !== !pointer.value || (ptr && pointer.value && (Math.abs(ptr.x - pointer.value.x) > 0.5 || Math.abs(ptr.y - pointer.value.y) > 0.5 || Math.abs(ptr.angle - pointer.value.angle) > 0.01))) pointer.value = ptr;
   const out: Unit[] = [];
   for (const side of [mySide, foeSide] as const) {
     const team = state.sides[side];
     const mon = team.mons[team.active];
+    // Quem acabou de desmaiar fica mais um instante na tela, caindo, mesmo que outro já tenha entrado.
+    const ghost = now - faintAt[side] < 650 ? team.mons[faintIndex[side]] : undefined;
+    if (ghost && ghost.hp <= 0 && ghost !== mon) {
+      const g = toView(view.sides[side].x, view.sides[side].y);
+      out.push({ down: true, low: false, kx: '0cqw', ky: '0cqw', hit: false, enter: false, faceRight: false, key: `ghost-${side}`, mine: side === mySide, x: (g.x / SV_VIEW_W) * 100, y: (g.y / SV_VIEW_H) * 100, dexId: ghost.dexId, shiny: ghost.shiny, name: ghost.name, hpPct: 0, shield: false, guard: false, status: '' });
+    }
     if (!mon || mon.hp <= 0) continue;
     const p = toView(view.sides[side].x, view.sides[side].y);
     const status = `${team.burnMs > 0 ? '🔥' : ''}${team.slowMs > 0 ? '🐌' : ''}${team.stunMs > 0 ? '💫' : ''}`;
     const other = toView(view.sides[side === mySide ? foeSide : mySide].x, view.sides[side === mySide ? foeSide : mySide].y);
-    out.push({ hit: fxOn() && now - hitAt[side] < 140, enter: now - enteredAt[side] < 420, faceRight: other.x > p.x + 2, key: side === mySide ? 'me' : 'foe', mine: side === mySide, x: (p.x / SV_VIEW_W) * 100, y: (p.y / SV_VIEW_H) * 100, dexId: mon.dexId, shiny: mon.shiny, name: mon.name, hpPct: Math.round((100 * mon.hp) / mon.maxHp), shield: team.shieldMs > 0, guard: team.guardMs > 0, status });
+    const away = { x: p.x - other.x, y: p.y - other.y };
+    const awayLen = Math.hypot(away.x, away.y) || 1;
+    const isHit = fxOn() && now - hitAt[side] < 140;
+    out.push({ down: false, low: side === mySide && mon.hp / mon.maxHp <= 0.25, kx: isHit ? `${((away.x / awayLen) * 1.4).toFixed(2)}cqw` : '0cqw', ky: isHit ? `${((away.y / awayLen) * 1.4).toFixed(2)}cqw` : '0cqw', hit: isHit, enter: now - enteredAt[side] < 420, faceRight: other.x > p.x + 2, key: side === mySide ? 'me' : 'foe', mine: side === mySide, x: (p.x / SV_VIEW_W) * 100, y: (p.y / SV_VIEW_H) * 100, dexId: mon.dexId, shiny: mon.shiny, name: mon.name, hpPct: Math.round((100 * mon.hp) / mon.maxHp), shield: team.shieldMs > 0, guard: team.guardMs > 0, status });
   }
-  units.value = out;
+  const prev = units.value;
+  const same = prev.length === out.length && out.every((u, i) => {
+    const o = prev[i]!;
+    return u.key === o.key && Math.abs(u.x - o.x) < 0.05 && Math.abs(u.y - o.y) < 0.05 && u.hpPct === o.hpPct && u.hit === o.hit && u.enter === o.enter && u.down === o.down && u.low === o.low && u.shield === o.shield && u.guard === o.guard && u.status === o.status && u.faceRight === o.faceRight && u.dexId === o.dexId && u.kx === o.kx;
+  });
+  if (!same) units.value = out;
   drawArt(now, view);
 }
 
@@ -449,7 +521,7 @@ function drawBeam(ctx: CanvasRenderingContext2D, b: BeamMark, map: (x: number, y
     poly(1, half * 0.45 * (1 - t * 0.6));
     ctx.fill();
     // Partículas do elemento ao longo do feixe, como o Foco do Survivor.
-    const n = Math.max(6, Math.round(len / 28));
+    const n = Math.min(14, Math.max(6, Math.round(len / 28)));
     for (let i = 0; i <= n; i++) {
       const head = { x: a.x + ux * len * (i / n), y: a.y + uy * len * (i / n), s: k };
       drawElementProjectile(ctx, b.type, head, { x: head.x - ux * 22, y: head.y - uy * 22, s: k }, Math.max(5, half * 0.55), 1 - t, now, detailed, i);
@@ -485,10 +557,13 @@ function drawBeam(ctx: CanvasRenderingContext2D, b: BeamMark, map: (x: number, y
 function drawArt(now: number, view: ArenaView): void {
   const canvas = artCanvas.value;
   const host = arenaEl.value;
-  if (!canvas || !host || !host.clientWidth) return;
+  if (!canvas || !host || !host.clientWidth) {
+    pendingImpacts.length = 0;
+    return;
+  }
   const w = host.clientWidth;
   const h = (w * SV_VIEW_H) / SV_VIEW_W;
-  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  const dpr = Math.min(effectiveVisual.value.rotomMode ? 1 : 1.5, window.devicePixelRatio || 1);
   if (canvas.width !== Math.round(w * dpr) || canvas.height !== Math.round(h * dpr)) {
     canvas.width = Math.round(w * dpr);
     canvas.height = Math.round(h * dpr);
@@ -499,7 +574,10 @@ function drawArt(now: number, view: ArenaView): void {
   } catch {
     ctx = null;
   }
-  if (!ctx) return;
+  if (!ctx) {
+    pendingImpacts.length = 0;
+    return;
+  }
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, w, h);
   const k = w / SV_VIEW_W;
@@ -509,10 +587,15 @@ function drawArt(now: number, view: ArenaView): void {
   };
   const detailed = !effectiveVisual.value.rotomMode && !reduceMotion;
   // Áreas marcadas: o campo do elemento com partículas girando e um pulso que fecha sobre o alvo.
+  const liveMarkers = new Set<number>();
   for (const m of view.markers) {
-    const loop = (now % 700) / 700;
-    drawElementAuraField(ctx, { x: m.x, y: m.y, attackRadius: m.radius / 0.8 }, m.type, map, now, detailed);
-    drawElementFx(ctx, { kind: 'pulse', x: m.x, y: m.y, r: m.radius, color: TYPE_COLORS[m.type], ageMs: loop * 700, lifeMs: 700, moveType: m.type }, map, now, detailed);
+    liveMarkers.add(m.id);
+    markerPrev.set(m.id, { x: m.x, y: m.y, radius: m.radius, type: m.type });
+    // O dano acerta quem está no raio mais o corpo do Pokémon: o círculo mostra exatamente essa zona.
+    const reach = m.radius + SV_MON_RADIUS;
+    const closing = Math.min(1, Math.max(0, 1 - m.leftMs / SV_TELEGRAPH_MS));
+    drawElementAuraField(ctx, { x: m.x, y: m.y, attackRadius: reach / 0.8 }, m.type, map, reduceMotion ? 0 : now, detailed);
+    drawElementFx(ctx, { kind: 'pulse', x: m.x, y: m.y, r: reach, color: TYPE_COLORS[m.type], ageMs: closing * 700, lifeMs: 700, moveType: m.type }, map, now, detailed);
     const c = map(m.x, m.y);
     ctx.save();
     ctx.globalAlpha = 0.8;
@@ -520,16 +603,21 @@ function drawArt(now: number, view: ArenaView): void {
     ctx.lineWidth = 1.5;
     ctx.strokeStyle = m.side === mySide ? '#ffffff' : '#ff6b63';
     ctx.beginPath();
-    ctx.arc(c.x, c.y, m.radius * k, 0, Math.PI * 2);
+    ctx.arc(c.x, c.y, reach * k, 0, Math.PI * 2);
     ctx.stroke();
     ctx.restore();
+  }
+  for (const [id, gone] of markerPrev) {
+    if (liveMarkers.has(id)) continue;
+    markerPrev.delete(id);
+    if (fxOn()) addArtFx('blast', gone.x, gone.y, gone.radius + SV_MON_RADIUS, gone.type, 460);
   }
   for (const side of [mySide, foeSide] as const) {
     const team = state.sides[side];
     const mon = team.mons[team.active];
     if (!mon || mon.hp <= 0) continue;
     const at = { x: view.sides[side].x, y: view.sides[side].y };
-    if (mon.moveCategory === 'aura') drawElementAuraField(ctx, { ...at, attackRadius: mon.attackRadius ?? SV_MON_RADIUS * 2 }, mon.attackType, map, now, detailed);
+    if (mon.moveCategory === 'aura') drawElementAuraField(ctx, { ...at, attackRadius: ((mon.attackRadius ?? SV_MON_RADIUS * 2) * 0.8 + SV_MON_RADIUS) / 0.8 }, mon.attackType, map, reduceMotion ? 0 : now, detailed);
     else if (mon.moveCategory === 'orbit') {
       const shape = { ...at, shots: Math.max(1, mon.shots ?? 1), attackRadius: mon.attackRadius ?? SV_MON_RADIUS * 2, orbitAngle: team.orbitAngle };
       drawOrbitPath(ctx, shape, mon.attackType, map);
@@ -540,28 +628,27 @@ function drawArt(now: number, view: ArenaView): void {
     } else if (mon.moveCategory === 'trilha' && team.trail.length > 1) {
       // Faixa contínua que esmaece com a idade, com partículas do elemento, no lugar das bolinhas soltas.
       const col = TYPE_COLORS[mon.attackType];
-      const r = Math.min(mon.attackRadius ?? SV_MON_RADIUS * 2, 36) * k;
+      // A faixa tem a largura em que o dano acontece (raio mais o corpo). Dois traços em um caminho só: sem emendas nem blur.
+      const half = (Math.min(mon.attackRadius ?? SV_MON_RADIUS * 2, 36) + SV_MON_RADIUS) * k;
       ctx.save();
       ctx.lineCap = 'round';
       ctx.lineJoin = 'round';
       ctx.strokeStyle = col;
-      ctx.lineWidth = r * 1.35;
-      if (detailed) {
-        ctx.shadowColor = col;
-        ctx.shadowBlur = 10;
-      }
-      for (let i = 1; i < team.trail.length; i++) {
-        const from = map(team.trail[i - 1]!.x, team.trail[i - 1]!.y);
-        const to = map(team.trail[i]!.x, team.trail[i]!.y);
-        ctx.globalAlpha = 0.18 + 0.32 * (i / team.trail.length);
-        ctx.beginPath();
-        ctx.moveTo(from.x, from.y);
-        ctx.lineTo(to.x, to.y);
-        ctx.stroke();
-      }
+      ctx.beginPath();
+      team.trail.forEach((t, i) => {
+        const q = map(t.x, t.y);
+        if (i === 0) ctx.moveTo(q.x, q.y);
+        else ctx.lineTo(q.x, q.y);
+      });
+      ctx.globalAlpha = 0.16;
+      ctx.lineWidth = half * 2;
+      ctx.stroke();
+      ctx.globalAlpha = 0.38;
+      ctx.lineWidth = half * 1.2;
+      ctx.stroke();
       ctx.restore();
       team.trail.forEach((t, i) => {
-        if (i % 3 !== 0) return;
+        if (i % (detailed ? 3 : 5) !== 0) return;
         const p = map(t.x, t.y, 6);
         drawElementProjectile(ctx, mon.attackType, p, { ...p, y: p.y + 4 }, 3.5, 0.7, now, detailed, i);
       });
@@ -581,7 +668,8 @@ function drawArt(now: number, view: ArenaView): void {
     for (let i = 0; i < 7; i++) {
       const f = i / 6;
       const p = map(b.x0 + (b.x1 - b.x0) * f, b.y0 + (b.y1 - b.y0) * f, 10);
-      drawElementProjectile(ctx, b.type, p, { ...p, x: p.x - (b.x1 - b.x0) * k * 0.05 }, 5, (1 - t) * (0.4 + f * 0.6), now, detailed, i);
+      const q = map(b.x0 + (b.x1 - b.x0) * (f - 0.08), b.y0 + (b.y1 - b.y0) * (f - 0.08), 10);
+      drawElementProjectile(ctx, b.type, p, q, 5, (1 - t) * (0.4 + f * 0.6), now, detailed, i);
     }
   }
   const seen = shotSeen;
@@ -640,6 +728,11 @@ function buildHud(): void {
   else if (current?.moveCategory === 'trilha') hint = mine.trailMs > 0 ? 'Trilha ativa: passe por cima do rival.' : `Ande para encher a Trilha (${Math.floor(mine.trailCharge * 100)}%).`;
   else if (current?.moveCategory === 'foco') hint = mine.focusCharge > 0 && !beamMarks.some((b) => b.mine && !b.fired) ? `Foco carregando (${Math.floor(mine.focusCharge * 100)}%): a linha é marcada antes do feixe.` : '';
   else if (state.timeMs < 9000) hint = 'Desvie dos golpes: o seu Pokémon ataca sozinho. Troque quando precisar.';
+  const count = Math.ceil(state.countdownMs / 1000);
+  if (count !== lastCount) {
+    if (lastCount >= 0 && state.winner === null) playCue(count > 0 ? { kind: 'ui', cue: 'minigame-pick' } : { kind: 'go' });
+    lastCount = count;
+  }
   const cd = mine.switchCdMs;
   hud.value = {
     mine: rowsOf(mine), foe: rowsOf(foe),
@@ -661,6 +754,8 @@ function buildHud(): void {
 
 function finish(): void {
   if (result.value || resultTimer) return;
+  if (state.winner !== null) playCue(state.winner === mySide ? { kind: 'victory', personality: 'equilibrado' } : { kind: 'pin-lose' });
+  if (state.winner !== null) vibrate({ kind: state.winner === mySide ? 'win' : 'lose' }, visual.sound);
   if (state.winner !== null) emit('finished', state.winner, state.sides[mySide].mons.map((m) => Math.max(0, m.hp)));
   if (hostLink) {
     const mons = state.sides[mySide].mons;
@@ -681,6 +776,8 @@ function finish(): void {
 
 function frame(ts: number): void {
   raf = requestAnimationFrame(frame);
+  if (!isFrameDue(ts, lastDue, maxVisualFps())) return;
+  lastDue = ts;
   frameNow = ts;
   const dt = last ? Math.min(100, ts - last) : 16;
   last = ts;
@@ -771,7 +868,7 @@ function onBlur(): void {
   keys.up = keys.down = keys.left = keys.right = false;
 }
 
-const unitStyle = (u: Unit): Record<string, string> => ({ left: `${u.x}%`, top: `${u.y}%` });
+const unitStyle = (u: Unit): Record<string, string> => ({ left: `${u.x}%`, top: `${u.y}%`, '--kx': u.kx, '--ky': u.ky });
 
 onMounted(() => {
   window.addEventListener('keydown', onKey);
@@ -819,17 +916,19 @@ onBeforeUnmount(() => {
       @pointercancel="joyUp"
     >
       <div class="svp-floor" :style="floorStyle" aria-hidden="true"></div>
-      <div v-for="u in units" :key="u.key" class="svp-unit" :class="{ mine: u.mine, shield: u.shield, guard: u.guard, hit: u.hit, enter: u.enter, 'face-right': u.faceRight }" :style="unitStyle(u)">
+      <div v-for="u in units" :key="u.key" class="svp-unit" :class="{ mine: u.mine, shield: u.shield, guard: u.guard, hit: u.hit, enter: u.enter, down: u.down, low: u.low, 'face-right': u.faceRight }" :style="unitStyle(u)">
         <span class="svp-shadow" aria-hidden="true"></span>
         <span class="svp-bubble" aria-hidden="true"></span>
         <span class="svp-ring"></span>
         <span v-if="u.status" class="svp-status" aria-hidden="true">{{ u.status }}</span>
         <img v-if="!broken.includes(u.dexId)" class="svp-sprite" :src="pokemonSpriteUrl(u.dexId, u.shiny)" :alt="u.name" draggable="false" @error="markBroken(u.dexId)" />
         <span v-else class="svp-fallback big" role="img" :aria-label="`${u.name} (sem sprite)`">{{ u.name.slice(0, 2) }}</span>
-        <i class="svp-bar floating"><b :style="{ width: `${u.hpPct}%` }"></b></i>
       </div>
 
       <canvas ref="artCanvas" class="svp-art" aria-hidden="true"></canvas>
+      <div v-for="u in units" :key="`bar-${u.key}`" class="svp-bars" :class="{ low: u.low, down: u.down }" :style="unitStyle(u)" aria-hidden="true">
+        <i class="svp-bar floating"><b :style="{ width: `${u.hpPct}%` }"></b></i>
+      </div>
 
       <span
         v-for="f in fx"
@@ -852,7 +951,7 @@ onBeforeUnmount(() => {
       >➤</span>
 
       <div v-if="hud.charge" class="svp-charge" aria-hidden="true"><small>{{ hud.charge.label }} {{ hud.charge.pct }}%</small><i class="svp-bar"><b :style="{ width: `${hud.charge.pct}%` }"></b></i></div>
-      <p v-if="hud.count > 0" class="svp-count" aria-hidden="true">{{ hud.count }}</p>
+      <p v-if="hud.count > 0" :key="hud.count" class="svp-count" aria-hidden="true">{{ hud.count }}</p>
       <p v-if="hud.hint" class="svp-hint" role="status">{{ hud.hint }}</p>
       <p v-if="stale" class="svp-hint warn" role="status">Sem sinal do anfitrião há alguns segundos… a luta volta quando a conexão voltar.</p>
       <ul class="svp-toasts" aria-live="polite">
@@ -1205,6 +1304,47 @@ onBeforeUnmount(() => {
   box-shadow: 0 0 10px 1px rgba(79, 140, 224, 0.6);
 }
 
+.svp-bars {
+  position: absolute;
+  z-index: 2;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+
+.svp-bars.down {
+  opacity: 0;
+}
+
+.svp-bars.low .svp-bar b {
+  background: #e0524f;
+  animation: svp-blink 0.5s steps(2) infinite;
+}
+
+@keyframes svp-blink {
+  50% { opacity: 0.35; }
+}
+
+.svp-unit.down .svp-sprite {
+  animation: svp-faint 0.65s ease-in forwards;
+}
+
+@keyframes svp-faint {
+  to { opacity: 0; translate: 0 4cqw; rotate: 90deg; filter: grayscale(1); }
+}
+
+.svp-unit.hit .svp-sprite {
+  translate: var(--kx, 0) var(--ky, 0);
+}
+
+.svp-count {
+  animation: svp-pop 0.4s ease-out;
+}
+
+@keyframes svp-pop {
+  from { scale: 1.8; opacity: 0; }
+}
+
 .svp-unit.enter .svp-sprite {
   animation: svp-enter 0.4s cubic-bezier(0.2, 1.4, 0.4, 1);
 }
@@ -1239,9 +1379,9 @@ onBeforeUnmount(() => {
 }
 
 @keyframes svp-dmg-rise {
-  0% { opacity: 0; margin-top: 4cqw; }
+  0% { opacity: 0; translate: 0 4cqw; }
   15% { opacity: 1; }
-  100% { opacity: 0; margin-top: -6cqw; }
+  100% { opacity: 0; translate: 0 -6cqw; }
 }
 
 .svp-unit.hit .svp-sprite {
@@ -1307,7 +1447,8 @@ onBeforeUnmount(() => {
 
 @media (prefers-reduced-motion: reduce) {
   .svp-fx.dmg { animation-duration: 0.01s; }
-  .svp-arena.shake, .svp-unit.enter .svp-sprite { animation: none; }
+  .svp-arena.shake, .svp-unit.enter .svp-sprite, .svp-unit.down .svp-sprite, .svp-bars.low .svp-bar b, .svp-count { animation: none; }
+  .svp-unit.hit .svp-sprite { translate: none; }
 }
 
 .svp-fx.blink {
