@@ -18,6 +18,7 @@ import type { SurvivorPreparationId } from './survivor-preparations';
 import { advanceSpecialEncounter, breakSurvivorShield, createSurvivorSpecial, DASH_DAMAGE_MULTIPLIER, DASH_TRIPLE_DAMAGE_MULTIPLIER, SPECIAL_GUARDIANS, specialProtects, stepSurvivorSpecial } from './survivor-specials';
 import { inSurvivorCone, SURVIVOR_CONE_HALF_ANGLE, SURVIVOR_ORBIT_BASE, SURVIVOR_ORBIT_MAX, survivorAimAngle, survivorOrbitAngularSpeed, survivorOrbiterHitRadius, survivorOrbiters, survivorOrbitHitIntervalMs } from './survivor-shapes';
 import type { PokemonType } from './pokemon-data';
+import { creditSupremeKill, createSurvivorSupreme, gainSupreme, stepSurvivorSupreme, SUPREME_GAIN } from './survivor-supreme';
 
 /**
  * Motor puro do modo Sobrevivência (Zona de Sobrevivência, dentro da Vila): você anda pela arena, seu Pokémon ataca
@@ -317,6 +318,7 @@ export function createSurvivorState(seed: number, options: CreateSurvivorOptions
     criticalHits: [],
     critRng: seededRng((seed ^ 0x5a17c9e3) >>> 0),
     special: createSurvivorSpecial(move.type),
+    supreme: createSurvivorSupreme(move.type),
     charge: createSurvivorCharge(),
     rng: seededRng(seed),
     runSeed: Math.floor(seed) >>> 0,
@@ -2111,6 +2113,7 @@ function hitEnemy(state: SurvivorState, e: SurvivorEnemy, damage: number, from: 
   const hpBefore = Math.max(0, e.hp);
   e.hp -= finalDamage;
   e.hitFlashMs = 90;
+  gainSupreme(state, (Math.min(hpBefore, finalDamage) / Math.max(1, e.maxHp)) * SUPREME_GAIN.damageDealtPerBar);
   if (state.runStats) recordDamage(state.runStats, move.name, move.color, Math.min(hpBefore, finalDamage));
   if (synergy?.consume) e[synergy.consume] = 0;
   if (synergy?.refreshSlowMs) e.slowMs = Math.max(e.slowMs ?? 0, synergy.refreshSlowMs);
@@ -2596,7 +2599,7 @@ function attack(state: SurvivorState): boolean {
     let hits = 0;
     const damage = playerAttackDamage(state);
     for (const e of state.enemies) {
-      if (Math.hypot(e.x - p.x, e.y - p.y) <= pulseRadius + e.radius) {
+      if (e.hp > 0 && Math.hypot(e.x - p.x, e.y - p.y) <= pulseRadius + e.radius) {
         hitEnemy(state, e, damage, p);
         hits++;
       }
@@ -2629,7 +2632,7 @@ function attack(state: SurvivorState): boolean {
     if (projectileIndex >= 0) state.hostileProjectiles.splice(projectileIndex, 1);
     let hits = 0;
     for (const e of state.enemies) {
-      if (inSurvivorCone(p, e.x, e.y, attackRange, e.radius)) {
+      if (e.hp > 0 && inSurvivorCone(p, e.x, e.y, attackRange, e.radius)) {
         hitEnemy(state, e, artifactDamage(state), p);
         hits++;
       }
@@ -2646,7 +2649,7 @@ function attack(state: SurvivorState): boolean {
   for (const t of targets) {
     const center = { x: t.x, y: t.y };
     for (const e of state.enemies) {
-      if (Math.hypot(e.x - center.x, e.y - center.y) <= p.attackRadius + e.radius) {
+      if (e.hp > 0 && Math.hypot(e.x - center.x, e.y - center.y) <= p.attackRadius + e.radius) {
         const direct = e.id === t.id;
         const damage = direct ? artifactDamage(state) : artifactDamage(state) * p.areaDamageMultiplier;
         hitEnemy(state, e, damage, center, move, true, Math.hypot(e.x - p.x, e.y - p.y));
@@ -2761,6 +2764,7 @@ function damagePlayer(state: SurvivorState, damage: number, kind: SurvivorFinalH
   const effectiveDamage = damage > 0 ? Math.max(1, Math.ceil(damage * (1 - (reduction ?? 0)) * (1 - Math.min(0.5, contactGuard + projectileGuard)))) : 0;
   state.lastHit = { ...source, kind, damage: effectiveDamage, hpBefore: p.hp };
   p.hp = Math.max(0, p.hp - effectiveDamage);
+  gainSupreme(state, (effectiveDamage / Math.max(1, p.maxHp)) * SUPREME_GAIN.damageTakenPerBar);
   if (effectiveDamage > 0 && source.digitalThreat) p.healBlockMs = 8000;
   const retaliation = p.upgradeLevels['retaliation-wave'] ?? 0;
   if (effectiveDamage > 0 && retaliation > 0) {
@@ -3183,6 +3187,12 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
   p.artifactFocusMs = Math.max(0, p.artifactFocusMs - dtMs);
   const dashPath = stepSurvivorSpecial(state, input, dtMs, ARENA_W, ARENA_H, PLAYER_RADIUS);
   if (dashPath) hitDashPath(state, dashPath);
+  stepSurvivorSupreme(state, input, dtMs, events, {
+    attackDamage: playerAttackDamage(state),
+    stun: applyStun,
+    push: (e, from, px) => { applyKnockback(e, from, px); },
+    record: (name, color, damage) => { if (state.runStats) recordDamage(state.runStats, name, color, damage); },
+  });
 
   // Movimento do jogador, com a arena como cerca.
   const chargeStyle = chargeStyleOf(state);
@@ -3302,6 +3312,9 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
       e.x += direction * gravityDx / gravityDistance * 220 * dt;
       e.y += direction * gravityDy / gravityDistance * 220 * dt;
     }
+    // A cerca vale para todos: fora da arena ninguém alcança o inimigo (os tiros somem em 40 px).
+    e.x = clamp(e.x, 0, ARENA_W);
+    e.y = clamp(e.y, 0, ARENA_H);
     const playerDistance = Math.hypot(p.x - e.x, p.y - e.y);
     // Espinhos: quem encosta em você apanha, mesmo durante a janela de invulnerabilidade do jogador.
     if ((p.thornsDamage ?? 0) > 0 && playerDistance < PLAYER_RADIUS + e.radius) e.hp -= (p.thornsDamage ?? 0) * dt;
@@ -3319,7 +3332,9 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
   }
 
   // Projéteis hostis têm alcance, dano e quantidade limitados; cada um some ao tocar o jogador.
-  state.hostileProjectiles = state.hostileProjectiles.filter((proj) => {
+  // No Relógio parado eles ficam suspensos no ar, sem andar nem ferir: o tempo parou para tudo que é inimigo.
+  const hostileShotsFrozen = state.special.selected === 'stasis' && state.special.activeMs > 0;
+  if (!hostileShotsFrozen) state.hostileProjectiles = state.hostileProjectiles.filter((proj) => {
     const nearAura = p.move.category === 'aura'
       && Math.hypot(proj.x - p.x, proj.y - p.y) <= p.attackRadius + proj.size;
     const psychicField = p.move.type === 'psychic' && hasUpgrade(p, 'psychic-field')
@@ -3404,7 +3419,8 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
     if (proj.lifeMs <= 0) return false;
     if (proj.x < -40 || proj.x > ARENA_W + 40 || proj.y < -40 || proj.y > ARENA_H + 40) return false;
     for (const e of state.enemies) {
-      if (proj.hit.includes(e.id)) continue;
+      // Quem caiu neste mesmo passo ainda está na lista: não pode gastar o tiro nem render cura.
+      if (e.hp <= 0 || proj.hit.includes(e.id)) continue;
       const focusShot = proj.move?.category === 'foco' && proj.source !== 'support';
       if (Math.hypot(e.x - proj.x, e.y - proj.y) < e.radius + (focusShot ? Math.max(5, proj.size ?? 5) : proj.collisionRadius ?? 5)) {
         if (focusShot) state.charge.level = Math.min(1, state.charge.level + FOCUS_HIT_CHARGE);
@@ -3453,6 +3469,8 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
     state.enemies = state.enemies.filter((e) => e.hp > 0);
     state.kills += dead.length;
     for (const e of dead) {
+      creditSupremeKill(state, e);
+      if (e.boss || e.grade === 'chefao' || e.shadowBoss) events.push({ type: 'bossDown', x: e.x, y: e.y });
       if (e.thief && !state.debugLaboratory) {
         const coins = thiefReward(state.elapsedMs);
         p.bonusCoins = (p.bonusCoins ?? 0) + coins;
@@ -3569,7 +3587,6 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
     events.push({ type: 'artifactCollected', kind: artifact.kind });
     return false;
   });
-  levelUp(state, events);
 
   // Segundo fôlego: uma vez por corrida, ao cair até 25% de vida, o jogador volta com 35% do máximo.
   if (p.secondWindReady && (p.healBlockMs ?? 0) <= 0 && p.hp <= p.maxHp * 0.25) {
@@ -3589,6 +3606,8 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
       summary: { survivedMs: state.elapsedMs, level: p.level, stage: p.stage, kills: state.kills, wave: state.wave, trainersBeaten: state.trainersBeaten, bossesBeaten: state.bossesBeaten, finalBossBeaten: state.finalBossBeaten, infinite: state.infinite, fast: state.fast, digitalPokeballs: state.digitalPokeballs, shadowTrustStones: state.shadowTrustStones, bonusCoins: p.bonusCoins ?? 0, ...runStatsSummary(state), ...(state.lastHit ? { finalHit: state.lastHit } : {}) },
     });
   }
+  // Depois do fim: quem morre ou vence no mesmo quadro de um orbe não abre uma escolha de carta por cima do resultado.
+  if (!state.over) levelUp(state, events);
 
   if (!state.debugLaboratory) updateDigitalDanger(state, input, dtMs, trainerSpawnedThisStep, events);
   if ((p.healBlockMs ?? 0) > 0 && (p.healBlockMs ?? 0) <= healBlockBeforeStep) p.healBlockMs = Math.max(0, (p.healBlockMs ?? 0) - dtMs);

@@ -271,6 +271,8 @@ function control(s: SurvivorState, policy: Policy, memory: ChargeMemory): Surviv
     dy: move.dy,
     charge: charge.charge,
     special: s.special.phase === 'ready' && s.special.cooldownMs === 0 && crowdSize(s, 200) >= 4,
+    // FORMS_SUPREME=1: solta o Golpe Supremo quando cheio e há gente por perto; sem a opção, nunca usa (base de comparação).
+    supreme: process.env.FORMS_SUPREME === '1' && s.supreme.meter >= 1 && crowdSize(s, 300) >= 3,
   };
   if (charge.aim !== undefined) input.aimAngle = charge.aim;
   return input;

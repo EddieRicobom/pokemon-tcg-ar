@@ -1,5 +1,6 @@
 import type { PokemonType } from '../core/pokemon-data';
 import type { SurvivorState } from '../core/survivor';
+import { SUPREME_RADIUS, SUPREME_WINDUP_MS, SURVIVOR_SUPREMES } from '../core/survivor-supreme';
 
 /** Silhuetas distintas por tipo, sem texturas ou partículas persistentes. */
 export function drawElementMark(ctx: CanvasRenderingContext2D, type: PokemonType, x: number, y: number, size: number, time = 0): void {
@@ -30,6 +31,60 @@ export function drawElementMark(ctx: CanvasRenderingContext2D, type: PokemonType
     case 'normal': ctx.arc(0, 0, 0.5, 0, Math.PI * 2); for (let i = 0; i < 8; i++) { const a = i * Math.PI / 4; ctx.moveTo(Math.cos(a) * 0.8, Math.sin(a) * 0.8); ctx.lineTo(Math.cos(a) * 1.2, Math.sin(a) * 1.2); } break;
   }
   ctx.stroke(); ctx.restore();
+}
+
+/** Golpe Supremo no mundo: energia convergindo na carga e onda com a silhueta do tipo na soltura. Sem sombra nem gradiente. */
+export function drawSurvivorSupreme(ctx: CanvasRenderingContext2D, state: SurvivorState, timeMs: number, detailed: boolean): void {
+  const supreme = state.supreme;
+  const p = state.player;
+  const color = p.move.color;
+  const def = SURVIVOR_SUPREMES[supreme.type];
+  if (supreme.windupMs > 0) {
+    const t = 1 - supreme.windupMs / SUPREME_WINDUP_MS;
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.globalAlpha = 0.45 + t * 0.5;
+    ctx.lineWidth = 2 + t * 3;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y - 12, 92 * (1 - t) + 14, 0, Math.PI * 2);
+    ctx.stroke();
+    const count = detailed ? 10 : 4;
+    for (let i = 0; i < count; i++) {
+      const a = (i / count) * Math.PI * 2 + timeMs / 240;
+      const r = 104 * (1 - t) + 8;
+      drawElementMark(ctx, supreme.type, p.x + Math.cos(a) * r, p.y - 12 + Math.sin(a) * r, 8, timeMs / 900);
+    }
+    ctx.restore();
+  }
+  if (supreme.fxMs <= 0) return;
+  const t = 1 - supreme.fxMs / 900;
+  const radius = SUPREME_RADIUS * (def.radius ?? 1);
+  const fade = Math.max(0, 1 - t);
+  ctx.save();
+  ctx.strokeStyle = color;
+  ctx.globalAlpha = 0.85 * fade;
+  ctx.lineWidth = 10 * fade + 2;
+  ctx.beginPath();
+  ctx.arc(supreme.x, supreme.y - 10, radius * Math.min(1, t * 1.6), 0, Math.PI * 2);
+  ctx.stroke();
+  const marks = detailed ? 14 : 5;
+  const reach = radius * Math.min(1, t * 1.7);
+  for (let i = 0; i < marks; i++) {
+    const a = (i / marks) * Math.PI * 2 + (def.pattern === 'radial' ? t * 1.2 : 0);
+    if (def.pattern === 'rain') {
+      const row = (i % 4) / 4;
+      drawElementMark(ctx, supreme.type, supreme.x + Math.cos(a) * radius * 0.82 * (0.35 + row * 0.6), supreme.y - 160 + (t * 240 + i * 11) % 300, 11, timeMs / 800);
+    } else if (def.pattern === 'spokes') {
+      ctx.beginPath();
+      ctx.moveTo(supreme.x + Math.cos(a) * reach * 0.25, supreme.y - 10 + Math.sin(a) * reach * 0.25);
+      ctx.lineTo(supreme.x + Math.cos(a) * reach, supreme.y - 10 + Math.sin(a) * reach);
+      ctx.stroke();
+      drawElementMark(ctx, supreme.type, supreme.x + Math.cos(a) * reach, supreme.y - 10 + Math.sin(a) * reach, 12, timeMs / 700);
+    } else {
+      drawElementMark(ctx, supreme.type, supreme.x + Math.cos(a) * reach * 0.86, supreme.y - 10 + Math.sin(a) * reach * 0.86, 13, timeMs / 700);
+    }
+  }
+  ctx.restore();
 }
 
 export function drawSurvivorSpecial(ctx: CanvasRenderingContext2D, state: SurvivorState, detailed: boolean): void {

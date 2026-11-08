@@ -4,9 +4,11 @@ import MusicControls from './MusicControls.vue';
 import SurvivorDebug from './SurvivorDebug.vue';
 import AttackIcon from './AttackIcon.vue';
 import { MusicPlayer } from '../app/music-player';
-import { cinemaLook, cinemaPower } from '../core/survivor-cinema';
+import { CINEMA_BEATS, cinemaFrame, cinemaLook, cinemaPower, cinemaTimeScale, createCinemaCamera, presentationMayResume, resetCinema, showCinemaBanner, simulationSteps, stepCinema, triggerCinema } from '../core/survivor-cinema';
+import type { CinemaBeat, CinemaFrame } from '../core/survivor-cinema';
+import { SURVIVOR_SUPREMES } from '../core/survivor-supreme';
 import { flashAlpha, impactFromFx, moveLight } from '../core/survivor-impacts';
-import { drawCastShadows, drawLights, drawNight } from '../village/survivor-cinema-art';
+import { drawCastShadows, drawCinemaBanner, drawLights, drawNight, drawScreenFlash, drawSpeedLines } from '../village/survivor-cinema-art';
 import { ImpactSparks } from '../village/survivor-impact-art';
 import { ARTIFACT_ICONS, artifactIconUrl, drawArtifactIcon } from '../village/artifact-icons-art';
 import type { CinemaLight } from '../village/survivor-cinema-art';
@@ -59,7 +61,7 @@ import {
   SURVIVOR_LANDSCAPE_TILE_H,
   SURVIVOR_LANDSCAPE_TILE_W,
 } from '../core/survivor';
-import type { SurvivorEnemy, SurvivorEvolutionOption, SurvivorState, SurvivorSummary, SurvivorSupportCandidate, SurvivorUpgradeOption, SurvivorUpgradeRarity } from '../core/survivor';
+import type { SurvivorEnemy, SurvivorEvent, SurvivorEvolutionOption, SurvivorState, SurvivorSummary, SurvivorSupportCandidate, SurvivorUpgradeOption, SurvivorUpgradeRarity } from '../core/survivor';
 import { attackProfile, moveEffectForType, moveFor, moveWith, rankedCategories, MOVE_CATEGORY_LABELS_PT, MOVE_EFFECT_LABELS_PT, profileBars } from '../core/survivor-moves';
 import { survivorAttackChoices, survivorAttackOf, survivorSupportMove } from '../core/survivor-loadout';
 import { TYPE_LABELS_PT } from '../core/pokemon-data';
@@ -93,7 +95,7 @@ import { availableSurvivorPreparations, SURVIVOR_PREPARATIONS } from '../core/su
 import type { SurvivorPreparationId } from '../core/survivor-preparations';
 import { chooseSurvivorSpecial, chooseSurvivorSpecialBranch, SPECIAL_GUARDIANS, SURVIVOR_SPECIAL_BRANCHES, SURVIVOR_SPECIALS } from '../core/survivor-specials';
 import type { SurvivorSpecialBranchId, SurvivorSpecialId } from '../core/survivor-specials';
-import { drawSurvivorSpecial } from '../village/survivor-special-art';
+import { drawSurvivorSpecial, drawSurvivorSupreme } from '../village/survivor-special-art';
 import { emptySurvivorFeedbackAnswers, encodeSurvivorFeedback } from '../core/survivor-feedback';
 import type { FeedbackRating, FeedbackRatingKey } from '../core/survivor-feedback';
 import { BONK_LANDING_MS, bonkInputToWorld, bonkJumpsRemaining, createBonkPhysics, projectBonkPoint, resolveBonkPosition, stepBonkPhysics } from '../core/survivor-bonk';
@@ -744,6 +746,39 @@ function cancelCharge(): void {
 function lostChargeCapture(): void {
   if (chargeHeld.value) cancelCharge();
 }
+/** Tudo que mexe a câmera ou desacelera respeita "Impactos", Modo Rotom e movimento reduzido. */
+const cinemaMotion = computed(() => effectiveVisual.value.impactFx && !reducedMotion && !effectiveVisual.value.rotomMode);
+const cinemaCam = createCinemaCamera();
+function cinemaBeat(beat: CinemaBeat): void {
+  if (cinemaMotion.value) triggerCinema(cinemaCam, beat);
+}
+let supremeQueued = false;
+const supremeDef = computed(() => (state.value ? SURVIVOR_SUPREMES[state.value.supreme.type] : null));
+const supremeBlocked = computed(() => !state.value || state.value.over || paused.value || shadowCutsceneOpen.value || !!pendingUpgrade.value || !!evolving.value || specialModalOpen.value);
+function queueSupreme(): void {
+  if (supremeBlocked.value || (state.value?.supreme.meter ?? 0) < 1) return;
+  unlockSound();
+  supremeQueued = true;
+}
+/** Resultado guardado enquanto a tela de vitória ou derrota respira. Um toque pula. */
+let outroSummary: SurvivorSummary | null = null;
+let outroTimer: ReturnType<typeof setTimeout> | null = null;
+function finishRunOutro(): boolean {
+  if (outroTimer) clearTimeout(outroTimer);
+  outroTimer = null;
+  if (!outroSummary) return false;
+  summary.value = outroSummary;
+  outroSummary = null;
+  return true;
+}
+function playRunOutro(result: SurvivorSummary): void {
+  if (!cinemaMotion.value) { summary.value = result; return; }
+  const victory = result.finalBossBeaten;
+  cinemaBeat(victory ? CINEMA_BEATS.victory : CINEMA_BEATS.defeat);
+  showCinemaBanner(cinemaCam, { kicker: victory ? 'A TORRE CAIU' : 'FIM DA CORRIDA', title: victory ? 'VITÓRIA' : 'DERROTA', color: victory ? '#ffd84a' : '#ff6b70', portrait: victory }, 1500);
+  outroSummary = result;
+  outroTimer = setTimeout(finishRunOutro, 1500);
+}
 function queueSpecial(): void {
   if (specialBlocked.value || (state.value?.special.cooldownMs ?? 1) > 0) return;
   unlockSound();
@@ -826,7 +861,7 @@ function clearTrainerPresentation(resume = false): void {
   if (trainerPresentationTimer) clearTimeout(trainerPresentationTimer);
   trainerPresentationTimer = null;
   trainerPresentation.value = null;
-  if (resume && !leaveConfirm.value && !summary.value) {
+  if (resume && presentationMayResume({ leaveConfirm: leaveConfirm.value, summary: !!summary.value, typeAffinityOffer: !!typeAffinityOffer.value })) {
     paused.value = false;
     lastTs = performance.now();
   }
@@ -1184,6 +1219,7 @@ function onKey(e: KeyboardEvent): void {
     return;
   }
   if ((e.key === 'e' || e.key === 'E') && e.type === 'keydown' && !e.repeat) { e.preventDefault(); queueSpecial(); return; }
+  if ((e.key === 'f' || e.key === 'F') && e.type === 'keydown' && !e.repeat) { e.preventDefault(); queueSupreme(); return; }
   if (e.key === 'r' || e.key === 'R') {
     if (e.type === 'keyup') releaseCharge();
     else if (!e.repeat) pressCharge();
@@ -1236,6 +1272,7 @@ function onGamepadMenu(event: Event): void {
 }
 
 function joyDown(e: PointerEvent): void {
+  if (finishRunOutro()) return;
   if (joystick.active || paused.value || shadowCutsceneOpen.value || !ready.value || summary.value || pickOptions.value || specialModalOpen.value) return;
   // Botões das cartas (escolha, upgrades, resumo) continuam sendo botões: o joystick não pega esse toque.
   if ((e.target as HTMLElement | null)?.closest?.('button, .card')) return;
@@ -1366,7 +1403,7 @@ function drawShadowFlames(x: number, y: number, radius: number): void {
   ctx.globalAlpha = 0.75;
   ctx.strokeStyle = '#b575ff';
   ctx.shadowColor = '#6826b8';
-  ctx.shadowBlur = 13;
+  ctx.shadowBlur = detailedSpecialEffects.value ? 13 : 0;
   ctx.lineWidth = 3;
   for (let i = 0; i < 8; i++) {
     const angle = (Math.PI * 2 * i) / 8 + animMs / 820;
@@ -1635,7 +1672,7 @@ function drawDamageNumbers(worldToScreen: WorldToScreen): void {
     const alpha = t < 0.12 ? t / 0.12 : 1 - (t - 0.12) / 0.88;
     ctx.globalAlpha = Math.max(0, alpha);
     ctx.font = `bold ${hit.critical ? 22 : hit.boss ? 17 : 13}px system-ui, sans-serif`;
-    if (hit.critical) { ctx.shadowColor = '#ff9f1a'; ctx.shadowBlur = 12; }
+    if (hit.critical && detailedSpecialEffects.value) { ctx.shadowColor = '#ff9f1a'; ctx.shadowBlur = 12; }
     ctx.lineWidth = 3;
     ctx.strokeStyle = '#161b2b';
     ctx.strokeText(`-${hit.amount}${hit.critical ? '!' : ''}`, p.x, p.y);
@@ -1956,7 +1993,7 @@ function drawBonkScene(s: SurvivorState, physics: BonkPhysics): void {
     const alpha = t < 0.12 ? t / 0.12 : 1 - (t - 0.12) / 0.88;
     c.globalAlpha = Math.max(0, alpha);
     c.font = `bold ${Math.max(11, (hit.critical ? 22 : hit.boss ? 17 : 13) * point.scale)}px system-ui, sans-serif`;
-    if (hit.critical) { c.shadowColor = '#ff9f1a'; c.shadowBlur = 12; }
+    if (hit.critical && detailedSpecialEffects.value) { c.shadowColor = '#ff9f1a'; c.shadowBlur = 12; }
     c.lineWidth = Math.max(1.5, point.scale * 2.5);
     c.strokeStyle = '#161b2b';
     c.strokeText(`-${hit.amount}${hit.critical ? '!' : ''}`, point.x, point.y - 16 - t * 20);
@@ -2169,7 +2206,8 @@ function preloadVisibleEnemyRegions(elapsedMs: number, runSeed = 0, enemies: rea
   }
 }
 
-const cinemaCasters: SurvivorEnemy[] = [];
+const cinemaCasters: { x: number; y: number; radius: number }[] = [];
+const playerCaster = { x: 0, y: 0, radius: 14 };
 const cinemaLights: CinemaLight[] = [];
 /** Partículas dos golpes: só desenho, a física e o caminho dos inimigos não mudam. */
 const impactSparks = new ImpactSparks();
@@ -2182,8 +2220,10 @@ function draw(): void {
   // Trocar o tamanho do canvas zera a transformação: ela é refeita a cada quadro.
   ctx.setTransform(renderScale.value, 0, 0, renderScale.value, 0, 0);
   ctx.imageSmoothingEnabled = false;
+  const cine = cinemaFrame(cinemaCam, animMs);
   if (bonkRun.value && bonkPhysics.value) {
     drawBonkScene(s, bonkPhysics.value);
+    drawCinemaOverlay(s, view.w, view.h, cine);
     return;
   }
   const VIEW_W = view.w;
@@ -2194,7 +2234,7 @@ function draw(): void {
   const focus = focusEnemies.length
     ? focusEnemies.reduce((center, enemy) => ({ x: center.x + enemy.x, y: center.y + enemy.y }), { x: 0, y: 0 })
     : { x: s.player.x, y: s.player.y };
-  const zoom = presentation ? 1.38 : 1;
+  const zoom = (presentation ? 1.38 : 1) * (1 + cine.zoom);
   const targetX = focusEnemies.length ? focus.x / focusEnemies.length : focus.x;
   const targetY = focusEnemies.length ? focus.y / focusEnemies.length : focus.y;
   const worldViewW = VIEW_W / zoom;
@@ -2202,7 +2242,7 @@ function draw(): void {
   const camX = clamp(targetX - worldViewW / 2, 0, Math.max(0, ARENA_W - worldViewW));
   const camY = clamp(targetY - worldViewH / 2, 0, Math.max(0, ARENA_H - worldViewH));
   ctx.save();
-  ctx.translate(VIEW_W / 2, VIEW_H / 2);
+  ctx.translate(VIEW_W / 2 + cine.shakeX, VIEW_H / 2 + cine.shakeY);
   ctx.scale(zoom, zoom);
   ctx.translate(-(camX + worldViewW / 2), -(camY + worldViewH / 2));
   if (regionScenery.value) {
@@ -2349,7 +2389,10 @@ function draw(): void {
       if (cinemaCasters.length >= cinema.shadows) break;
       if (e.x >= left && e.x <= right && e.y >= top && e.y <= bottom) cinemaCasters.push(e);
     }
-    drawCastShadows(ctx, [...cinemaCasters, { x: s.player.x, y: s.player.y, radius: 14 }], cinemaLights, cinema);
+    playerCaster.x = s.player.x;
+    playerCaster.y = s.player.y;
+    cinemaCasters.push(playerCaster);
+    drawCastShadows(ctx, cinemaCasters, cinemaLights, cinema);
   }
   for (const e of s.enemies) {
     if (e.x >= left && e.x <= right && e.y >= top && e.y <= bottom) drawEnemy(e);
@@ -2413,6 +2456,7 @@ function draw(): void {
     drawHeldChargeOrb(ctx, pos.x, pos.y, move.color, animMs, charge.slot);
   }
   drawSurvivorSpecial(ctx, s, detailedSpecialEffects.value);
+  drawSurvivorSupreme(ctx, s, animMs, detailedSpecialEffects.value);
 
   for (const proj of s.projectiles) {
     if (proj.x < left || proj.x > right || proj.y < top || proj.y > bottom) continue;
@@ -2618,7 +2662,7 @@ function draw(): void {
       ctx.strokeStyle = color;
       ctx.lineWidth = 3;
       ctx.shadowColor = color;
-      ctx.shadowBlur = 14;
+      ctx.shadowBlur = detailed ? 14 : 0;
       ctx.beginPath();
       ctx.arc(f.x, f.y - 8, f.r * (0.45 + t), 0, Math.PI * 2);
       ctx.stroke();
@@ -2643,6 +2687,20 @@ function draw(): void {
     drawLights(ctx, cinemaLights);
   }
   ctx.restore();
+  drawCinemaOverlay(s, VIEW_W, VIEW_H, cine);
+}
+
+/** Por cima de tudo e em coordenadas de tela: linhas de velocidade, clarão e letreiro. Vale também no BONK. */
+function drawCinemaOverlay(s: SurvivorState, w: number, h: number, cine: CinemaFrame): void {
+  if (!ctx) return;
+  if (cine.lines > 0) drawSpeedLines(ctx, w, h, cine.lines, s.player.move.color, animMs, detailedSpecialEffects.value ? 30 : 14);
+  drawScreenFlash(ctx, w, h, cine.flash, cine.flashColor);
+  const banner = cinemaCam.banner;
+  if (!banner) return;
+  const portrait = banner.portrait && playerSprite && !effectiveVisual.value.rotomMode
+    ? (x: number, y: number, scale: number) => drawSprite(playerSprite, x, y, false, scale)
+    : null;
+  drawCinemaBanner(ctx, w, h, banner, !reducedMotion, portrait);
 }
 
 /** Faixa contínua: pontos internos são só geometria; na tela ela sempre é uma linha conectada que perde a cauda suavemente. */
@@ -3026,6 +3084,7 @@ function loop(ts: number): void {
     return;
   }
   animMs += dt;
+  stepCinema(cinemaCam, dt);
   if (hitStopMs > 0) {
     hitStopMs = Math.max(0, hitStopMs - dt);
     draw();
@@ -3037,7 +3096,6 @@ function loop(ts: number): void {
   const s = toRaw(state.value!);
   preloadVisibleEnemyRegions(s.elapsedMs, s.runSeed, s.enemies);
   if (!s.over && !s.pendingUpgrade && !evolving.value) {
-    const attackTimerBefore = s.player.attackTimerMs;
     const projectilesBefore = s.projectiles.length;
     const hpBefore = s.player.hp;
     const xpBefore = s.player.xp;
@@ -3057,18 +3115,31 @@ function loop(ts: number): void {
     const move = bonkRun.value && bonkPhysics.value ? bonkInputToWorld(bonkPhysics.value, dx, dy) : { dx, dy };
     if (bonkRun.value && Math.abs(dx) > 0.15) bonkFacing = dx < 0 ? -1 : 1;
     // O Ritmo acelerado comprime a partida, mas não a animação: somente o relógio e o motor avançam 2×.
-    const simulationDt = s.fast ? dt * FAST_TIME_SCALE : dt;
-    const events = stepSurvivor(s, { airborne: bonkRun.value && (bonkPhysics.value?.z ?? 0) > 34, dx: move.dx, dy: move.dy, special: specialQueued, charge: chargeHeld.value || (autoCharge.value && !!chargeStyle.value && autoChargeHeld(chargeStyle.value, s.charge)), cancelCharge: cancelChargeQueued, visibleEnemies: visibleEnemyCountForDanger(s), ...(bonkRun.value && bonkPhysics.value ? { aimAngle: bonkPhysics.value.cameraYaw } : {}) }, simulationDt);
+    // A câmera lenta desacelera o motor inteiro por igual, jogador e inimigos: é só ritmo, não muda quem ganha.
+    const simulationDt = (s.fast ? dt * FAST_TIME_SCALE : dt) * (cinemaMotion.value ? cinemaTimeScale(cinemaCam) : 1);
+    // Quadro longo vira passos curtos: tiro rápido não atravessa inimigo em celular lento nem no Ritmo acelerado.
+    const steps = simulationSteps(simulationDt);
+    const events: SurvivorEvent[] = [];
+    let criticalThisFrame = false;
+    let attackedThisFrame = false;
+    for (let index = 0; index < steps.count && !s.over && !s.pendingUpgrade; index++) {
+      const timerBeforeStep = s.player.attackTimerMs;
+      const first = index === 0;
+      events.push(...stepSurvivor(s, { airborne: bonkRun.value && (bonkPhysics.value?.z ?? 0) > 34, dx: move.dx, dy: move.dy, special: first && specialQueued, supreme: first && supremeQueued, charge: chargeHeld.value || (autoCharge.value && !!chargeStyle.value && autoChargeHeld(chargeStyle.value, s.charge)), cancelCharge: first && cancelChargeQueued, visibleEnemies: visibleEnemyCountForDanger(s), ...(bonkRun.value && bonkPhysics.value ? { aimAngle: bonkPhysics.value.cameraYaw } : {}) }, steps.stepMs));
+      criticalThisFrame ||= s.criticalHits.length > 0;
+      attackedThisFrame ||= s.player.attackTimerMs > timerBeforeStep;
+    }
     if (trackEnemyDamage) showEnemyDamage(enemyDamageSince(enemyHpSnapshot, s));
-    if (survivorAudio.attackSounds && s.criticalHits.length > 0 && animMs - lastCriticalSoundAt >= 200) {
+    if (survivorAudio.attackSounds && criticalThisFrame && animMs - lastCriticalSoundAt >= 200) {
       lastCriticalSoundAt = animMs;
       playSound('survivor-critical');
     }
-    if (s.player.attackTimerMs > attackTimerBefore) {
+    if (attackedThisFrame) {
       playerAttackAt = animMs;
       playAttackSound(s.player.move, ts);
     }
     specialQueued = false;
+    supremeQueued = false;
     cancelChargeQueued = false;
     if (bonkRun.value && bonkPhysics.value && beforeBonkPosition) {
       stepBonkPhysics(bonkPhysics.value, s.player, beforeBonkPosition, { dx, dy, jump: bonkJumpQueued }, simulationDt);
@@ -3119,7 +3190,30 @@ function loop(ts: number): void {
     }
     for (const ev of events) {
       if (ev.type === 'levelup') playSound('survivor-level');
-      else if (ev.type === 'bossSpawn') playSound('survivor-boss');
+      else if (ev.type === 'bossSpawn') {
+        playSound('survivor-boss');
+        cinemaBeat(CINEMA_BEATS.bossEntrance);
+        const boss = s.enemies.filter((enemy) => enemy.boss).at(-1);
+        // Só o nome real da espécie; sem dado, o letreiro fica no genérico em vez de inventar um.
+        showCinemaBanner(cinemaCam, { kicker: 'CHEFE DA ONDA', title: (boss?.dexId ? speciesName(boss.dexId) : '') || 'Chefe selvagem', color: '#ff8a5c', portrait: false }, 1200);
+      }
+      else if (ev.type === 'bossDown') {
+        cinemaBeat(CINEMA_BEATS.bossDown);
+        if (!s.over) showCinemaBanner(cinemaCam, { kicker: 'VENCIDO', title: 'CHEFE DERROTADO', color: '#ffd84a', portrait: false }, 900);
+      }
+      else if (ev.type === 'supremeReady') {
+        playSound('survivor-level');
+        say(`⚡ ${ev.name} pronto! Toque no botão SUPREMO ou pressione F.`, 2600);
+      }
+      else if (ev.type === 'supremeCharge') {
+        playSound('survivor-boss');
+        cinemaBeat(CINEMA_BEATS.supremeCharge);
+        showCinemaBanner(cinemaCam, { kicker: `${avatarName.value} · GOLPE SUPREMO`, title: ev.name, color: s.player.move.color, portrait: true }, 1000);
+      }
+      else if (ev.type === 'supremeRelease') {
+        playSound('success');
+        cinemaBeat(CINEMA_BEATS.supremeRelease);
+      }
       else if (ev.type === 'keyPicked') say(`🗝 Chave! Você tem ${ev.keys}. Encoste num baú para abrir.`, 2400);
       else if (ev.type === 'chestSpawn') say('🧰 Um baú apareceu no mapa.', 2400);
       else if (ev.type === 'chestLocked') say('🔒 Baú trancado: derrote elites para ganhar chaves.', 2600);
@@ -3144,6 +3238,8 @@ function loop(ts: number): void {
       else if (ev.type === 'shadowBossArrival') {
         playSound('survivor-boss');
         say(`CHAMAS SOMBRIAS · ${ev.name} entrou na arena!`, 5000);
+        cinemaBeat(CINEMA_BEATS.bossEntrance);
+        showCinemaBanner(cinemaCam, { kicker: 'LENDÁRIO SOMBRIO', title: ev.name, color: '#b575ff', portrait: false }, 1500);
       }
       else if (ev.type === 'shadowBossDefeated') {
         playSound('success');
@@ -3153,6 +3249,7 @@ function loop(ts: number): void {
         playSound(ev.style === 'rapido' ? 'survivor-level' : 'survivor-shot');
         if (ev.style === 'teleporte') say(ev.level >= 1 ? '» Onda total: inimigos afastados!' : '» Teleporte carregado!', 2200);
         else if (ev.level >= 1) say(`◎ ${ev.name}!`, 1800);
+        if (ev.level >= 1) cinemaBeat(CINEMA_BEATS.chargeFull);
       }
       else if (ev.type === 'artifactCollected') {
         playSound('survivor-pickup');
@@ -3197,9 +3294,9 @@ function loop(ts: number): void {
         // Na run do PvP nada é gravado nem mostrado aqui: o resultado segue para a equipe (`checkPvpRun`).
         if (!props.pvpRun) {
           objectives.value = survivorObjectives(s);
-          summary.value = ev.summary;
           settleRunLoadout(ev.summary.survivedMs);
           recordRun(ev.summary);
+          playRunOutro(ev.summary);
         }
       }
       else if (ev.type === 'trainerSpawn') {
@@ -3332,9 +3429,13 @@ function toggleHudMenu(): void {
 /** Troca o sprite pela nova forma; o jogo espera (com o brilho) até carregar. Sem sprite, a forma neutra no lugar. */
 async function evolveTo(dexId: number, name: string): Promise<void> {
   evolving.value = `${avatarName.value} evoluiu para ${name}!`;
+  cinemaBeat(CINEMA_BEATS.evolve);
+  showCinemaBanner(cinemaCam, { kicker: 'EVOLUÇÃO', title: name, color: '#9fe8ff', portrait: true }, 1300);
   const epoch = runEpoch;
   const shiny = runShiny;
-  const [sprite, back] = await Promise.all([loadSpriteOrNull(dexId, shiny), bonkRun.value ? loadBackSpriteOrNull(dexId, shiny) : Promise.resolve(null), new Promise((r) => setTimeout(r, 900))]);
+  // Rede ruim não prende a corrida na tela de evolução: sem resposta em 5 s, segue com a forma neutra de sprite ausente.
+  const orMissing = <T,>(load: Promise<T | null>): Promise<T | null> => Promise.race([load, new Promise<null>((r) => setTimeout(() => r(null), 5000))]);
+  const [sprite, back] = await Promise.all([orMissing(loadSpriteOrNull(dexId, shiny)), bonkRun.value ? orMissing(loadBackSpriteOrNull(dexId, shiny)) : Promise.resolve(null), new Promise((r) => setTimeout(r, 900))]);
   if (disposed || epoch !== runEpoch) return;
   normalPlayerSprite = sprite;
   normalPlayerBackSprite = back;
@@ -3358,8 +3459,9 @@ function requestLeave(): void {
     return;
   }
   heldKeys.clear(); joyUp(); specialQueued = false; cancelCharge();
+  // A pausa da apresentação não é do jogador: se ele desistir de sair, a corrida precisa voltar a andar.
+  wasPausedBeforeLeave = paused.value && !trainerPresentation.value;
   clearTrainerPresentation();
-  wasPausedBeforeLeave = paused.value;
   paused.value = true;
   leaveConfirm.value = true;
 }
@@ -3377,6 +3479,7 @@ function confirmLeave(): void {
 
 /** O caminho de Voltar fica dentro da Torre; sair exige a ação explícita de saída. */
 function requestBack(): void {
+  if (finishRunOutro()) return;
   if (leaveConfirm.value) { cancelLeave(); return; }
   if (attackChoice.value) { attackChoice.value = null; return; }
   if (typeChoice.value) { typeChoice.value = null; return; }
@@ -3451,6 +3554,11 @@ async function beginRun(dexId: number, name: string, picked?: PokemonType, infin
   runCompanion = companion;
   runShiny = shiny;
   runEpoch++;
+  outroSummary = null;
+  if (outroTimer) clearTimeout(outroTimer);
+  outroTimer = null;
+  resetCinema(cinemaCam);
+  supremeQueued = false;
   impactSparks.clear();
   seenImpactFx = new WeakSet<object>();
   pickBusy.value = true;
@@ -3525,6 +3633,7 @@ async function beginRun(dexId: number, name: string, picked?: PokemonType, infin
     initialPlayerSpeed = Math.max(1, state.value.player.speed);
     footDust.strength = 0; footDust.ratio = 0; footDust.puffs.length = 0;
     megaWasActive = state.value.player.mega?.active === true;
+    if (megaWasActive && runMega) showCinemaBanner(cinemaCam, { kicker: 'MEGA EVOLUÇÃO', title: runMega.label, color: '#d68cff', portrait: true }, 1600);
     if (megaWasActive && megaSprite) {
       playerSprite = megaSprite as SpriteAsset;
       // Não há pose de costas da forma Mega: no BONK a Mega aparece de frente em vez da costas da forma normal.
@@ -3680,14 +3789,14 @@ function confirmOmegaAttack(category: MoveCategory): void {
 function acceptTypeAffinity(type: PokemonType): void {
   if (!state.value || !typeAffinityOffer.value || !chooseSurvivorTypeAffinity(state.value, type)) return;
   typeAffinityOffer.value = null;
-  paused.value = false;
+  paused.value = !!trainerPresentation.value;
   say(`✨ Afinidade de ${TYPE_LABELS_PT[type]} ativada: ${MOVE_EFFECT_LABELS_PT[moveEffectForType(type)]}.`, 4200);
 }
 
 function skipTypeAffinity(): void {
   if (!typeAffinityOffer.value) return;
   typeAffinityOffer.value = null;
-  paused.value = false;
+  paused.value = !!trainerPresentation.value;
   say('Você guardou a afinidade para outra corrida.', 2600);
 }
 watch(() => torre.value.infiniteUnlocked, (ok) => { if (!ok) { infiniteWanted.value = false; fastWanted.value = false; } });
@@ -3783,6 +3892,7 @@ document.addEventListener('visibilitychange', onVisibility);
 onBeforeUnmount(() => {
   disposed = true;
   if (bonkJumpPressTimer) clearTimeout(bonkJumpPressTimer);
+  if (outroTimer) clearTimeout(outroTimer);
   cancelGameFrame(rafId);
   rafId = 0;
   window.removeEventListener('keydown', onKey);
@@ -3968,6 +4078,7 @@ onBeforeUnmount(() => {
                 <li><b>Atacar:</b> automático, em quem chegar perto.</li>
                 <li v-if="bonkRun"><b>Pular:</b> botão PULAR, toque duplo na tela, Q ou Espaço. Dá para pular de novo no ar enquanto sobrar bolinha no botão.</li>
                 <li><b>Especial:</b> botão do canto ou tecla E. Libera aos 3 minutos e recarrega sozinho.</li>
+                <li><b>Golpe Supremo:</b> o medidor enche com abates e dano. Cheio, toque em SUPREMO ou na tecla F: cada tipo tem o seu.</li>
                 <li v-if="chargeStyle === 'foco'"><b>Foco:</b> segure o botão ◎ (ou R) para carregar, devagar e andando mais lento; solte para um feixe que atravessa todos. Cheio, vira um canhão que cruza a arena.</li>
                 <li v-if="state?.player.move.category === 'rapido'"><b>Rajada:</b> dispara três tiros rápidos e faz uma breve pausa antes da próxima onda.</li>
                 <li v-if="chargeStyle === 'teleporte'"><b>Teleporte:</b> segure » (ou R) e solte. A carga máxima dá mais proteção e empurra inimigos com uma onda.</li>
@@ -4237,6 +4348,16 @@ onBeforeUnmount(() => {
         </button>
 
         <button v-if="ready && state && !summary && !pickOptions && !pendingUpgrade && !evolving && !leaveConfirm && !specialModalOpen"
+          v-show="!state.over" type="button" class="sv-supreme" :class="{ 'is-ready': state.supreme.meter >= 1 && !supremeBlocked, calm: !detailedSpecialEffects }"
+          :style="{ '--special-color': state.player.move.color, '--supreme': `${state.supreme.meter * 100}%` }"
+          :disabled="supremeBlocked || state.supreme.meter < 1"
+          :aria-label="`Golpe Supremo ${supremeDef?.name}: ${state.supreme.meter >= 1 ? 'pronto; tecla F' : `${Math.floor(state.supreme.meter * 100)}% carregado`}`"
+          @pointerdown.stop.prevent="queueSupreme">
+          <span class="sv-supreme-fill" aria-hidden="true"></span>
+          <strong>{{ state.supreme.meter >= 1 ? `⚡ ${supremeDef?.name}` : `SUPREMO ${Math.floor(state.supreme.meter * 100)}%` }}</strong>
+        </button>
+
+        <button v-if="ready && state && !summary && !pickOptions && !pendingUpgrade && !evolving && !leaveConfirm && !specialModalOpen"
           type="button" class="survivor-special-button" :class="{ 'is-ready': chosenSpecial && !state.special.cooldownMs }"
           :style="{ '--special-color': state.player.move.color, '--charge': chosenSpecial ? `${(1 - state.special.cooldownMs / chosenSpecial.cooldownMs) * 100}%` : '0%' }"
           :disabled="specialBlocked || !chosenSpecial || state.special.cooldownMs > 0"
@@ -4390,6 +4511,7 @@ onBeforeUnmount(() => {
             </section>
             <p v-if="summary.thievesCaught" class="survivor-cleared" role="status">🐾 {{ summary.thievesCaught === 1 ? 'Um ladrão pego' : `${summary.thievesCaught} ladrões pegos` }} nesta corrida.</p>
             <p v-if="summary.adaptive" class="note">Desafio adaptável no fim: {{ Math.round(summary.adaptive * 100) }}% da força de sempre.</p>
+            <p v-if="state && state.supreme.uses > 0" class="note">⚡ Golpes Supremos usados: {{ state.supreme.uses }}.</p>
             <p v-if="summary.finalHit" class="note" role="status">
               Golpe final: {{ summary.finalHit.shadowBoss ? 'lendário sombrio' : summary.finalHit.boss || summary.finalHit.grade === 'chefao' ? 'chefão' : summary.finalHit.grade === 'elite' ? 'inimigo de treinador' : 'inimigo' }}{{ summary.finalHit.dexId ? ` (${speciesName(summary.finalHit.dexId) || `Pokémon nº ${summary.finalHit.dexId}`})` : '' }} · {{ summary.finalHit.kind }} · {{ summary.finalHit.damage }} de dano (vida antes: {{ Math.ceil(summary.finalHit.hpBefore) }}).
             </p>
@@ -4449,3 +4571,34 @@ onBeforeUnmount(() => {
   </div>
 </template>
 
+<style scoped>
+/* Botão do Golpe Supremo: no centro de baixo, livre dos arranjos Lado a lado/Empilhados/Trocados. */
+.sv-supreme {
+  position: absolute;
+  left: 50%;
+  bottom: calc(var(--sv-sp-b, 16px) + env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  z-index: 4;
+  width: clamp(124px, 38vw, 190px);
+  height: 40px;
+  padding: 0 10px;
+  overflow: hidden;
+  border: 2px solid #555b58;
+  border-radius: 999px;
+  background: #1a2130;
+  color: #fff;
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.sv-supreme:disabled { cursor: default; }
+.sv-supreme strong { position: relative; display: block; font-size: 11px; line-height: 1.1; letter-spacing: .03em; white-space: nowrap; text-overflow: ellipsis; overflow: hidden; text-shadow: 0 1px 2px #000; }
+.sv-supreme-fill { position: absolute; inset: 0 auto 0 0; width: var(--supreme); background: var(--special-color); opacity: .75; }
+.sv-supreme.is-ready { border-color: #fff; cursor: pointer; box-shadow: 0 0 0 3px var(--special-color); animation: sv-supreme-pulse .7s ease-in-out infinite alternate; }
+.sv-supreme.is-ready.calm { animation: none; }
+.sv-supreme.is-ready .sv-supreme-fill { opacity: 1; }
+.sv-supreme:focus-visible { outline: 3px solid #fff; outline-offset: 3px; }
+@keyframes sv-supreme-pulse { to { transform: translateX(-50%) scale(1.06); } }
+@media (prefers-reduced-motion: reduce) { .sv-supreme.is-ready { animation: none; } }
+</style>

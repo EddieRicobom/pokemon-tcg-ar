@@ -1,4 +1,4 @@
-import type { CinemaLook } from '../core/survivor-cinema';
+import type { CinemaBanner, CinemaLook } from '../core/survivor-cinema';
 import { shadowFrom } from '../core/survivor-impacts';
 
 /**
@@ -96,6 +96,87 @@ export function drawNight(c: CanvasRenderingContext2D, look: CinemaLook, lights:
   c.imageSmoothingEnabled = true;
   c.drawImage(night.canvas, view.x, view.y, view.w, view.h);
   c.restore();
+}
+
+/** Linhas de velocidade convergindo para o centro: um único caminho, sem gradiente nem sombra. */
+export function drawSpeedLines(c: CanvasRenderingContext2D, w: number, h: number, strength: number, color: string, timeMs: number, count: number): void {
+  if (strength <= 0) return;
+  const cx = w / 2;
+  const cy = h / 2;
+  const outer = Math.hypot(w, h) * 0.56;
+  const tick = Math.floor(timeMs / 40);
+  c.save();
+  c.strokeStyle = color;
+  c.globalAlpha = Math.min(0.5, 0.5 * strength);
+  c.lineWidth = 2;
+  c.beginPath();
+  for (let i = 0; i < count; i++) {
+    // Sorteio barato e estável por quadro curto: só desenho, não toca no RNG do jogo.
+    const noise = Math.abs(Math.sin((i + 1) * 12.9898 + tick * 3.233) * 43758.5453) % 1;
+    const a = (i / count) * Math.PI * 2 + noise * 0.3;
+    const inner = outer * (0.42 + noise * 0.26);
+    c.moveTo(cx + Math.cos(a) * inner, cy + Math.sin(a) * inner);
+    c.lineTo(cx + Math.cos(a) * outer, cy + Math.sin(a) * outer);
+  }
+  c.stroke();
+  c.restore();
+}
+
+export function drawScreenFlash(c: CanvasRenderingContext2D, w: number, h: number, alpha: number, color: string): void {
+  if (alpha <= 0) return;
+  c.save();
+  c.globalAlpha = Math.min(0.8, alpha);
+  c.fillStyle = color;
+  c.fillRect(0, 0, w, h);
+  c.restore();
+}
+
+/** Letreiro inclinado que cruza a tela. Sem `motion`, aparece parado (movimento reduzido). */
+export function drawCinemaBanner(c: CanvasRenderingContext2D, w: number, h: number, banner: CinemaBanner, motion: boolean, portrait: ((x: number, y: number, scale: number) => void) | null): void {
+  const t = 1 - banner.leftMs / banner.totalMs;
+  const enter = motion ? Math.min(1, t / 0.16) : 1;
+  const leave = Math.min(1, (1 - t) / 0.16);
+  const slide = (1 - enter * enter) * w;
+  const bandH = Math.min(92, h * 0.15);
+  const y = h * 0.3;
+  const skew = bandH * 0.3;
+  c.save();
+  c.globalAlpha = Math.max(0, leave);
+  c.translate(slide, 0);
+  c.fillStyle = 'rgba(8, 10, 20, 0.86)';
+  c.beginPath();
+  c.moveTo(-skew, y + bandH);
+  c.lineTo(skew, y);
+  c.lineTo(w + skew, y);
+  c.lineTo(w - skew, y + bandH);
+  c.closePath();
+  c.fill();
+  c.fillStyle = banner.color;
+  c.fillRect(0, y - 3, w, 3);
+  c.fillRect(0, y + bandH, w, 3);
+  const textLeft = portrait ? Math.min(w * 0.3, 118) : w * 0.08;
+  const room = w - textLeft - w * 0.05;
+  c.textAlign = 'left';
+  c.textBaseline = 'middle';
+  c.fillStyle = banner.color;
+  c.font = `800 ${Math.max(10, bandH * 0.17)}px system-ui, sans-serif`;
+  c.fillText(banner.kicker, textLeft, y + bandH * 0.26, room);
+  c.fillStyle = '#ffffff';
+  let size = Math.min(34, bandH * 0.44);
+  c.font = `900 ${size}px system-ui, sans-serif`;
+  const width = c.measureText(banner.title).width;
+  if (width > room) {
+    size *= room / width;
+    c.font = `900 ${size}px system-ui, sans-serif`;
+  }
+  c.fillText(banner.title, textLeft, y + bandH * 0.64);
+  c.restore();
+  if (portrait) {
+    c.save();
+    c.globalAlpha = Math.max(0, leave);
+    portrait(w * 0.14 + slide * 1.2, y + bandH * 0.98, 1.9);
+    c.restore();
+  }
 }
 
 /** O brilho colorido das luzes, somado à imagem. */
