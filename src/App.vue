@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
+import { computed, ref, watch, watchEffect } from 'vue';
 import { rememberBeforeVila, routeHref, useRoute } from './app/route';
 import type { RouteName } from './app/route';
 import NavIcon from './components/NavIcon.vue';
@@ -9,6 +9,7 @@ import UniversalControls from './components/UniversalControls.vue';
 import { useInstallPrompt } from './composables/useInstallPrompt';
 import { detectCapabilities, isIosDevice } from './core/capabilities';
 import { lazyView } from './app/lazy-view';
+import { effectiveVisual } from './app/visual-settings';
 import ScanView from './views/ScanView.vue';
 import FirstRunOnboarding from './components/FirstRunOnboarding.vue';
 
@@ -30,6 +31,18 @@ try { firstRun.value = localStorage.getItem('tcg-ar-onboarding-v1') !== '1'; } c
 
 const showIosHint =
   isIosDevice(navigator.userAgent, navigator.maxTouchPoints) && !capabilities.standalone;
+
+/** O convite para instalar aparecia em toda tela para sempre: «Agora não» o guarda de vez neste aparelho. */
+const INSTALL_HINT_KEY = 'tcg-ar-install-hint-dismissed-v1';
+const installHintDismissed = ref(false);
+try { installHintDismissed.value = localStorage.getItem(INSTALL_HINT_KEY) === '1'; } catch { /* sem armazenamento: o convite só reaparece */ }
+function dismissInstallHint(): void {
+  installHintDismissed.value = true;
+  try { localStorage.setItem(INSTALL_HINT_KEY, '1'); } catch { /* vale só para esta visita */ }
+}
+
+/** O CSS da casca desliga seus enfeites no Modo Rotom. */
+watchEffect(() => document.documentElement.toggleAttribute('data-rotom', effectiveVisual.value.rotomMode));
 
 /**
  * A barra de baixo tem só o essencial; "Várias" é modo do Escanear, e o Diagnóstico fica na engrenagem do topo. A Vila
@@ -99,16 +112,22 @@ watch(
       </a>
     </nav>
 
-    <section v-if="canInstall && !installed" class="card install" aria-label="Instalar app">
+    <section v-if="canInstall && !installed && !installHintDismissed" class="card install" aria-label="Instalar app">
       <p>Instale o app na tela inicial para abrir em tela cheia.</p>
-      <button type="button" class="primary" @click="install">Instalar app</button>
+      <div class="install-actions">
+        <button type="button" class="primary" @click="install">Instalar app</button>
+        <button type="button" @click="dismissInstallHint">Agora não</button>
+      </div>
     </section>
-    <p v-if="installError" role="alert">{{ installError }}</p>
-    <section v-if="showIosHint" class="card install" aria-label="Instalar no iPhone">
+    <p v-if="installError" class="message error" role="alert">{{ installError }}</p>
+    <section v-if="showIosHint && !installHintDismissed" class="card install" aria-label="Instalar no iPhone">
       <p>
         No iPhone ou iPad: toque em <strong>Compartilhar</strong> e depois em
         <strong>Adicionar à Tela de Início</strong>.
       </p>
+      <div class="install-actions">
+        <button type="button" @click="dismissInstallHint">Agora não</button>
+      </div>
     </section>
 
     <nav v-if="subModes" class="modes" aria-label="Modos de escaneamento">

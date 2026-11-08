@@ -38,6 +38,27 @@ describe('App', () => {
     expect(host?.querySelector('button.primary')?.textContent?.trim()).toBe('Abrir câmera');
   });
 
+  it('o convite de instalar no iPhone some com «Agora não» e continua fechado na próxima abertura', async () => {
+    const userAgent = vi.spyOn(window.navigator, 'userAgent', 'get').mockReturnValue('Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)');
+    localStorage.removeItem('tcg-ar-install-hint-dismissed-v1');
+    try {
+      await mount();
+      const hint = () => host?.querySelector('[aria-label="Instalar no iPhone"]') ?? null;
+      expect(hint()).not.toBeNull();
+      hint()?.querySelector('button')?.click();
+      await nextTick();
+      expect(hint()).toBeNull();
+      expect(localStorage.getItem('tcg-ar-install-hint-dismissed-v1')).toBe('1');
+      app?.unmount();
+      host?.remove();
+      await mount();
+      expect(hint()).toBeNull();
+    } finally {
+      userAgent.mockRestore();
+      localStorage.removeItem('tcg-ar-install-hint-dismissed-v1');
+    }
+  });
+
   it('não promete reconhecimento sem câmera: nenhuma carta aparece como reconhecida ao abrir', async () => {
     const text = await mount();
     expect(text).not.toContain('Reconhecida automaticamente');
