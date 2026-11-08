@@ -1,5 +1,5 @@
 import { itemDef } from './catalog';
-import { availableCount, canAfford, describeCost, FISH_PER_DAY, HOUSE_LEVELS, itemName, needsWater, TALK_COINS, TALK_FRIENDSHIP } from './life';
+import { availableCount, canAfford, describeCost, FISH_PER_DAY, HOUSE_LEVELS, itemName, needsWater, TALK_FRIENDSHIP } from './life';
 import type { VillageState } from './life';
 import { BOARD_BONUS_COINS, requestStatus } from './requests';
 
@@ -71,7 +71,7 @@ export function nextVillageStep({ state, day, residents, mailUnread, board, fish
   const unspoken = residents.filter((resident) => state.friends[resident.id]?.lastTalk !== day);
   const first = unspoken[0];
   if (first) {
-    return { icon: '💬', title: `Converse com ${first.name}`, detail: `A primeira conversa do dia vale +${TALK_FRIENDSHIP} de amizade e ${TALK_COINS} moedas.${unspoken.length > 1 ? ` Ainda faltam ${unspoken.length} moradores hoje.` : ''}`, action: { kind: 'resident', id: first.id } };
+    return { icon: '💬', title: `Converse com ${first.name}`, detail: `A primeira conversa do dia vale +${TALK_FRIENDSHIP} de amizade e moedas.${unspoken.length > 1 ? ` Ainda faltam ${unspoken.length} moradores hoje.` : ''}`, action: { kind: 'resident', id: first.id } };
   }
   if (state.requests.day !== day && board) return { icon: '📌', title: 'Veja os pedidos de hoje no mural', detail: 'Três pedidos novos por dia, com moedas e materiais.', action: point(board, 'Mural de pedidos') };
   const next = HOUSE_LEVELS[state.house + 1];

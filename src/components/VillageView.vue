@@ -4269,8 +4269,10 @@ onBeforeUnmount(() => {
   18% { opacity: 1; transform: translateY(0); }
   to { opacity: 0; transform: translateY(-4px); }
 }
-.gift-day-note { flex-basis: 100%; opacity: 0.8; }
-.gift-tag { display: block; font-size: 0.7rem; opacity: 0.85; }
+.gift-day-note { flex-basis: 100%; color: #565c75; }
+.gift-tag { display: block; font-size: 0.7rem; color: #565c75; }
+/* Número e rótulo são itens flex: sem isto o espaço some ("500moedas"). */
+.menu-status > span { column-gap: 0.28em; }
 @media (max-width: 380px) {
   .village-next { grid-template-columns: auto minmax(0, 1fr); }
   .village-next > button { grid-column: 1 / -1; width: 100%; }
