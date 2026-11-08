@@ -193,6 +193,11 @@ onBeforeUnmount(() => { disposed = true; urls.splice(0).forEach((url) => URL.rev
 </template>
 
 <style scoped>
+.team-picker {
+  min-width: 0;
+  max-width: 100%;
+}
+
 .box-party {
   display: grid;
   grid-template-columns: repeat(6, 1fr);

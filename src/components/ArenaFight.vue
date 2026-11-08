@@ -333,6 +333,7 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .afight {
+  overflow-x: hidden;
   position: fixed;
   inset: 0;
   z-index: 60;
@@ -385,6 +386,10 @@ onBeforeUnmount(() => {
 
 .afight-mon img {
   object-fit: contain;
+}
+
+.afight-mon small {
+  overflow-wrap: anywhere;
 }
 
 .afight-mon div {
