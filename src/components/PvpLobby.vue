@@ -173,6 +173,16 @@ function joinCode(raw: string): void {
 
 const typedReady = computed(() => normalizeRoomCode(typedCode.value).length === codeLength.value);
 
+/** Sala com senha sem senha digitada: avisa aqui, em vez de deixar o ponto de encontro recusar depois de uma espera. */
+function joinRoom(room: OpenRoom): void {
+  if (room.protected && !joinPassword.value) {
+    error.value = `A sala ${room.name} pede senha: digite no campo «Senha da sala» e toque nela de novo.`;
+    document.getElementById('pvp-join-password')?.focus();
+    return;
+  }
+  joinCode(room.code);
+}
+
 // ---- Reserva: códigos manuais
 function watchManual(p: PvpPeer, role: 'host' | 'guest'): void {
   waiting.value = true;
@@ -287,45 +297,52 @@ onBeforeUnmount(() => {
         <span class="dot" aria-hidden="true"></span>
         {{ online > 0 ? 'Ponto de encontro conectado' : 'Conectando ao ponto de encontro… se demorar, use os códigos manuais lá embaixo.' }}
       </p>
-      <label class="pn-code-label" for="pvp-room-name">Nome da sua sala</label>
-      <input id="pvp-room-name" v-model="roomName" class="pn-room-input pn-room-field" maxlength="24" :placeholder="displayName()" />
-      <label class="pn-code-label" for="pvp-host-password">Senha da sua sala (opcional)</label>
-      <input id="pvp-host-password" v-model="hostPassword" class="pn-room-input pn-room-field" type="password" maxlength="64" autocomplete="new-password" />
-      <p class="pn-lobby-note">A senha limita a entrada pelo aplicativo. Como o ponto de encontro é público, não use uma senha pessoal nem envie dados sensíveis.</p>
-      <div class="pn-lobby-actions">
-        <button type="button" class="primary" :disabled="online === 0" @click="createRoom">{{ backupPurpose ? 'Criar sala de transferência' : 'Criar sala' }}</button>
+      <div class="pn-lobby-block">
+        <h4 class="pn-lobby-sub">{{ backupPurpose ? 'Enviar' : 'Criar uma sala' }}</h4>
+        <button type="button" class="primary" :disabled="online === 0" @click="createRoom">{{ online === 0 ? 'Esperando o ponto de encontro…' : backupPurpose ? 'Criar sala de transferência' : 'Criar sala' }}</button>
+        <details class="pn-lobby-note">
+          <summary>Nome e senha da sala (opcional)</summary>
+          <div class="pn-lobby-fields">
+            <label class="pn-code-label" for="pvp-room-name">Nome da sua sala</label>
+            <input id="pvp-room-name" v-model="roomName" class="pn-room-input pn-room-field" maxlength="24" :placeholder="displayName()" />
+            <label class="pn-code-label" for="pvp-host-password">Senha da sua sala</label>
+            <input id="pvp-host-password" v-model="hostPassword" class="pn-room-input pn-room-field" type="password" maxlength="64" autocomplete="new-password" />
+            <p class="pn-lobby-note">A senha limita a entrada pelo aplicativo. Como o ponto de encontro é público, não use uma senha pessoal nem envie dados sensíveis.</p>
+          </div>
+        </details>
       </div>
 
-      <label class="pn-code-label" for="pvp-join-password">Senha para entrar (se a sala pedir)</label>
-      <input id="pvp-join-password" v-model="joinPassword" class="pn-room-input pn-room-field" type="password" maxlength="64" autocomplete="off" />
-      <template v-if="!backupPurpose">
-        <h4 class="pn-lobby-sub">Salas abertas</h4>
-        <ul v-if="rooms.length" class="pn-rooms">
-          <li v-for="room in rooms" :key="room.code">
-            <button type="button" :disabled="online === 0" @click="joinCode(room.code)">
-              <strong>{{ room.name }} <span class="pn-room-tag">{{ room.code }}</span> <span v-if="room.protected">🔒 Com senha</span></strong>
-              <small>{{ room.note }}</small>
-              <span class="pn-room-go">Entrar</span>
-            </button>
-          </li>
-        </ul>
-        <p v-else class="pn-lobby-note">Nenhuma sala aberta agora. Crie uma e espere um amigo, ou digite o código que ele te passou.</p>
-      </template>
-
-      <label class="pn-code-label" for="pvp-room-code">Já tem um código de sala?</label>
-      <div class="pn-lobby-actions row">
-        <input
-          id="pvp-room-code"
-          v-model="typedCode"
-          class="pn-room-input"
-          :maxlength="codeLength + 2"
-          autocapitalize="characters"
-          autocomplete="off"
-          spellcheck="false"
-          :placeholder="'•'.repeat(codeLength)"
-          @keyup.enter="typedReady && online > 0 && joinCode(typedCode)"
-        />
-        <button type="button" :disabled="!typedReady || online === 0" @click="joinCode(typedCode)">Entrar na sala</button>
+      <div class="pn-lobby-block">
+        <h4 class="pn-lobby-sub">{{ backupPurpose ? 'Receber' : 'Entrar numa sala' }}</h4>
+        <template v-if="!backupPurpose">
+          <ul v-if="rooms.length" class="pn-rooms">
+            <li v-for="room in rooms" :key="room.code">
+              <button type="button" :disabled="online === 0" @click="joinRoom(room)">
+                <strong>{{ room.name }} <span class="pn-room-tag">{{ room.code }}</span> <span v-if="room.protected">🔒 Com senha</span></strong>
+                <small>{{ room.note }}</small>
+                <span class="pn-room-go">Entrar</span>
+              </button>
+            </li>
+          </ul>
+          <p v-else class="pn-lobby-note">Nenhuma sala aberta agora. Crie uma e espere um amigo, ou digite o código que ele te passou.</p>
+        </template>
+        <label class="pn-code-label" for="pvp-room-code">Tem um código de sala?</label>
+        <div class="pn-lobby-actions row">
+          <input
+            id="pvp-room-code"
+            v-model="typedCode"
+            class="pn-room-input"
+            :maxlength="codeLength + 2"
+            autocapitalize="characters"
+            autocomplete="off"
+            spellcheck="false"
+            :placeholder="'•'.repeat(codeLength)"
+            @keyup.enter="typedReady && online > 0 && joinCode(typedCode)"
+          />
+          <button type="button" :disabled="!typedReady || online === 0" @click="joinCode(typedCode)">Entrar</button>
+        </div>
+        <label class="pn-code-label" for="pvp-join-password">Senha da sala (se ela pedir)</label>
+        <input id="pvp-join-password" v-model="joinPassword" class="pn-room-input pn-room-field" type="password" maxlength="64" autocomplete="off" />
       </div>
 
       <details class="pn-lobby-note">
@@ -445,6 +462,37 @@ onBeforeUnmount(() => {
   gap: 8px;
 }
 
+.pn-lobby-block {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+}
+
+.pn-lobby-fields {
+  display: grid;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.pn-lobby details > summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  cursor: pointer;
+}
+
+.pn-lobby details > summary::before {
+  content: '▸';
+  color: var(--gold);
+}
+
+.pn-lobby details[open] > summary::before {
+  content: '▾';
+}
+
 .pn-lobby-actions.row {
   grid-auto-flow: column;
   grid-auto-columns: 1fr;
@@ -488,7 +536,7 @@ onBeforeUnmount(() => {
 }
 
 .pn-lobby-sub {
-  margin: 4px 0 0;
+  margin: 0;
   font-size: 0.9rem;
 }
 
@@ -533,6 +581,8 @@ onBeforeUnmount(() => {
 
 .pn-rooms strong {
   grid-area: name;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .pn-rooms small {
@@ -548,6 +598,8 @@ onBeforeUnmount(() => {
 
 .pn-room-input {
   width: 100%;
+  min-width: 0;
+  min-height: 48px;
   padding: 10px;
   border-radius: var(--radius-sm);
   border: 1.5px solid var(--line);

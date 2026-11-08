@@ -39,8 +39,17 @@ export interface ArenaPrep {
   offer: SurvivorUpgradeOption[];
 }
 
-const COMBAT_KEYS = ['maxHp', 'attackDamage', 'speed', 'attackCooldownMs', 'projectileSpeed', 'projectileSize', 'shots', 'pierce', 'attackRange', 'attackRadius', 'critChance'] as const;
-const combatOf = (p: SurvivorPlayer): string => COMBAT_KEYS.map((key) => p[key] ?? 0).join('|');
+const clampOf = (n: number, [lo, hi]: readonly [number, number]): number => Math.max(lo, Math.min(hi, n));
+
+/**
+ * Os números da luta já com os limites da ficha (os mesmos de `svMonFromRun`): uma carta que só empurra a velocidade para
+ * além do teto não muda nada na arena e não pode ocupar uma das três vagas da oferta.
+ */
+const combatOf = (p: SurvivorPlayer): string => [
+  clampOf(p.maxHp, SV_LIMITS.maxHp), clampOf(p.attackDamage, SV_LIMITS.power), clampOf(p.speed * 1.35, SV_LIMITS.speed), clampOf(p.attackCooldownMs, SV_LIMITS.fireMs),
+  clampOf(p.projectileSpeed, [120, 700]), clampOf(p.projectileSize, [3, 18]), clampOf(p.shots, [1, 5]), clampOf(p.pierce, [0, 4]),
+  clampOf(p.attackRange, [40, 360]), clampOf(p.attackRadius, [18, 160]), clampOf(p.critChance ?? 0, [0, 0.6]),
+].join('|');
 
 /** Cartas que não mudariam nada na luta deste Pokémon agora: ficam de fora da oferta. */
 export function arenaIdleUpgrades(player: SurvivorPlayer): string[] {
@@ -134,6 +143,63 @@ export function arenaSpecOf(prep: ArenaPrep): SvMonSpec {
     survivedMs: 0, kills: 0, level: p.level, defeated: false, combat,
   }, member.id);
   return { ...spec, maxHp: Math.round(clampTo(spec.maxHp * ARENA_HP_FACTOR, SV_LIMITS.maxHp)), alt: secondAttack(prep) };
+}
+
+export interface ArenaStat {
+  label: string;
+  value: string;
+}
+
+export interface ArenaCardChange {
+  label: string;
+  before: string;
+  after: string;
+  /** A carta melhora este número (na recarga, menor é melhor). */
+  better: boolean;
+}
+
+const secondsOf = (ms: number): string => `${(ms / 1000).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} s`;
+const whole = (n: number): string => String(Math.round(n));
+const percent = (n: number): string => `${Math.round(n * 100)}%`;
+
+/** Os números que a arena lê da ficha, com o mesmo arredondamento e os mesmos limites da luta. */
+const ARENA_STAT_ROWS: readonly { label: string; read: (spec: SvMonSpec) => number; show: (n: number) => string; lowerIsBetter?: boolean; core?: boolean }[] = [
+  { label: 'Vida', read: (spec) => spec.maxHp, show: whole, core: true },
+  { label: 'Dano', read: (spec) => spec.power, show: whole, core: true },
+  { label: 'Recarga', read: (spec) => spec.fireMs, show: secondsOf, lowerIsBetter: true, core: true },
+  { label: 'Veloc.', read: (spec) => spec.speed, show: whole, core: true },
+  { label: 'Disparos', read: (spec) => spec.shots ?? 1, show: whole },
+  { label: 'Perfura', read: (spec) => spec.pierce ?? 0, show: whole },
+  { label: 'Alcance', read: (spec) => spec.attackRange ?? 0, show: whole },
+  { label: 'Raio', read: (spec) => spec.attackRadius ?? 0, show: whole },
+  { label: 'Crítico', read: (spec) => spec.critChance ?? 0, show: percent },
+  { label: 'Tiro', read: (spec) => spec.projectileSpeed ?? 0, show: whole },
+  { label: 'Tamanho', read: (spec) => spec.projectileSize ?? 0, show: whole },
+];
+
+/** O resumo que fica em cima das cartas: como este Pokémon entraria na luta agora. */
+export function arenaCoreStats(prep: ArenaPrep): ArenaStat[] {
+  const spec = arenaSpecOf(prep);
+  return ARENA_STAT_ROWS.filter((row) => row.core).map((row) => ({ label: row.label, value: row.show(row.read(spec)) }));
+}
+
+/**
+ * O que a carta muda em números: aplica o mesmo efeito numa cópia e compara a ficha de luta antes e depois. Número que
+ * não muda não aparece; lista vazia quer dizer que a carta não muda nenhum número desta luta.
+ */
+export function arenaCardChanges(prep: ArenaPrep, option: SurvivorUpgradeOption): ArenaCardChange[] {
+  const upgrade = SURVIVOR_UPGRADES.find((candidate) => candidate.id === option.id);
+  if (!upgrade) return [];
+  const before = arenaSpecOf(prep);
+  const player = structuredClone(prep.state.player);
+  upgrade.apply(player, option.value);
+  const after = arenaSpecOf({ ...prep, state: { ...prep.state, player }, picked: [...prep.picked, option.id] });
+  return ARENA_STAT_ROWS.flatMap((row) => {
+    const from = row.read(before);
+    const to = row.read(after);
+    if (row.show(from) === row.show(to)) return [];
+    return [{ label: row.label, before: row.show(from), after: row.show(to), better: row.lowerIsBetter ? to < from : to > from }];
+  });
 }
 
 /**

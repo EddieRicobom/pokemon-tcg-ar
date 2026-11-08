@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ARENA_CHOICES, arenaPlan, choiceFromFlags, endlessFromFlags, isArenaChoice } from './arena-menu';
+import { ARENA_CHOICES, ARENA_PITCH, arenaPlan, choiceFromFlags, endlessFromFlags, isArenaChoice } from './arena-menu';
 import type { ArenaPlanInput } from './arena-menu';
 
 const input = (over: Partial<ArenaPlanInput>): ArenaPlanInput => ({ choice: 'treino', teamCount: 6, endless: 'formatacao', leader: null, ...over });
@@ -59,9 +59,25 @@ describe('arenaPlan', () => {
   });
 
   it('a luta avisa dos 10 níveis', () => {
-    const plan = arenaPlan(input({}));
-    expect(plan.ready).toBe(true);
-    expect(plan.summary).toContain('10 níveis');
+    expect(arenaPlan(input({})).ready).toBe(true);
+    expect(ARENA_PITCH).toContain('10 níveis');
+  });
+
+  it('com menos de 6 na coleção, diz quantos faltam em vez de pedir para escolher 6', () => {
+    const plan = arenaPlan(input({ teamCount: 3, available: 3 }));
+    expect(plan.ready).toBe(false);
+    expect(plan.blocker).toContain('mais 3');
+    expect(plan.cta).toContain('Faltam 3');
+  });
+
+  it('com 6 ou mais na coleção, volta a pedir a escolha', () => {
+    expect(arenaPlan(input({ teamCount: 3, available: 8 })).blocker).toContain('hoje 3');
+  });
+
+  it('não libera a entrada enquanto a equipe ainda está sendo lida', () => {
+    const plan = arenaPlan(input({ teamLoading: true }));
+    expect(plan.ready).toBe(false);
+    expect(plan.step).toBe(2);
   });
 
   it('corrida cita o modo escolhido', () => {

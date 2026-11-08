@@ -11,8 +11,10 @@ vi.mock('../components/TeamPicker.vue', () => ({
   }),
 }));
 
-// A equipe vem do cache de cartas (IndexedDB): aqui fica vazia, o que importa é o fluxo do desafio.
-vi.mock('../app/arena-members', () => ({ loadArenaMembers: vi.fn(async () => []) }));
+// A equipe vem do cache de cartas (IndexedDB): aqui devolve um membro por id, o que importa é o fluxo do desafio.
+vi.mock('../app/arena-members', () => ({
+  loadArenaMembers: vi.fn(async (ids: readonly string[]) => ids.map((id) => ({ id, name: id, dexId: 25, shiny: false, bond: 0, digital: false }))),
+}));
 
 vi.mock('../components/ArenaFight.vue', () => ({
   default: defineComponent({
@@ -92,6 +94,10 @@ describe('ArenaView: desafio da Liga', () => {
     expect(go().disabled).toBe(true);
 
     host.querySelector<HTMLButtonElement>('.team-picker-stub')!.click();
+    // Enquanto os 6 são lidos o botão segue travado: entrar agora abriria a luta sem eles.
+    await nextTick();
+    expect(go().disabled).toBe(true);
+    await vi.waitFor(() => expect(go().disabled).toBe(false));
     await nextTick();
     // Com equipe e líder escolhido, o resumo nomeia o líder e o botão libera.
     expect(host.querySelector('#arena-step-4')!.textContent).toContain('Roark');

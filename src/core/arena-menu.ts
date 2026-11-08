@@ -38,6 +38,10 @@ export interface ArenaPlanInput {
   teamCount: number;
   /** Por que esta equipe não pode lutar (Pokémon sem número da Pokédex), se for o caso. */
   teamBlocker?: string | null;
+  /** Os Pokémon da equipe ainda estão sendo lidos: entrar agora abriria a luta sem eles. */
+  teamLoading?: boolean;
+  /** Quantos Pokémon a pessoa tem para escolher; `null`/ausente enquanto não se sabe. */
+  available?: number | null;
   endless: EndlessArenaMode;
   /** Líder do desafio da Liga já escolhido, se houver. */
   leader: string | null;
@@ -52,7 +56,7 @@ export interface ArenaPlan {
   ready: boolean;
   /** Por que ainda não: a próxima coisa que a pessoa precisa fazer. */
   blocker: string | null;
-  /** Uma frase com o que vai acontecer ao entrar. */
+  /** Uma frase curta com o que vai acontecer ao entrar. */
   summary: string;
   /** Texto do botão principal. */
   cta: string;
@@ -63,26 +67,34 @@ export interface ArenaPlan {
 /** A equipe da luta: sempre 6 de cada lado. */
 export const ARENA_TEAM = 6;
 
+/** O que vale para todo modo: fica uma vez só na tela, não no resumo do botão. */
+export const ARENA_PITCH = 'Cada Pokémon ganha 10 níveis antes da luta, e você escolhe as cartas.';
+
 /** Resume o que o menu da Arena vai fazer e o que falta, sem tocar em tela nem em armazenamento. */
 export function arenaPlan(input: ArenaPlanInput): ArenaPlan {
   const { choice, teamCount } = input;
   if (!choice) return { ready: false, blocker: 'Escolha o que quer fazer na Arena.', summary: '', cta: 'Escolha uma opção acima', step: 1 };
-  const pitch = 'Cada Pokémon ganha 10 níveis antes da luta, e você escolhe as cartas.';
   if (teamCount !== ARENA_TEAM) {
-    return { ready: false, blocker: `A luta é 6×6: escolha exatamente ${ARENA_TEAM} Pokémon (hoje ${teamCount}).`, summary: pitch, cta: 'Complete a equipe de 6 primeiro', step: 2 };
+    const { available } = input;
+    if (available !== null && available !== undefined && available < ARENA_TEAM) {
+      const missing = ARENA_TEAM - available;
+      return { ready: false, blocker: `A luta é 6×6 e você tem ${available} Pokémon: consiga mais ${missing} escaneando cartas ou na Vila.`, summary: '', cta: `Faltam ${missing} Pokémon na coleção`, step: 2 };
+    }
+    return { ready: false, blocker: `A luta é 6×6: escolha exatamente ${ARENA_TEAM} Pokémon (hoje ${teamCount}).`, summary: '', cta: 'Complete a equipe de 6 primeiro', step: 2 };
   }
-  if (input.teamBlocker) return { ready: false, blocker: input.teamBlocker, summary: pitch, cta: 'Troque a equipe primeiro', step: 2 };
+  if (input.teamBlocker) return { ready: false, blocker: input.teamBlocker, summary: '', cta: 'Troque a equipe primeiro', step: 2 };
+  if (input.teamLoading) return { ready: false, blocker: 'Lendo os Pokémon da equipe…', summary: '', cta: 'Lendo a equipe…', step: 2 };
   if (choice === 'pvp') {
-    return { ready: true, blocker: null, summary: `Você e um amigo lutam em tempo real, cada um no seu aparelho. ${pitch}`, cta: '🤝 Conectar com um amigo', step: 4 };
+    return { ready: true, blocker: null, summary: 'Você e um amigo lutam em tempo real, cada um no seu aparelho.', cta: '🤝 Conectar com um amigo', step: 4 };
   }
   if (choice === 'liga') {
-    if (!input.leader) return { ready: false, blocker: 'Escolha um líder para desafiar.', summary: pitch, cta: 'Escolha um líder primeiro', step: 3 };
-    if (input.leaderLocked) return { ready: false, blocker: `${input.leader} ainda está bloqueado: vença os desafios anteriores.`, summary: pitch, cta: 'Escolha um líder aberto', step: 3 };
-    return { ready: true, blocker: null, summary: `Desafio contra ${input.leader}, valendo a Liga. ${pitch}`, cta: `🏅 Desafiar ${input.leader}`, step: 4 };
+    if (!input.leader) return { ready: false, blocker: 'Escolha um líder para desafiar.', summary: '', cta: 'Escolha um líder primeiro', step: 3 };
+    if (input.leaderLocked) return { ready: false, blocker: `${input.leader} ainda está bloqueado: vença os desafios anteriores.`, summary: '', cta: 'Escolha um líder aberto', step: 3 };
+    return { ready: true, blocker: null, summary: `Desafio contra ${input.leader}, valendo a Liga.`, cta: `🏅 Desafiar ${input.leader}`, step: 4 };
   }
   if (choice === 'corridas') {
     const run = ENDLESS_ARENA_LABELS[input.endless].title;
-    return { ready: true, blocker: null, summary: `${run}: lutas 6×6 em sequência até você sair. ${pitch}`, cta: `🏁 Começar ${run}`, step: 4 };
+    return { ready: true, blocker: null, summary: `${run}: lutas 6×6 em sequência até você sair.`, cta: `🏁 Começar ${run}`, step: 4 };
   }
-  return { ready: true, blocker: null, summary: `Luta 6×6 contra um treinador sorteado. ${pitch}`, cta: '⚔️ Preparar a luta', step: 4 };
+  return { ready: true, blocker: null, summary: 'Luta 6×6 contra um treinador sorteado.', cta: '⚔️ Preparar a luta', step: 4 };
 }

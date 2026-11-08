@@ -42,6 +42,110 @@ describe('TeamPicker', () => {
     expect(info.textContent).toContain('Secundário');
     expect(host.querySelectorAll('.box-stats li')).toHaveLength(7);
   });
+  const cardRow = (id: string, dex: number, name: string, over: Record<string, unknown> = {}): Record<string, unknown> => ({ id, name, setName: 'Base', dexIds: [dex], lastSeenAt: 1, sprite: { state: 'ok' }, reference: { state: 'ok' }, ...over });
+  async function mountPicker(cards: Record<string, unknown>[], props: Record<string, unknown> = { max: 6 }): Promise<HTMLElement> {
+    mocks.village.mockReturnValue({ digital: emptyDigital() });
+    mocks.list.mockResolvedValue(cards);
+    mocks.blob.mockReset();
+    mocks.blob.mockResolvedValue(null);
+    const ready = vi.fn();
+    host = document.createElement('div'); document.body.append(host);
+    app = createApp({ render: () => h(TeamPicker, { ...props, onReady: ready }) }); app.mount(host);
+    await vi.waitFor(() => expect(ready).toHaveBeenCalled());
+    await nextTick();
+    return host;
+  }
+  const six = [cardRow('a', 6, 'Charizard'), cardRow('b', 9, 'Blastoise'), cardRow('c', 3, 'Venusaur'), cardRow('d', 25, 'Pikachu'), cardRow('e', 149, 'Dragonite'), cardRow('f', 150, 'Mewtwo')];
+  const tile = (el: HTMLElement, name: string): HTMLButtonElement => [...el.querySelectorAll<HTMLButtonElement>('.box-tile')].find((b) => b.querySelector('.box-name')?.textContent === name)!;
+
+  it('mostra na grade os tipos e a forma do golpe, com PNG leve em vez de GIF', async () => {
+    const el = await mountPicker(six);
+    const charizard = tile(el, 'Charizard');
+    expect(charizard.querySelectorAll('.box-glyph')).toHaveLength(2);
+    expect(charizard.querySelector('.box-facts em')?.textContent).toBeTruthy();
+    expect(charizard.getAttribute('aria-label')).toContain('Fogo');
+    expect(charizard.querySelector('img')!.getAttribute('src')).toMatch(/\.png$/);
+    expect(mocks.blob).not.toHaveBeenCalled();
+  });
+
+  it('filtra pelo tipo e explica a grade vazia, com saída para limpar', async () => {
+    const el = await mountPicker(six);
+    const fire = [...el.querySelectorAll<HTMLButtonElement>('.element-type-choice')].find((b) => b.title === 'Fogo')!;
+    fire.click();
+    await nextTick();
+    expect([...el.querySelectorAll('.box-tile')].map((b) => b.querySelector('.box-name')?.textContent)).toEqual(['Charizard']);
+    const input = el.querySelector<HTMLInputElement>('.team-tools input')!;
+    input.value = 'zzz'; input.dispatchEvent(new Event('input'));
+    await nextTick();
+    expect(el.querySelector('.box-empty')!.textContent).toContain('zzz');
+    el.querySelector<HTMLButtonElement>('.box-empty button')!.click();
+    await nextTick();
+    expect(el.querySelectorAll('.box-tile')).toHaveLength(6);
+    // Sem Pokémon do tipo, o filtro não vira um beco sem saída.
+    expect([...el.querySelectorAll<HTMLButtonElement>('.element-type-choice')].find((b) => b.title === 'Fada')!.disabled).toBe(true);
+  });
+
+  it('o filtro segue a forma atual, não só a primeira espécie da carta', async () => {
+    const el = await mountPicker([cardRow('a', 25, 'Pikachu')]);
+    const electric = [...el.querySelectorAll<HTMLButtonElement>('.element-type-choice')].find((b) => b.title === 'Elétrico')!;
+    expect(electric.disabled).toBe(false);
+  });
+
+  it('membro sem sprite carregado aparece na vaga e pode sair da equipe', async () => {
+    savedTeam.value = ['x'];
+    const el = await mountPicker([cardRow('x', 25, 'Pikachu', { sprite: { state: 'missing' } }), cardRow('a', 6, 'Charizard')]);
+    const slot = el.querySelector<HTMLButtonElement>('.box-slot.missing')!;
+    expect(slot).not.toBeNull();
+    slot.click();
+    await nextTick();
+    expect(el.querySelector('.box-info')!.textContent).toContain('ainda não foi carregado');
+    [...el.querySelectorAll<HTMLButtonElement>('.box-info button')].find((b) => b.textContent?.includes('Tirar'))!.click();
+    await nextTick();
+    expect(savedTeam.value).not.toContain('x');
+  });
+
+  it('com a equipe cheia, oferece trocar pelo de menor total e troca na mesma vaga', async () => {
+    savedTeam.value = ['a', 'b', 'c', 'd', 'e', 'f'];
+    const el = await mountPicker([...six, cardRow('g', 19, 'Rattata'), cardRow('h', 151, 'Mew')]);
+    tile(el, 'Mew').click();
+    await nextTick();
+    await nextTick();
+    expect(savedTeam.value).toHaveLength(6);
+    expect(el.textContent).toContain('A equipe já tem 6');
+    expect(el.querySelector('.box-diff')).not.toBeNull();
+    const swap = el.querySelector<HTMLButtonElement>('.box-info .primary')!;
+    expect(swap.textContent).toContain('Pikachu'); // o menor total entre os seis
+    swap.click();
+    await nextTick();
+    expect(savedTeam.value).toEqual(['a', 'b', 'c', 'h', 'e', 'f']);
+  });
+
+  it('a sugestão explica cada escolha e pode ser desfeita', async () => {
+    savedTeam.value = ['a'];
+    const el = await mountPicker([...six, cardRow('g', 19, 'Rattata')]);
+    el.querySelector<HTMLButtonElement>('.team-suggest')!.click();
+    await nextTick();
+    expect(savedTeam.value).toHaveLength(6);
+    expect(savedTeam.value).not.toContain('g');
+    expect(el.querySelectorAll('.team-reasons li')).toHaveLength(6);
+    expect(el.querySelector('.team-cover-title')!.textContent).toContain('de 18');
+    el.querySelector<HTMLButtonElement>('.team-undo')!.click();
+    await nextTick();
+    expect(savedTeam.value).toEqual(['a']);
+    expect(el.querySelector('.team-reasons')).toBeNull();
+  });
+
+  it('fora da luta (equipe grande) não mostra a sugestão', async () => {
+    const el = await mountPicker(six, {});
+    expect(el.querySelector('.team-insight')).toBeNull();
+  });
+
+  it('avisa quando mexer aqui encolhe uma equipe maior da Caixa', async () => {
+    savedTeam.value = ['a', 'b', 'c', 'd', 'e', 'f', 'g'];
+    const el = await mountPicker([...six, cardRow('g', 19, 'Rattata')]);
+    expect(el.textContent).toContain('tem 7 Pokémon');
+  });
+
   it('não cria URL de miniatura quando a leitura termina depois de sair da tela', async () => {
     mocks.village.mockReturnValue({ digital: emptyDigital() });
     mocks.list.mockResolvedValue([{ id: 'c', name: 'Carta', sprite: { state: 'ok' }, reference: { state: 'ok' } }]);
