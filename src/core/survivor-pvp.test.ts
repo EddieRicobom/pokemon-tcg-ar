@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  aliveCount, applyArenaSnapshot, canSwitch, createArena, guardBlockReason, NO_INPUT, arenaCamera, arenaCameraTarget, offscreenPointer, SV_ARENA_H, SV_ARENA_W, SV_START_OFFSET, SV_VIEW_H, SV_VIEW_W, SV_COUNTDOWN_MS, SV_ENTRY_SHIELD_MS, SV_GUARD_COOLDOWN_MS,
+  aliveCount, applyArenaSnapshot, canDodge, canSpecial, canSwitch, createArena, dodgeBlockReason, specialBlockReason, specialDamage, specialShapeOf, SV_BLINK_WINDUP_MS, SV_DODGE_COOLDOWN_MS, SV_DODGE_DISTANCE, SV_DODGE_MS, SV_SPECIAL_HIT_CAP, SV_SPECIAL_NOVA_RADIUS, SV_SPECIAL_WINDUP_MS, SV_TELEGRAPH_MS, guardBlockReason, NO_INPUT, arenaCamera, arenaCameraTarget, offscreenPointer, SV_ARENA_H, SV_ARENA_W, SV_START_OFFSET, SV_VIEW_H, SV_VIEW_W, SV_COUNTDOWN_MS, SV_ENTRY_SHIELD_MS, SV_GUARD_COOLDOWN_MS,
   SV_GUARD_MS, SV_MAX_MS, SV_SUDDEN_DEATH_MS, SV_SWAP_RECALL_MS, SV_SWAP_SEND_MS, SV_SWAP_TOTAL_MS, SV_SWITCH_COOLDOWN_MS, snapshotArena, stepArena, svMonFromRun, svRunScore, switchBlockReason,
 } from './survivor-pvp';
 import type { ArenaEvent, ArenaInput, ArenaState, SvMonSpec, SvRunResult } from './survivor-pvp';
@@ -249,7 +249,7 @@ describe('survival pvp: instantâneo', () => {
     begin(host);
     run60(host, 2500, { dx: 0.4, dy: -0.2, switchTo: -1 });
     expect(applyArenaSnapshot(guest, JSON.parse(JSON.stringify(snapshotArena(host, 1))))).toBe(true);
-    expect(guest.sides.map((t) => t.mons.map((m) => m.hp))).toEqual(host.sides.map((t) => t.mons.map((m) => Math.round(m.hp))));
+    expect(guest.sides.map((t) => t.mons.map((m) => m.hp))).toEqual(host.sides.map((t) => t.mons.map((m) => Math.ceil(m.hp))));
     expect(guest.shots).toHaveLength(host.shots.length);
     expect(guest.sides[0].x).toBeCloseTo(host.sides[0].x, 0);
   });
@@ -413,10 +413,54 @@ describe('survival pvp: golpes iguais aos da corrida', () => {
     const s = createArena([mon('a', { moveCategory: 'teleporte', attackRange: 240, fireMs: 1000 })], [mon('x', idle)]);
     begin(s);
     place(s, 200);
-    const seen = events(s, 700);
-    expect(seen.some((e) => e.k === 'blink' && e.side === 0)).toBe(true);
+    const seen = events(s, 700 + SV_BLINK_WINDUP_MS);
+    expect(seen.some((e) => e.k === 'blink' && e.side === 0 && (e.leftMs ?? 0) > 0)).toBe(true);
+    expect(seen.some((e) => e.k === 'blink' && e.side === 0 && e.leftMs === undefined)).toBe(true);
     expect(s.sides[0].y).toBeLessThan(390);
     expect(foeLost(s)).toBeGreaterThan(0);
+  });
+
+  it('teleporte: avisa a linha antes do salto, e quem sai dela não leva', () => {
+    const s = createArena([mon('a', { moveCategory: 'teleporte', attackRange: 240, fireMs: 1000 })], [mon('x', { ...idle, speed: 180 })]);
+    begin(s);
+    place(s, 200);
+    const announced: ArenaEvent[] = [];
+    for (let t = 0; t < 900 && !announced.some((e) => e.k === 'blink'); t += 20) announced.push(...stepArena(s, [NO_INPUT, NO_INPUT], 20));
+    expect(foeLost(s)).toBe(0);
+    for (let t = 0; t < SV_BLINK_WINDUP_MS + 60; t += 20) stepArena(s, [NO_INPUT, { dx: 1, dy: 0, switchTo: -1 }], 20);
+    expect(s.sides[0].y).toBeLessThan(390);
+    expect(foeLost(s)).toBe(0);
+  });
+
+  it('área: o círculo nunca é maior do que o alvo mais lento consegue sair', () => {
+    const s = createArena([mon('a', { moveCategory: 'area', attackRadius: 160, fireMs: 400 })], [mon('x', { ...idle, speed: 40 })]);
+    begin(s);
+    place(s, 200);
+    const mark = events(s, 700).find((e) => e.k === 'telegraph');
+    expect(mark?.k === 'telegraph' ? mark.radius : Infinity).toBeLessThanOrEqual(40 * (SV_TELEGRAPH_MS / 1000) * 0.9 + SV_DODGE_DISTANCE * 0.7);
+  });
+
+  it('o golpe no ar é creditado a quem o lançou, mesmo depois da troca', () => {
+    const s = createArena([mon('a', { projectileSpeed: 120, fireMs: 2000 }), mon('b', { fireMs: 60_000, moveCategory: 'trilha' })], [mon('x', idle)]);
+    begin(s);
+    place(s, 330);
+    while (s.shots.length === 0) stepArena(s, [NO_INPUT, NO_INPUT], 20);
+    stepArena(s, [{ ...NO_INPUT, switchTo: 1 }, NO_INPUT], 20);
+    run60(s, SV_SWAP_TOTAL_MS);
+    expect(s.sides[0].active).toBe(1);
+    expect(s.sides[0].mons[0]!.dealt).toBeGreaterThan(0);
+    expect(s.sides[0].mons[1]!.dealt ?? 0).toBe(0);
+  });
+
+  it('voltar à bola cancela o feixe marcado', () => {
+    const s = createArena([mon('a', { moveCategory: 'foco', fireMs: 800 }), mon('b', idle)], [mon('x', idle)]);
+    begin(s);
+    place(s, 200);
+    while (s.beams.length === 0) stepArena(s, [NO_INPUT, NO_INPUT], 20);
+    stepArena(s, [{ ...NO_INPUT, switchTo: 1 }, NO_INPUT], 20);
+    expect(s.beams).toHaveLength(0);
+    run60(s, 1500);
+    expect(foeLost(s)).toBe(0);
   });
 
   it('trilha: andar enche a carga, desenha a faixa por 4 s e anda 25% mais rápido', () => {
@@ -495,5 +539,201 @@ describe('placar da luta', () => {
     for (let t = 0; t < 3000 && s.winner === null; t += 20) stepArena(s, [NO_INPUT, NO_INPUT], 20);
     expect(s.sides[0].mons[0]!.dealt).toBeGreaterThan(0);
     expect(s.sides[0].mons[0]!.kos).toBe(1);
+  });
+});
+
+describe('troca sem abuso', () => {
+  const trail: Partial<SvMonSpec> = { moveCategory: 'trilha', fireMs: 60_000 };
+
+  it('a proteção da troca é só o tempo dela: não soma a de quem entra depois do fim', () => {
+    const s = createArena([mon('a', trail), mon('b', trail)], [mon('x', trail)]);
+    begin(s);
+    stepArena(s, [{ ...NO_INPUT, switchTo: 1 }, NO_INPUT], 20);
+    run60(s, SV_SWAP_TOTAL_MS);
+    expect(s.sides[0].swapMs).toBe(0);
+    run60(s, 100);
+    expect(s.sides[0].shieldMs).toBe(0);
+  });
+
+  it('quem cai no meio da troca (morte súbita) cancela a troca e o substituto já luta', () => {
+    const s = createArena([mon('a', trail), mon('b', trail), mon('c', trail)], [mon('x', { ...trail, maxHp: 1500 })]);
+    begin(s);
+    s.timeMs = s.suddenDeathMs + 1;
+    s.sides[0].mons[0]!.hp = 0.05;
+    const seen = stepArena(s, [{ ...NO_INPUT, switchTo: 2 }, NO_INPUT], 20);
+    expect(seen.some((e) => e.k === 'faint')).toBe(true);
+    expect(s.sides[0].swapMs).toBe(0);
+    expect(s.sides[0].active).toBe(1);
+  });
+
+  it('não gasta o escudo no meio da troca', () => {
+    const s = createArena([mon('a', trail), mon('b', trail)], [mon('x', trail)]);
+    begin(s);
+    stepArena(s, [{ ...NO_INPUT, switchTo: 1 }, NO_INPUT], 20);
+    stepArena(s, [{ ...NO_INPUT, shield: true }, NO_INPUT], 20);
+    expect(s.sides[0].guardCdMs).toBe(0);
+    expect(guardBlockReason(s, 0)).toMatch(/troca/);
+  });
+
+  it('o convidado não vê caído quem ainda tem uma fração de vida', () => {
+    const s = createArena([mon('a', trail)], [mon('x', trail)]);
+    s.sides[0].mons[0]!.hp = 0.3;
+    expect(snapshotArena(s, 1).sides[0].hp[0]).toBe(1);
+  });
+});
+
+describe('esquiva', () => {
+  const trail: Partial<SvMonSpec> = { moveCategory: 'trilha', fireMs: 60_000 };
+  const press: ArenaInput = { dx: 1, dy: 0, switchTo: -1, dodge: true };
+
+  it('arranca na direção pedida, anda a distância certa e entra em recarga', () => {
+    const s = createArena([mon('a', trail)], [mon('x', trail)]);
+    begin(s);
+    const x0 = s.sides[0].x;
+    expect(stepArena(s, [press, NO_INPUT], 20).some((e) => e.k === 'dodge' && e.side === 0)).toBe(true);
+    run60(s, SV_DODGE_MS + 40);
+    expect(s.sides[0].x - x0).toBeGreaterThan(SV_DODGE_DISTANCE * 0.8);
+    expect(s.sides[0].x - x0).toBeLessThanOrEqual(SV_DODGE_DISTANCE * 1.1);
+    expect(canDodge(s, 0)).toBe(false);
+    expect(dodgeBlockReason(s, 0)).toMatch(/Esquiva em/);
+    run60(s, SV_DODGE_COOLDOWN_MS);
+    expect(canDodge(s, 0)).toBe(true);
+  });
+
+  it('sem direção, sai de lado em relação ao rival', () => {
+    const s = createArena([mon('a', trail)], [mon('x', trail)]);
+    begin(s);
+    const before = { x: s.sides[0].x, y: s.sides[0].y };
+    stepArena(s, [{ ...NO_INPUT, dodge: true }, NO_INPUT], 20);
+    run60(s, SV_DODGE_MS);
+    expect(Math.abs(s.sides[0].x - before.x)).toBeGreaterThan(SV_DODGE_DISTANCE * 0.7);
+    expect(Math.abs(s.sides[0].y - before.y)).toBeLessThan(3);
+  });
+
+  it('o tiro atravessa quem esquiva no tempo certo, segue voando e enche o Especial', () => {
+    const s = createArena([mon('a', trail)], [mon('x', { projectileSpeed: 300, fireMs: 60_000 })]);
+    begin(s);
+    s.sides[1].fireMs = 0;
+    s.sides[1].y = s.sides[0].y - 200;
+    const seen: ArenaEvent[] = [];
+    const a = s.sides[0];
+    while (s.shots.length === 0) stepArena(s, [NO_INPUT, NO_INPUT], 10);
+    const shot = s.shots[0]!;
+    while (a.y - shot.y > 34) stepArena(s, [NO_INPUT, NO_INPUT], 10);
+    seen.push(...stepArena(s, [{ dx: 0, dy: -1, switchTo: -1, dodge: true }, NO_INPUT], 10));
+    for (let t = 0; t < 100; t += 10) seen.push(...stepArena(s, [NO_INPUT, NO_INPUT], 10));
+    expect(seen.some((e) => e.k === 'evade' && e.side === 0)).toBe(true);
+    expect(seen.some((e) => e.k === 'hit')).toBe(false);
+    expect(a.mons[0]!.hp).toBe(100);
+    expect(a.mons[0]!.energy).toBeGreaterThan(0);
+    expect(s.shots[0]?.spent).toBe(true);
+  });
+
+  it('a invulnerabilidade acaba com o arranque', () => {
+    const s = createArena([mon('a', trail)], [mon('x', trail)]);
+    begin(s);
+    stepArena(s, [press, NO_INPUT], 20);
+    expect(s.sides[0].dodgeMs).toBeGreaterThan(0);
+    run60(s, SV_DODGE_MS + 20);
+    expect(s.sides[0].dodgeMs).toBe(0);
+  });
+
+  it('não vale atordoado, na troca nem antes da largada', () => {
+    const s = createArena([mon('a', trail), mon('b', trail)], [mon('x', trail)]);
+    expect(canDodge(s, 0)).toBe(false);
+    begin(s);
+    s.sides[0].stunMs = 300;
+    expect(canDodge(s, 0)).toBe(false);
+    s.sides[0].stunMs = 0;
+    stepArena(s, [{ ...NO_INPUT, switchTo: 1 }, NO_INPUT], 20);
+    expect(canDodge(s, 0)).toBe(false);
+  });
+});
+
+describe('Especial', () => {
+  const trail: Partial<SvMonSpec> = { moveCategory: 'trilha', fireMs: 60_000 };
+  const cast: ArenaInput = { ...NO_INPUT, special: true };
+
+  it('a barra é de cada Pokémon e enche causando e levando dano', () => {
+    const s = createArena([mon('a', { fireMs: 300 }), mon('b', trail)], [mon('x', { ...trail, maxHp: 1500 }), mon('y', trail)]);
+    begin(s);
+    s.sides[1].y = s.sides[0].y - 60;
+    run60(s, 1500);
+    expect(s.sides[0].mons[0]!.energy).toBeGreaterThan(0);
+    expect(s.sides[1].mons[0]!.energy).toBeGreaterThan(0);
+    expect(s.sides[0].mons[1]!.energy).toBe(0);
+  });
+
+  it('sem barra cheia não sai e explica por quê', () => {
+    const s = createArena([mon('a', trail)], [mon('x', trail)]);
+    begin(s);
+    expect(canSpecial(s, 0)).toBe(false);
+    expect(specialBlockReason(s, 0)).toMatch(/Especial em 0%/);
+    expect(stepArena(s, [cast, NO_INPUT], 20).some((e) => e.k === 'special')).toBe(false);
+  });
+
+  it('feixe: esvazia a barra, avisa a linha e acerta quem ficou', () => {
+    const s = createArena([mon('a', { fireMs: 60_000 })], [mon('x', { ...trail, maxHp: 1000 })]);
+    begin(s);
+    s.sides[0].mons[0]!.energy = 1;
+    const first = stepArena(s, [cast, NO_INPUT], 20);
+    expect(first.some((e) => e.k === 'special' && e.shape === 'beam')).toBe(true);
+    expect(first.some((e) => e.k === 'beam' && e.leftMs > 0)).toBe(true);
+    expect(s.sides[0].mons[0]!.energy).toBe(0);
+    expect(s.sides[1].mons[0]!.hp).toBe(1000);
+    const later: ArenaEvent[] = [];
+    for (let t = 0; t < SV_SPECIAL_WINDUP_MS + 40; t += 20) later.push(...stepArena(s, [NO_INPUT, NO_INPUT], 20));
+    expect(later.some((e) => e.k === 'hit' && e.special === true)).toBe(true);
+    expect(s.sides[1].mons[0]!.hp).toBeLessThan(1000);
+  });
+
+  it('feixe: dá para sair andando ou esquivando', () => {
+    const walk = createArena([mon('a', { fireMs: 60_000 })], [mon('x', { ...trail, maxHp: 1000, speed: 120 })]);
+    begin(walk);
+    walk.sides[0].mons[0]!.energy = 1;
+    stepArena(walk, [cast, NO_INPUT], 20);
+    run60(walk, SV_SPECIAL_WINDUP_MS + 40, NO_INPUT, { dx: 1, dy: 0, switchTo: -1 });
+    expect(walk.sides[1].mons[0]!.hp).toBe(1000);
+    const dash = createArena([mon('a', { fireMs: 60_000 })], [mon('x', { ...trail, maxHp: 1000, speed: 40 })]);
+    begin(dash);
+    dash.sides[0].mons[0]!.energy = 1;
+    stepArena(dash, [cast, { dx: 1, dy: 0, switchTo: -1, dodge: true }], 20);
+    run60(dash, SV_SPECIAL_WINDUP_MS + 40, NO_INPUT, { dx: 1, dy: 0, switchTo: -1 });
+    expect(dash.sides[1].mons[0]!.hp).toBe(1000);
+  });
+
+  it('nova: quem luta de perto explode em volta de si', () => {
+    expect(specialShapeOf({ moveCategory: 'aura' })).toBe('nova');
+    expect(specialShapeOf({ moveCategory: 'projetil' })).toBe('beam');
+    const s = createArena([mon('a', { moveCategory: 'aura', fireMs: 60_000, attackRadius: 40 })], [mon('x', { ...trail, maxHp: 1000 })]);
+    begin(s);
+    s.sides[1].y = s.sides[0].y - SV_SPECIAL_NOVA_RADIUS + 20;
+    s.sides[0].mons[0]!.energy = 1;
+    expect(stepArena(s, [cast, NO_INPUT], 20).some((e) => e.k === 'telegraph')).toBe(true);
+    expect(s.markers).toHaveLength(1);
+    run60(s, SV_SPECIAL_WINDUP_MS + 40);
+    expect(s.sides[1].mons[0]!.hp).toBeLessThan(1000);
+  });
+
+  it('nunca tira mais que o teto da vida máxima, nem com vantagem de tipo', () => {
+    const s = createArena([mon('a', { power: 150, fireMs: 400, attackType: 'fire' })], [mon('x', { ...trail, types: ['grass', 'bug'], maxHp: 300 })]);
+    begin(s);
+    s.sides[0].fireMs = 60_000;
+    expect(specialDamage(s.sides[0].mons[0]!)).toBeGreaterThan(300);
+    s.sides[0].mons[0]!.energy = 1;
+    stepArena(s, [cast, NO_INPUT], 20);
+    run60(s, SV_SPECIAL_WINDUP_MS + 40);
+    expect(s.sides[1].mons[0]!.hp).toBeGreaterThanOrEqual(300 * (1 - SV_SPECIAL_HIT_CAP) - 1);
+  });
+
+  it('a barra vai ao convidado pelo instantâneo', () => {
+    const team = [mon('a', trail), mon('b', trail)];
+    const host = createArena(team, [mon('x', trail)]);
+    const guest = createArena(team, [mon('x', trail)]);
+    host.sides[0].mons[1]!.energy = 0.5;
+    host.sides[1].dodgeCdMs = 1200;
+    expect(applyArenaSnapshot(guest, JSON.parse(JSON.stringify(snapshotArena(host, 1))))).toBe(true);
+    expect(guest.sides[0].mons[1]!.energy).toBe(0.5);
+    expect(guest.sides[1].dodgeCdMs).toBe(1200);
   });
 });

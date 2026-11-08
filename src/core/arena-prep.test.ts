@@ -165,6 +165,48 @@ describe('rival', () => {
     expect(aliveCount(state.sides[1])).toBeGreaterThan(0);
   });
 
+  it('sai da linha do feixe marcado', () => {
+    const state = createArena([dummy('a', { moveCategory: 'foco', fireMs: 800, power: 10 })], [dummy('b', { speed: 120 })]);
+    state.countdownMs = 0;
+    const bot = createArenaBot(1, 1, { switching: false, dash: false });
+    for (let t = 0; t < 8000 && state.beams.length === 0; t += 33) stepArena(state, [NO_INPUT, bot(state, 33)], 33);
+    const beam = state.beams[0]!;
+    const before = state.sides[1].mons[0]!.hp;
+    let hit = false;
+    for (let t = 0; t < beam.leftMs + 66; t += 33) {
+      if (stepArena(state, [NO_INPUT, bot(state, 33)], 33).some((e) => e.k === 'beam' && e.leftMs === 0) && state.sides[1].mons[0]!.hp <= before - 26) hit = true;
+    }
+    expect(hit).toBe(false);
+  });
+
+  it('usa a esquiva e o Especial na luta', () => {
+    const team = arenaRivalTeam([6, 25, 94, 130, 143, 445], 1, 2);
+    const state = createArena(team, team);
+    const a = createArenaBot(0, 1);
+    const b = createArenaBot(1, 1);
+    let dodges = 0; let specials = 0;
+    for (let t = 0; t < 200_000 && state.winner === null; t += 33) {
+      for (const e of stepArena(state, [a(state, 33), b(state, 33)], 33)) {
+        if (e.k === 'dodge') dodges++;
+        if (e.k === 'special') specials++;
+      }
+    }
+    expect(dodges).toBeGreaterThan(4);
+    expect(specials).toBeGreaterThan(1);
+  });
+
+  it('não vira uma roleta de Pokémon', () => {
+    const team = arenaRivalTeam([6, 25, 94, 130, 143, 445], 1, 2);
+    const state = createArena(team, team);
+    const a = createArenaBot(0, 1);
+    const b = createArenaBot(1, 1);
+    let switches = 0;
+    for (let t = 0; t < 60_000 && state.winner === null; t += 33) {
+      for (const e of stepArena(state, [a(state, 33), b(state, 33)], 33)) if (e.k === 'switch' && !e.forced && e.side === 1) switches++;
+    }
+    expect(switches).toBeLessThanOrEqual(Math.ceil(state.timeMs / 14_000) + 1);
+  });
+
   it('não pede nada antes da contagem acabar', () => {
     const state = createArena([dummy('a')], [dummy('b')]);
     expect(createArenaBot(1, 1)(state, 16)).toEqual(NO_INPUT);
@@ -220,6 +262,17 @@ describe('equilíbrio do rival', () => {
     // Nem relâmpago nem maratona: dá tempo de trocar, desviar e usar o escudo.
     expect(avgMs).toBeGreaterThan(60_000);
     expect(avgMs).toBeLessThan(240_000);
+  }, 60_000);
+
+  it('esquivar rende vitórias', () => {
+    const { wins, games } = mirror(0.7, { dash: false }, 0.7, {});
+    expect(wins).toBeLessThanOrEqual(games / 2);
+  }, 60_000);
+
+  it('o Especial rende vitórias e não encurta demais a luta', () => {
+    const { wins, games, avgMs } = mirror(0.7, { special: false }, 0.7, {});
+    expect(wins).toBeLessThanOrEqual(games / 2);
+    expect(avgMs).toBeGreaterThan(60_000);
   }, 60_000);
 
   it('trocar de Pokémon pelo tipo rende vitórias', () => {

@@ -224,3 +224,54 @@ describe('survival pvp: escudo e golpes no fio', () => {
     expect(parseMessage(JSON.stringify({ t: 'sv-team', name: 'Ash', team: [mon('a', { moveName: 'Trilha', moveCategory: 'trilha', moveEffect: 'nenhum', projectileSpeed: 300, projectileSize: 8, shots: 1, pierce: 0, attackRange: 120, attackRadius: 40, critChance: 0, buffs: [] })] }))).not.toBeNull();
   });
 });
+
+describe('esquiva e Especial no fio', () => {
+  const snapOf = (): Record<string, unknown> => JSON.parse(encodeMessage({ t: 'sv-snap', snap: snapshotArena(createArena([mon('a')], [mon('x')]), 1), events: [] })).snap as Record<string, unknown>;
+  const parseEvent = (e: object): WireMessage | null => parseMessage(JSON.stringify({ t: 'sv-snap', snap: snapOf(), events: [e] }));
+
+  it('as entradas chegam ao anfitrião', () => {
+    const msg = parseMessage(JSON.stringify({ t: 'sv-input', seq: 1, dx: 0, dy: 0, switchTo: -1, dodge: true, special: true }));
+    expect(msg?.t === 'sv-input' ? [msg.dodge, msg.special] : null).toEqual([true, true]);
+  });
+
+  it('o convidado manda a esquiva mesmo sem mexer o dedo', () => {
+    const sent: WireMessage[] = [];
+    const guest = new SurvivalGuestLink({ send: (m) => (sent.push(m), true) }, [mon('a')], [mon('x')]);
+    guest.sendInput({ dx: 0, dy: 0, switchTo: -1, dodge: true }, 1000);
+    guest.sendInput({ dx: 0, dy: 0, switchTo: -1, special: true }, 1001);
+    expect(sent.map((m) => (m.t === 'sv-input' ? [m.dodge, m.special] : null))).toEqual([[true, false], [false, true]]);
+  });
+
+  it('o toque do convidado vale uma vez só', () => {
+    const host = new SurvivalHostLink({ send: () => true }, [mon('a')], [mon('x')]);
+    host.state.countdownMs = 0;
+    host.receive({ t: 'sv-input', seq: 1, dx: 0, dy: 0, switchTo: -1, dodge: true });
+    const first = host.step(16, { dx: 0, dy: 0, switchTo: -1 });
+    host.state.sides[1].dodgeCdMs = 0;
+    const second = host.step(16, { dx: 0, dy: 0, switchTo: -1 });
+    expect(first.filter((e) => e.k === 'dodge')).toHaveLength(1);
+    expect(second.filter((e) => e.k === 'dodge')).toHaveLength(0);
+  });
+
+  it('aceita os eventos novos e recusa os malformados', () => {
+    expect(parseEvent({ k: 'dodge', side: 1, x0: 10, y0: 10, x1: 90, y1: 10 })).not.toBeNull();
+    expect(parseEvent({ k: 'evade', side: 0 })).not.toBeNull();
+    expect(parseEvent({ k: 'special', side: 0, index: 2, shape: 'nova' })).not.toBeNull();
+    expect(parseEvent({ k: 'blink', side: 0, x0: 1, y0: 1, x1: 2, y1: 2, leftMs: 350 })).not.toBeNull();
+    expect(parseEvent({ k: 'special', side: 0, index: 9, shape: 'nova' })).toBeNull();
+    expect(parseEvent({ k: 'special', side: 0, index: 1, shape: 'raio' })).toBeNull();
+    expect(parseEvent({ k: 'dodge', side: 1, x0: -5000, y0: 10, x1: 90, y1: 10 })).toBeNull();
+    expect(parseEvent({ k: 'blink', side: 0, x0: 1, y0: 1, x1: 2, y1: 2, leftMs: 99999 })).toBeNull();
+  });
+
+  it('recusa barra de Especial fora dos limites ou do tamanho da equipe', () => {
+    const bad = (energy: unknown): WireMessage | null => {
+      const snap = snapOf();
+      (snap.sides as Record<string, unknown>[])[0]!.energy = energy;
+      return parseMessage(JSON.stringify({ t: 'sv-snap', snap, events: [] }));
+    };
+    expect(bad([1.5])).toBeNull();
+    expect(bad([0.5, 0.5])).toBeNull();
+    expect(bad([0.5])).not.toBeNull();
+  });
+});

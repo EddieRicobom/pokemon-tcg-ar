@@ -1,5 +1,6 @@
 import { typeEffectiveness } from './battle';
-import { canGuard, canSwapAttack, NO_INPUT, SV_ARENA_H, SV_ARENA_W, SV_MON_RADIUS } from './survivor-pvp';
+import { distanceToSegment } from './survivor-charge';
+import { canDodge, canGuard, canSpecial, canSwapAttack, NO_INPUT, specialShapeOf, SV_ARENA_H, SV_ARENA_W, SV_MON_RADIUS, SV_SPECIAL_NOVA_RADIUS } from './survivor-pvp';
 import type { ArenaInput, ArenaMon, ArenaSide, ArenaState } from './survivor-pvp';
 
 /**
@@ -15,6 +16,10 @@ const STRAFE_EVERY_MS = 1700;
 const DODGE_NEAR = 50;
 const DODGE_FAR = 130;
 const GUARD_RANGE = 46;
+/** Depois de trocar por vontade própria, fica um tempo em campo: o rival não vira uma roleta de Pokémon. */
+const SWITCH_MIN_STAY_MS = 14_000;
+/** Alcance do Especial em linha: de mais longe o alvo tem tempo demais para sair. */
+const SPECIAL_BEAM_REACH = 430;
 
 /** A que distância do alvo cada forma de ataque rende. */
 function wantedDistance(mon: ArenaMon, drawingTrail: boolean): number {
@@ -59,10 +64,12 @@ export interface ArenaBotTraits {
   switching: boolean;
   guard: boolean;
   swapAttack: boolean;
+  dash: boolean;
+  special: boolean;
 }
 
 export function createArenaBot(side: ArenaSide, skill: number, traits: Partial<ArenaBotTraits> = {}): (state: ArenaState, dtMs: number) => ArenaInput {
-  const can: ArenaBotTraits = { dodge: true, switching: true, guard: true, swapAttack: true, ...traits };
+  const can: ArenaBotTraits = { dodge: true, switching: true, guard: true, swapAttack: true, dash: true, special: true, ...traits };
   const level = Math.max(0, Math.min(1, skill));
   const thinkMs = THINK_SLOW_MS + (THINK_FAST_MS - THINK_SLOW_MS) * level;
   const dodgeRange = DODGE_NEAR + (DODGE_FAR - DODGE_NEAR) * level;
@@ -72,6 +79,10 @@ export function createArenaBot(side: ArenaSide, skill: number, traits: Partial<A
   // quase não faz isso, o forte faz sempre que vale.
   const switchMargin = 1.6 - level * 1.2;
   const swapsAttack = level >= 0.25;
+  // A esquiva pede reflexo: o rival fraco não usa, e o forte espera o golpe estar mais perto para não gastar à toa.
+  const dashes = level >= 0.3;
+  const dashTrigger = 34 + 46 * level;
+  let lastSwitchMs = -Infinity;
   const foeSide: ArenaSide = side === 0 ? 1 : 0;
   let wait = 0;
   let dx = 0;
@@ -96,8 +107,13 @@ export function createArenaBot(side: ArenaSide, skill: number, traits: Partial<A
     // Anda de lado em volta do alvo, trocando de sentido de tempos em tempos: é o que também enche a Trilha.
     const strafe = Math.floor(state.timeMs / STRAFE_EVERY_MS) % 2 === 0 ? 1 : -1;
     const forward = Math.max(-1, Math.min(1, gap / 40));
-    let moveX = (toFoeX / dist) * forward - (toFoeY / dist) * strafe * 0.7;
-    let moveY = (toFoeY / dist) * forward + (toFoeX / dist) * strafe * 0.7;
+    const useSpecial = can.special && canSpecial(state, side);
+    const nova = specialShapeOf(mon) === 'nova';
+    // Com a nova pronta, chega perto para pegar o alvo dentro do círculo.
+    const closing = useSpecial && nova && dist > SV_SPECIAL_NOVA_RADIUS * 0.7 ? 1 : forward;
+    let moveX = (toFoeX / dist) * closing - (toFoeY / dist) * strafe * 0.7;
+    let moveY = (toFoeY / dist) * closing + (toFoeX / dist) * strafe * 0.7;
+    let wantDash = false;
 
     // Sair do círculo marcado vem antes de tudo: é o aviso mais claro que a arena dá.
     for (const marker of state.markers) {
@@ -106,7 +122,24 @@ export function createArenaBot(side: ArenaSide, skill: number, traits: Partial<A
       if (away <= marker.radius + SV_MON_RADIUS + 10) {
         moveX = (team.x - marker.x) / away;
         moveY = (team.y - marker.y) / away;
+        // Andando não dá tempo de sair: a esquiva resolve.
+        if (marker.radius + SV_MON_RADIUS - away > (mon.speed * marker.leftMs) / 1000) wantDash = true;
       }
+    }
+
+    // O feixe marcado também é aviso na tela: sai para o lado da linha em que já está.
+    for (const beam of state.beams) {
+      if (beam.side === side || level < 0.2) continue;
+      const reach = beam.width + SV_MON_RADIUS;
+      const off = distanceToSegment(team.x, team.y, beam.x0, beam.y0, beam.x1, beam.y1);
+      if (off > reach + 8) continue;
+      const bx = beam.x1 - beam.x0;
+      const by = beam.y1 - beam.y0;
+      const len = Math.hypot(bx, by) || 1;
+      const sign = (team.x - beam.x0) * -by + (team.y - beam.y0) * bx >= 0 ? 1 : -1;
+      moveX = (-by / len) * sign;
+      moveY = (bx / len) * sign;
+      if (reach - off > (mon.speed * beam.leftMs) / 1000) wantDash = true;
     }
 
     let danger = false;
@@ -138,10 +171,18 @@ export function createArenaBot(side: ArenaSide, skill: number, traits: Partial<A
     dx = moveX;
     dy = moveY;
 
-    const reserve = can.switching && team.switchCdMs <= 0 ? betterReserve(state, side, foe, switchMargin) : -1;
+    // Quem está voltando à bola não é o adversário de verdade: espera a troca dele acabar antes de responder.
+    const mayStay = state.timeMs - lastSwitchMs >= SWITCH_MIN_STAY_MS;
+    const reserve = can.switching && team.switchCdMs <= 0 && foeTeam.swapMs <= 0 && mayStay ? betterReserve(state, side, foe, switchMargin) : -1;
+    if (reserve >= 0) lastSwitchMs = state.timeMs;
     const alt = mon.alt;
     const swapAttack = can.swapAttack && swapsAttack && !!alt && canSwapAttack(state, side) && matchup(alt.attackType, foe) > matchup(mon.attackType, foe);
     const shield = can.guard && closest <= GUARD_RANGE && mon.hp / mon.maxHp < guardBelow && canGuard(state, side);
-    return { dx, dy, switchTo: reserve, shield, swapAttack };
+    const dodge = can.dash && dashes && reserve < 0 && (wantDash || closest <= dashTrigger) && canDodge(state, side);
+    const foeImmune = foeTeam.shieldMs > 0 || foeTeam.guardMs > 0 || foeTeam.swapMs > 0;
+    const inReach = nova ? dist <= SV_SPECIAL_NOVA_RADIUS * 0.85 : dist <= SPECIAL_BEAM_REACH;
+    // Só o rival esperto segura o Especial enquanto o alvo está protegido.
+    const special = useSpecial && reserve < 0 && inReach && !(level >= 0.5 && foeImmune);
+    return { dx, dy, switchTo: reserve, shield, swapAttack, dodge, special };
   };
 }

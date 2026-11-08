@@ -27,7 +27,7 @@ export type SurvivalWireMessage =
   /** Anfitrião → convidado: os dois estão prontos, a contagem começa. */
   | { t: 'sv-go' }
   /** Convidado → anfitrião: para onde andar e quem quer em campo. `seq` cresce a cada envio. */
-  | { t: 'sv-input'; seq: number; dx: number; dy: number; switchTo: number; shield?: boolean; swapAttack?: boolean }
+  | { t: 'sv-input'; seq: number; dx: number; dy: number; switchTo: number; shield?: boolean; swapAttack?: boolean; dodge?: boolean; special?: boolean }
   /** Anfitrião → convidado: o estado da arena e o que aconteceu desde o último. */
   | { t: 'sv-snap'; snap: ArenaSnapshot; events: ArenaEvent[] }
   /** Peguei uma carta de melhoria na run: id e raridade das regras reais, nome só para mostrar. */
@@ -118,7 +118,7 @@ function parseSideSnap(v: unknown): ArenaSnapshot['sides'][0] | null {
   if (!isNum(v.fireMs, 0, 5000) || !isNum(v.switchCdMs, 0, 60000) || !isNum(v.shieldMs, 0, 10000)) return null;
   const side: ArenaSnapshot['sides'][0] = { hp: v.hp as number[], active: v.active, x: v.x, y: v.y, fireMs: v.fireMs, switchCdMs: v.switchCdMs, shieldMs: v.shieldMs };
   // Escudo, órbita, Trilha e efeitos: opcionais (um anfitrião mais antigo não manda), mas se vierem têm de estar nos limites.
-  const optional: [keyof ArenaSnapshot['sides'][0], number][] = [['guardMs', 3000], ['guardCdMs', 20000], ['orbitAngle', 7], ['trailCharge', 1], ['trailMs', 6000], ['focusCharge', 1], ['swapMs', 3500], ['burnMs', 5000], ['slowMs', 5000], ['stunMs', 5000]];
+  const optional: [keyof ArenaSnapshot['sides'][0], number][] = [['guardMs', 3000], ['guardCdMs', 20000], ['orbitAngle', 7], ['trailCharge', 1], ['trailMs', 6000], ['focusCharge', 1], ['swapMs', 3500], ['burnMs', 5000], ['slowMs', 5000], ['stunMs', 5000], ['dodgeMs', 500], ['dodgeCdMs', 6000]];
   for (const [key, max] of optional) {
     if (v[key] === undefined) continue;
     if (!isNum(v[key], 0, max)) return null;
@@ -131,6 +131,10 @@ function parseSideSnap(v: unknown): ArenaSnapshot['sides'][0] | null {
   if (v.alt !== undefined) {
     if (!Array.isArray(v.alt) || v.alt.length !== v.hp.length || !v.alt.every((on) => typeof on === 'boolean')) return null;
     side.alt = v.alt as boolean[];
+  }
+  if (v.energy !== undefined) {
+    if (!Array.isArray(v.energy) || v.energy.length !== v.hp.length || !v.energy.every((n) => isNum(n, 0, 1))) return null;
+    side.energy = v.energy as number[];
   }
   if (v.trail !== undefined) {
     if (!Array.isArray(v.trail) || v.trail.length > 60) return null;
@@ -171,7 +175,7 @@ function parseEvents(v: unknown): ArenaEvent[] | null {
   const out: ArenaEvent[] = [];
   for (const e of v) {
     if (!isObj(e) || !isSide(e.side)) return null;
-    if (e.k === 'hit' && isNum(e.damage, 0, 5000) && isNum(e.mult, 0, 16)) out.push({ k: 'hit', side: e.side, damage: e.damage, mult: e.mult });
+    if (e.k === 'hit' && isNum(e.damage, 0, 5000) && isNum(e.mult, 0, 16)) out.push({ k: 'hit', side: e.side, damage: e.damage, mult: e.mult, ...(e.special === true ? { special: true } : {}) });
     else if (e.k === 'telegraph' && isNum(e.x, 0, SV_ARENA_W) && isNum(e.y, 0, SV_ARENA_H) && isNum(e.radius, 18, 160) && isType(e.type)) out.push({ k: 'telegraph', side: e.side, x: e.x, y: e.y, radius: e.radius, type: e.type });
     else if (e.k === 'faint' && isInt(e.index, 0, SV_MAX_TEAM - 1)) out.push({ k: 'faint', side: e.side, index: e.index });
     else if (e.k === 'switch' && isInt(e.index, 0, SV_MAX_TEAM - 1) && typeof e.forced === 'boolean') out.push({ k: 'switch', side: e.side, index: e.index, forced: e.forced });
@@ -180,7 +184,10 @@ function parseEvents(v: unknown): ArenaEvent[] | null {
     else if (e.k === 'block') out.push({ k: 'block', side: e.side });
     else if (e.k === 'cone' && isNum(e.angle, -7, 7) && isNum(e.range, 0, 600)) out.push({ k: 'cone', side: e.side, angle: e.angle, range: e.range });
     else if (e.k === 'pulse' && isNum(e.radius, 0, 400)) out.push({ k: 'pulse', side: e.side, radius: e.radius });
-    else if (e.k === 'blink' && isNum(e.x0, 0, SV_ARENA_W) && isNum(e.y0, 0, SV_ARENA_H) && isNum(e.x1, 0, SV_ARENA_W) && isNum(e.y1, 0, SV_ARENA_H)) out.push({ k: 'blink', side: e.side, x0: e.x0, y0: e.y0, x1: e.x1, y1: e.y1 });
+    else if (e.k === 'blink' && isNum(e.x0, 0, SV_ARENA_W) && isNum(e.y0, 0, SV_ARENA_H) && isNum(e.x1, 0, SV_ARENA_W) && isNum(e.y1, 0, SV_ARENA_H) && (e.leftMs === undefined || isNum(e.leftMs, 0, 1000))) out.push({ k: 'blink', side: e.side, x0: e.x0, y0: e.y0, x1: e.x1, y1: e.y1, ...(typeof e.leftMs === 'number' ? { leftMs: e.leftMs } : {}) });
+    else if (e.k === 'dodge' && isNum(e.x0, 0, SV_ARENA_W) && isNum(e.y0, 0, SV_ARENA_H) && isNum(e.x1, 0, SV_ARENA_W) && isNum(e.y1, 0, SV_ARENA_H)) out.push({ k: 'dodge', side: e.side, x0: e.x0, y0: e.y0, x1: e.x1, y1: e.y1 });
+    else if (e.k === 'evade') out.push({ k: 'evade', side: e.side });
+    else if (e.k === 'special' && isInt(e.index, 0, SV_MAX_TEAM - 1) && (e.shape === 'beam' || e.shape === 'nova')) out.push({ k: 'special', side: e.side, index: e.index, shape: e.shape });
     else if (e.k === 'beam' && isNum(e.x0, -700, SV_ARENA_W + 700) && isNum(e.y0, -700, SV_ARENA_H + 700) && isNum(e.x1, -700, SV_ARENA_W + 700) && isNum(e.y1, -700, SV_ARENA_H + 700) && isNum(e.width, 4, 60) && isNum(e.leftMs, 0, 2000)) {
       out.push({ k: 'beam', side: e.side, x0: e.x0, y0: e.y0, x1: e.x1, y1: e.y1, width: e.width, leftMs: e.leftMs });
     } else return null;
@@ -209,7 +216,7 @@ export function parseSurvivalMessage(v: Record<string, unknown>): SurvivalWireMe
       return typeof v.ok === 'boolean' ? { t: 'sv-ready', ok: v.ok } : null;
     case 'sv-input':
       return isInt(v.seq, 0, 1e9) && isNum(v.dx, -1.0001, 1.0001) && isNum(v.dy, -1.0001, 1.0001) && isInt(v.switchTo, -1, SV_MAX_TEAM - 1)
-        ? { t: 'sv-input', seq: v.seq, dx: v.dx, dy: v.dy, switchTo: v.switchTo, ...(v.shield === true ? { shield: true } : {}), ...(v.swapAttack === true ? { swapAttack: true } : {}) }
+        ? { t: 'sv-input', seq: v.seq, dx: v.dx, dy: v.dy, switchTo: v.switchTo, ...(v.shield === true ? { shield: true } : {}), ...(v.swapAttack === true ? { swapAttack: true } : {}), ...(v.dodge === true ? { dodge: true } : {}), ...(v.special === true ? { special: true } : {}) }
         : null;
     case 'sv-snap': {
       const snap = parseSvSnapshot(v.snap);
@@ -225,4 +232,4 @@ export function parseSurvivalMessage(v: Record<string, unknown>): SurvivalWireMe
   }
 }
 
-export const inputOf = (m: { dx: number; dy: number; switchTo: number; shield?: boolean; swapAttack?: boolean }): ArenaInput => ({ dx: m.dx, dy: m.dy, switchTo: m.switchTo, shield: m.shield === true, swapAttack: m.swapAttack === true });
+export const inputOf = (m: { dx: number; dy: number; switchTo: number; shield?: boolean; swapAttack?: boolean; dodge?: boolean; special?: boolean }): ArenaInput => ({ dx: m.dx, dy: m.dy, switchTo: m.switchTo, shield: m.shield === true, swapAttack: m.swapAttack === true, dodge: m.dodge === true, special: m.special === true });
