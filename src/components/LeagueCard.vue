@@ -3,7 +3,7 @@ import { computed, ref } from 'vue';
 import { badgePolish, polishOf } from '../app/badge-polish-store';
 import { league, pendingChallenge } from '../app/league-store';
 import { routeHref } from '../app/route';
-import { LEAGUE_REGIONS, leaguePerks, regionalProgress, nextChallenge, statusOf } from '../core/league';
+import { challengeById, LEAGUE_REGIONS, leaguePerks, regionalProgress, nextChallenge, statusOf } from '../core/league';
 import type { Challenge, RegionId } from '../core/league';
 import { TYPE_COLORS, TYPE_LABELS_PT } from '../core/pokemon-data';
 import { trainerSpriteUrl } from '../core/trainer-sprites';
@@ -13,7 +13,8 @@ import BadgeIcon from './BadgeIcon.vue';
 
 // A maleta 3D só carrega o Three.js quando o jogador abre (import dinâmico dentro de BadgeCaseView).
 const caseOpen = ref(false);
-const selected = ref<RegionId>('sinnoh');
+// Quem chega com um desafio marcado vê a região dele, não Sinnoh.
+const selected = ref<RegionId>((pendingChallenge.value ? challengeById(pendingChallenge.value)?.region : undefined) ?? 'sinnoh');
 const region = computed(() => LEAGUE_REGIONS.find((r) => r.id === selected.value)!);
 const progress = computed(() => regionalProgress(league.value, selected.value));
 const designs = computed(() => ALL_BADGE_DESIGNS.filter((d) => d.order >= region.value.badgeOffset && d.order < region.value.badgeOffset + 8));
@@ -40,6 +41,8 @@ const perks = computed(() => leaguePerks(league.value));
 const emit = defineEmits<{ challenge: [] }>();
 /** Dentro da Arena o título e o cartão vêm da própria seção; no Treinador a Liga é um cartão. */
 const props = defineProps<{ embedded?: boolean }>();
+/** Dentro da Arena, insígnias e bônus ficam a um toque: o que importa ali é escolher o líder. */
+const extrasOpen = ref(!props.embedded);
 
 /** Fora da Arena, leva para ela já na Liga; dentro, fica onde está (e preserva o «Voltar à Vila» do endereço). */
 function challenge(c: Challenge): void {
@@ -67,6 +70,8 @@ const doneOf = (rows: { status: string }[]): number => rows.filter((r) => r.stat
       <button v-for="r in regionTabs" :key="r.id" type="button" :aria-pressed="selected === r.id" :class="{ primary: selected === r.id }" @click="selected = r.id">{{ r.name }} · {{ r.generation }}</button>
     </nav>
     <h3>{{ region.name }} · Geração {{ region.generation }}</h3>
+    <button v-if="embedded" type="button" class="league-extras" :aria-expanded="extrasOpen" @click="extrasOpen = !extrasOpen">{{ extrasOpen ? 'Esconder insígnias e bônus' : 'Ver insígnias e bônus' }}</button>
+    <template v-if="extrasOpen">
     <p class="note">Equipes de exibição inspiradas nos jogos da região, com dificuldade própria do app.</p>
     <p class="note league-perk" role="status">
       <template v-if="perks.pinShotDiscount > 0">🎳 Bônus da Liga: -{{ perks.pinShotDiscount }} moeda{{ perks.pinShotDiscount === 1 ? '' : 's' }} por disparo no Pins. </template>
@@ -82,8 +87,9 @@ const doneOf = (rows: { status: string }[]): number => rows.filter((r) => r.stat
     </ul>
     <button type="button" class="case-open" @click="caseOpen = true">Abrir a maleta 3D de {{ region.name }}</button>
     <BadgeCaseView v-if="caseOpen" :key="selected" :region="selected" @close="caseOpen = false" />
+    </template>
     <p v-if="progress.championWins > 0" class="note champion-note">Campeão da Liga de {{ region.name }} {{ progress.championWins }} {{ progress.championWins === 1 ? 'vez' : 'vezes' }}! Seu nome está no Hall da Fama.</p>
-    <p v-else-if="next" class="note">Próximo desafio: <strong>{{ next.leader }}</strong> ({{ next.role }}). A batalha é na Caixa, em revezamento, com a sua equipe contra a do líder.</p>
+    <p v-else-if="next" class="note">Próximo desafio: <strong>{{ next.leader }}</strong> ({{ next.role }}). A luta é na Arena, 6×6 em tempo real, com a sua equipe contra a do líder.</p>
     <section v-for="section in sections" :key="section.title" :aria-label="`${section.title} de ${region.name}`">
     <h3 class="league-heading">{{ section.title }} <small v-if="section.rows.length > 1" class="count">{{ doneOf(section.rows) }}/{{ section.rows.length }}</small></h3>
     <ul class="league-list">
@@ -109,6 +115,7 @@ const doneOf = (rows: { status: string }[]): number => rows.filter((r) => r.stat
 <style scoped>
 .league-regions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.5rem; margin-block: 1rem; }
 .league-regions button { padding-inline: 0.4rem; white-space: nowrap; }
+.league-extras { justify-self: start; }
 .league-count { margin: 0; color: var(--gold); font-weight: 700; }
 .embedded { display: grid; gap: 0.6rem; }
 .embedded > * { margin-block: 0; }
