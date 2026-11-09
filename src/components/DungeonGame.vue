@@ -1801,7 +1801,7 @@ button:disabled { opacity: 0.5; }
 .dg-commands { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; }
 .dg-speed { justify-self: end; min-height: 36px; padding: 0 10px; font-size: .78rem; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-2); color: inherit; }
 .dg-speed.on { border-color: var(--gold); }
-.dg-saved { display: grid; gap: 6px; padding: 10px 12px; border: 1px solid var(--gold); border-radius: 10px; background: rgba(255, 216, 74, .1); }
+.dg-saved { display: grid; gap: 6px; padding: 10px 12px; border: 1px solid var(--gold); border-radius: 10px; background: rgb(var(--gold-rgb) / .1); }
 .dg-saved .hint { margin: 0; }
 .dg-saved-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .dg-guide { display: grid; gap: 8px; margin: 8px 0 12px; padding: 0; list-style: none; text-align: left; }

@@ -618,7 +618,7 @@ onBeforeUnmount(() => { disposed = true; urls.splice(0).forEach((url) => URL.rev
   padding: 10px;
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
-  background: linear-gradient(135deg, rgb(255 216 74 / 7%), rgb(0 0 0 / 14%));
+  background: linear-gradient(135deg, rgb(var(--gold-rgb) / 7%), rgb(0 0 0 / 14%));
 }
 
 .team-insight p {

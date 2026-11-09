@@ -606,7 +606,7 @@ onBeforeUnmount(() => {
 
 .svpvp-notices li.rare {
   background: rgba(150, 100, 0, 0.9);
-  border: 1px solid #ffd84a;
+  border: 1px solid var(--gold);
   font-size: 0.8rem;
 }
 

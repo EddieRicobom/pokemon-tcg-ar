@@ -229,10 +229,10 @@ onMounted(() => {
 .arena-choice strong, .arena-mode strong { font-size: 1.05rem; }
 .arena-choice small, .arena-mode small { color: color-mix(in srgb, var(--muted) 70%, var(--text)); font-size: .9rem; font-weight: 500; line-height: 1.35; }
 .arena-choice:hover, .arena-mode:hover, .arena-choice:focus-visible, .arena-mode:focus-visible { border-color: var(--accent); }
-.arena-choice.on, .arena-mode.on { border-color: var(--gold); background: linear-gradient(135deg, rgba(255, 216, 74, .14), rgba(12, 17, 34, .6)); }
+.arena-choice.on, .arena-mode.on { border-color: var(--gold); background: linear-gradient(135deg, rgb(var(--gold-rgb) / .14), rgba(12, 17, 34, .6)); }
 .arena-modes { display: grid; gap: .6rem; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); }
 .arena-league { padding-top: .5rem; border-top: 1px solid var(--line); }
-.arena-first-run { display: grid; gap: .6rem; padding: 1rem; border: 1px solid color-mix(in srgb, var(--gold) 55%, var(--line)); border-radius: .85rem; background: linear-gradient(135deg, rgba(255, 216, 74, .12), rgba(12, 17, 34, .55)); }
+.arena-first-run { display: grid; gap: .6rem; padding: 1rem; border: 1px solid color-mix(in srgb, var(--gold) 55%, var(--line)); border-radius: .85rem; background: linear-gradient(135deg, rgb(var(--gold-rgb) / .12), rgba(12, 17, 34, .55)); }
 .arena-first-run > * { margin: 0; }
 .arena-advanced, .arena-more { padding: .6rem .8rem; border: 1px solid var(--line); border-radius: .85rem; }
 .arena-advanced summary, .arena-more summary { min-height: 2.75rem; display: flex; align-items: center; cursor: pointer; font-weight: 700; }
