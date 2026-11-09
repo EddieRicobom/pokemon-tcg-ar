@@ -3272,6 +3272,8 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
       e.hp -= (e.burnDps ?? 0) * (Math.min(dtMs, e.burnMs) / 1000);
       e.burnMs = Math.max(0, e.burnMs - dtMs);
       if (e.burnMs === 0) e.burnDps = 0;
+      // Quem a queimadura derrubou agora não anda, não encosta e não atira neste mesmo passo.
+      if (e.hp <= 0) continue;
     }
     if (e.slowMs && e.slowMs > 0) e.slowMs = Math.max(0, e.slowMs - dtMs);
     if (e.frostImmuneMs && e.frostImmuneMs > 0) e.frostImmuneMs = Math.max(0, e.frostImmuneMs - dtMs);
