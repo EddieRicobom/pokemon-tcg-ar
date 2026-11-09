@@ -29,9 +29,9 @@ describe('Pokémon shiny na Caixa', () => {
     expect(normal.shiny).toBe(false);
     const shiny = make(image(32, 32), { shiny: true });
     expect(shiny.shiny).toBe(true);
-    // halo + 6 estrelinhas dentro de um grupo, filho do plano
+    // halo + as estrelinhas num só desenho, dentro de um grupo filho do plano
     expect(shiny.mesh.children.length).toBe(1);
-    expect(shiny.mesh.children[0]!.children.length).toBe(7);
+    expect(shiny.mesh.children[0]!.children.length).toBe(2);
     expect(normal.mesh.children.length).toBe(0);
   });
 
