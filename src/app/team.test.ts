@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { includeMember, loadSavedTeam, resolveTeam, sanitizeTeam, saveTeam, TEAM_SIZE, toggleMember } from './team';
+import { includeMember, loadArenaTeam, loadSavedTeam, resolveTeam, sanitizeTeam, saveArenaTeam, saveTeam, TEAM_SIZE, toggleMember } from './team';
 
 const card = (id: string, lastSeenAt: number, state = 'ok') => ({ id, lastSeenAt, sprite: { state } });
 
@@ -61,6 +61,19 @@ describe('persistência da equipe', () => {
   it('salva e lê', () => {
     saveTeam(['a', 'b']);
     expect(loadSavedTeam()).toEqual(['a', 'b']);
+  });
+  it('a equipe da Arena tem chave própria e não apaga a da Caixa', () => {
+    saveTeam(['a', 'b', 'c', 'd', 'e', 'f', 'g']);
+    saveArenaTeam(['a', 'b', 'c', 'd', 'e', 'f', 'g']);
+    expect(loadArenaTeam()).toEqual(['a', 'b', 'c', 'd', 'e', 'f']);
+    saveArenaTeam([]);
+    expect(loadArenaTeam()).toEqual([]);
+    expect(loadSavedTeam()).toHaveLength(7);
+  });
+  it('equipe da Arena ausente ou corrompida fica como «sem equipe», sem lançar erro', () => {
+    expect(loadArenaTeam()).toBeNull();
+    localStorage.setItem('tcg-ar-arena-team-v1', 'não é json');
+    expect(loadArenaTeam()).toBeNull();
   });
   it('lixo no armazenamento vira equipe vazia', () => {
     localStorage.setItem('tcg-ar-team-v1', '{"x":1}');

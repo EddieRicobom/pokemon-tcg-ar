@@ -1,7 +1,8 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createApp, h, nextTick } from 'vue';
 import TeamPicker from './TeamPicker.vue';
-import { savedTeam } from '../app/team-store';
+import { arenaTeam, arenaTeamSource, reloadArenaTeam, savedTeam } from '../app/team-store';
+import { ARENA_TEAM_KEY } from '../core/arena-team';
 import { emptyDigital, grantStarter } from '../core/village/digital';
 
 const mocks = vi.hoisted(() => ({ list: vi.fn(), blob: vi.fn(), village: vi.fn() }));
@@ -140,10 +141,67 @@ describe('TeamPicker', () => {
     expect(el.querySelector('.team-insight')).toBeNull();
   });
 
-  it('avisa quando mexer aqui encolhe uma equipe maior da Caixa', async () => {
+  describe('com a equipe da Arena', () => {
+    const big = ['a', 'b', 'c', 'd', 'e', 'f', 'g'];
+    const seven = [...six, cardRow('g', 19, 'Rattata')];
+    const arena = { max: 6, source: arenaTeamSource };
+    beforeEach(() => { localStorage.removeItem(ARENA_TEAM_KEY); reloadArenaTeam(); savedTeam.value = [...big]; });
+    afterEach(() => { localStorage.removeItem(ARENA_TEAM_KEY); reloadArenaTeam(); });
+
+    it('nasce dos seis primeiros válidos da equipe da Caixa, sem aviso e sem encolher a Caixa', async () => {
+      savedTeam.value = ['sumiu', ...big];
+      const el = await mountPicker(seven, arena);
+      expect(arenaTeam.value).toEqual(['a', 'b', 'c', 'd', 'e', 'f']);
+      expect(JSON.parse(localStorage.getItem(ARENA_TEAM_KEY)!)).toEqual(['a', 'b', 'c', 'd', 'e', 'f']);
+      expect(savedTeam.value).toEqual(['sumiu', ...big]);
+      expect(el.textContent).not.toContain('equipe da Caixa');
+    });
+
+    it('tirar, sugerir e voltar à automática na Arena não tocam a equipe da Caixa', async () => {
+      const el = await mountPicker([...seven, cardRow('h', 151, 'Mew')], arena);
+      tile(el, 'Charizard').click();
+      await nextTick();
+      expect(arenaTeam.value).toEqual(['b', 'c', 'd', 'e', 'f']);
+      el.querySelector<HTMLButtonElement>('.team-suggest')!.click();
+      await nextTick();
+      el.querySelector<HTMLButtonElement>('.team-auto')!.click();
+      await nextTick();
+      expect(arenaTeam.value).toEqual([]);
+      expect(savedTeam.value).toEqual(big);
+    });
+
+    it('depois de migrar, mexer na Caixa não muda a Arena', async () => {
+      await mountPicker(seven, arena);
+      savedTeam.value = ['g'];
+      app?.unmount(); app = null; host?.remove(); host = null;
+      await mountPicker(seven, arena);
+      expect(arenaTeam.value).toEqual(['a', 'b', 'c', 'd', 'e', 'f']);
+    });
+
+    it('JSON corrompido refaz a equipe a partir da Caixa', async () => {
+      localStorage.setItem(ARENA_TEAM_KEY, '{quebrado');
+      reloadArenaTeam();
+      await mountPicker(seven, arena);
+      expect(JSON.parse(localStorage.getItem(ARENA_TEAM_KEY)!)).toEqual(['a', 'b', 'c', 'd', 'e', 'f']);
+    });
+
+    it('sem nenhuma carta da Caixa no aparelho, não encerra a migração', async () => {
+      savedTeam.value = ['x', 'y'];
+      await mountPicker(six, arena);
+      expect(localStorage.getItem(ARENA_TEAM_KEY)).toBeNull();
+    });
+  });
+
+  it('sem a fonte da Arena, a Vila continua lendo e gravando a equipe de até 40', async () => {
+    localStorage.removeItem(ARENA_TEAM_KEY);
+    reloadArenaTeam();
     savedTeam.value = ['a', 'b', 'c', 'd', 'e', 'f', 'g'];
-    const el = await mountPicker([...six, cardRow('g', 19, 'Rattata')]);
-    expect(el.textContent).toContain('tem 7 Pokémon');
+    const el = await mountPicker([...six, cardRow('g', 19, 'Rattata')], {});
+    tile(el, 'Rattata').click();
+    await nextTick();
+    expect(savedTeam.value).toEqual(['a', 'b', 'c', 'd', 'e', 'f']);
+    expect(localStorage.getItem(ARENA_TEAM_KEY)).toBeNull();
+    expect(arenaTeam.value).toEqual([]);
   });
 
   it('não cria URL de miniatura quando a leitura termina depois de sair da tela', async () => {

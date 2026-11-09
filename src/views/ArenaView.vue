@@ -5,6 +5,7 @@ import { readArenaRecords } from '../app/arena-records';
 import type { ArenaMember } from '../app/arena-members';
 import { league, pendingChallenge } from '../app/league-store';
 import { routeFlags, routeHref } from '../app/route';
+import { arenaTeamSource } from '../app/team-store';
 import { loadVillage } from '../app/village-store';
 import ArenaFight from '../components/ArenaFight.vue';
 import type { ArenaFightSetup } from '../components/ArenaFight.vue';
@@ -151,7 +152,7 @@ onMounted(() => {
     <template v-if="choice">
       <section id="arena-step-2" class="arena-section" aria-labelledby="arena-step-2-title">
         <h3 id="arena-step-2-title">2 · Sua equipe</h3>
-                <TeamPicker :max="6" group-label="Equipe de batalha" :hint="`A luta pede exatamente ${ARENA_TEAM} Pokémon. Toque em um para colocar ou tirar; tirar daqui não apaga da coleção.`" @ready="updateTeam" @change="updateTeam" @available="available = $event" />
+        <TeamPicker :source="arenaTeamSource" :max="ARENA_TEAM" group-label="Equipe de batalha" :hint="`A luta pede exatamente ${ARENA_TEAM} Pokémon. Toque em um para colocar ou tirar; tirar daqui não apaga da coleção.`" @ready="updateTeam" @change="updateTeam" @available="available = $event" />
         <p v-if="membersError" class="hint" role="alert">{{ membersError }}</p>
         <div v-if="teamCount === 0 || (available !== null && available < ARENA_TEAM)" class="arena-first-run" role="status">
           <strong>{{ teamCount === 0 ? 'Você ainda não tem Pokémon para formar uma equipe.' : `Você tem ${available} de ${ARENA_TEAM} Pokémon para formar a equipe.` }}</strong>

@@ -1,5 +1,8 @@
 /** A equipe da Caixa: até 40 cartas escolhidas entre as guardadas. Lógica pura + persistência em localStorage. */
 
+import { ARENA_TEAM } from '../core/arena-menu';
+import { ARENA_TEAM_KEY, parseArenaTeam } from '../core/arena-team';
+
 /** A caixa comporta até 40 Pokémon; sem escolha do usuário entram só os 6 mais recentes. */
 export const TEAM_SIZE = 40;
 export const AUTO_TEAM_SIZE = 6;
@@ -77,6 +80,23 @@ export function loadSavedTeam(): string[] {
 export function saveTeam(ids: readonly string[]): void {
   try {
     localStorage.setItem(TEAM_KEY, JSON.stringify(ids.slice(0, TEAM_SIZE)));
+  } catch {
+    // Sem armazenamento local: a equipe vale só até fechar o app.
+  }
+}
+
+/** `null`: nunca gravada, corrompida ou armazenamento indisponível; quem chama decide migrar. */
+export function loadArenaTeam(): string[] | null {
+  try {
+    return parseArenaTeam(localStorage.getItem(ARENA_TEAM_KEY));
+  } catch {
+    return null;
+  }
+}
+
+export function saveArenaTeam(ids: readonly string[]): void {
+  try {
+    localStorage.setItem(ARENA_TEAM_KEY, JSON.stringify(ids.slice(0, ARENA_TEAM)));
   } catch {
     // Sem armazenamento local: a equipe vale só até fechar o app.
   }

@@ -16,7 +16,7 @@ const KEY_PREFIX = 'tcg-ar-';
 
 /** Chaves conhecidas; novas chaves do app entram automaticamente quando começam com `tcg-ar-`. */
 export const BACKUP_KEYS: readonly string[] = [
-  'tcg-ar-trainer-v1', 'tcg-ar-vila-v1', 'tcg-ar-perfil-v1', 'tcg-ar-team-v1',
+  'tcg-ar-trainer-v1', 'tcg-ar-vila-v1', 'tcg-ar-perfil-v1', 'tcg-ar-team-v1', 'tcg-ar-arena-team-v1',
   'tcg-ar-roster-v1', 'tcg-ar-survivor-adaptive-v1', 'tcg-ar-liga-v1', 'tcg-ar-arena-recordes-v1', 'tcg-ar-insignias-v1', 'tcg-ar-pins-setup-v1',
   'tcg-ar-battle-mode-v1', 'tcg-ar-sensor-v1', 'tcg-ar-visual-v2', 'tcg-ar-visual-v1',
   'tcg-ar-scan-debug-v1', 'tcg-ar-scan-overlay-v1', 'tcg-ar-art-search-v1',

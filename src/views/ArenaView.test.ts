@@ -1,10 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createApp, defineComponent, h, nextTick, onMounted, type App } from 'vue';
 
+const pickerSources = vi.hoisted((): unknown[] => []);
 vi.mock('../components/TeamPicker.vue', () => ({
   default: defineComponent({
+    props: { source: { type: Object, required: true } },
     emits: ['ready', 'change'],
-    setup(_props, { emit }) {
+    setup(props, { emit }) {
+      pickerSources.push(props.source);
       onMounted(() => emit('ready', []));
       return () => h('button', { type: 'button', class: 'team-picker-stub', onClick: () => emit('change', ['a', 'b', 'c', 'd', 'e', 'f']) }, 'Adicionar Pokémon');
     },
@@ -43,6 +46,7 @@ vi.mock('../components/LeagueCard.vue', async () => {
 import ArenaView from './ArenaView.vue';
 import { league, pendingChallenge } from '../app/league-store';
 import { emptyLeague } from '../core/league';
+import { arenaTeamSource } from '../app/team-store';
 
 describe('ArenaView: desafio da Liga', () => {
   let app: App | null = null;
@@ -118,6 +122,18 @@ describe('ArenaView: desafio da Liga', () => {
     await nextTick();
     expect(host.querySelector('.league-card-stub')).not.toBeNull();
     expect(host.querySelector('#arena-step-3')!.textContent).toContain('Roark');
+  });
+
+  it('monta o seletor com a equipe própria da Arena, não a da Vila', async () => {
+    pickerSources.length = 0;
+    pendingChallenge.value = 'gym-0';
+    host = document.createElement('div');
+    document.body.append(host);
+    app = createApp(ArenaView);
+    app.mount(host);
+    await nextTick();
+    await nextTick();
+    expect(pickerSources).toEqual([arenaTeamSource]);
   });
 
   it('as lutas por turnos e o Coliseu saíram do menu', async () => {

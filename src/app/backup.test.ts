@@ -93,6 +93,28 @@ describe('backup — exportar', () => {
 describe('backup — importar', () => {
   beforeEach(() => localStorage.clear());
 
+  it('leva a equipe da Arena junto e devolve as duas equipes separadas', () => {
+    expect(BACKUP_KEYS).toContain('tcg-ar-arena-team-v1');
+    localStorage.setItem('tcg-ar-team-v1', '["a","b","c","d","e","f","g"]');
+    localStorage.setItem('tcg-ar-arena-team-v1', '["g","a"]');
+    const parsed = parseBackup(serializeBackup(buildBackup(localStorage, NOW)));
+    localStorage.clear();
+    applyBackup(parsed as Exclude<typeof parsed, string>, localStorage);
+    expect(localStorage.getItem('tcg-ar-team-v1')).toBe('["a","b","c","d","e","f","g"]');
+    expect(localStorage.getItem('tcg-ar-arena-team-v1')).toBe('["g","a"]');
+  });
+
+  it('backup antigo, sem equipe da Arena, limpa a chave para ela renascer da equipe restaurada', () => {
+    localStorage.setItem('tcg-ar-team-v1', '["a"]');
+    const raw = JSON.parse(serializeBackup(buildBackup(localStorage, NOW))) as { data: Record<string, unknown> };
+    delete raw.data['tcg-ar-arena-team-v1'];
+    localStorage.setItem('tcg-ar-arena-team-v1', '["z"]');
+    const parsed = parseBackup(JSON.stringify(raw));
+    applyBackup(parsed as Exclude<typeof parsed, string>, localStorage);
+    expect(localStorage.getItem('tcg-ar-arena-team-v1')).toBeNull();
+    expect(localStorage.getItem('tcg-ar-team-v1')).toBe('["a"]');
+  });
+
   it('recusa valores inválidos no backup antes de substituir o progresso', () => {
     localStorage.setItem('tcg-ar-trainer-v1', '{"xp":500}');
     const file = buildBackup(localStorage, NOW);

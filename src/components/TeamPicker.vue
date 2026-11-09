@@ -6,7 +6,8 @@ import { pokemonSpriteUrl, pokemonStaticSpriteUrls } from '../ar/sprite-url';
 import { currentDexId } from '../app/moveset-store';
 import { getCache } from '../app/services';
 import { resolveTeam, TEAM_SIZE, toggleMember } from '../app/team';
-import { savedTeam, setSavedTeam } from '../app/team-store';
+import { villageTeamSource } from '../app/team-store';
+import type { TeamSource } from '../app/team-store';
 import type { CachedCard } from '../cache/types';
 import { boxSummary } from '../core/box-summary';
 import type { BoxSummary } from '../core/box-summary';
@@ -22,7 +23,7 @@ import type { DigitalBoxRow } from '../app/digital-members';
 import { loadVillage } from '../app/village-store';
 
 const emit = defineEmits<{ change: [ids: string[]]; ready: [ids: string[]]; available: [count: number] }>();
-const props = withDefaults(defineProps<{ max?: number; hint?: string; groupLabel?: string }>(), { max: TEAM_SIZE, hint: undefined, groupLabel: 'Vila' });
+const props = withDefaults(defineProps<{ max?: number; hint?: string; groupLabel?: string; source?: TeamSource }>(), { max: TEAM_SIZE, hint: undefined, groupLabel: 'Vila', source: () => villageTeamSource });
 
 /** Equipe de luta (6 vagas): mostra cobertura de tipos, sugestão e comparação. A Caixa e a Vila, com até 40, não precisam. */
 const battleMode = computed(() => props.max <= 6);
@@ -40,7 +41,7 @@ const urls: string[] = [];
 let disposed = false;
 
 const usable = computed(() => rows.value.filter((row) => row.sprite.state === 'ok'));
-const team = computed(() => resolveTeam(savedTeam.value, rows.value, props.max));
+const team = computed(() => resolveTeam(props.source.team.value, rows.value, props.max));
 const dexOf = (row: Row): number | undefined => (row.dexIds?.length ? currentDexId(row.id, spriteIdOf(row)) : undefined);
 
 /** A ficha só depende da espécie: uma vez por espécie, mesmo com centenas de cartas na grade. */
@@ -157,7 +158,7 @@ function forgetSuggestion(): void {
   undoTeam.value = null;
 }
 function publish(): void {
-  emit('change', resolveTeam(savedTeam.value, rows.value, props.max).ids);
+  emit('change', resolveTeam(props.source.team.value, rows.value, props.max).ids);
 }
 function suggest(): void {
   const result = suggestTeam(usable.value.map(asMember), props.max);
@@ -165,15 +166,15 @@ function suggest(): void {
     notice.value = 'Nenhum Pokémon guardado tem dados de espécie para montar uma sugestão.';
     return;
   }
-  undoTeam.value = [...savedTeam.value];
-  setSavedTeam(result.ids);
+  undoTeam.value = [...props.source.team.value];
+  props.source.save(result.ids);
   suggestion.value = result.picks;
   notice.value = '';
   compareId.value = null;
   publish();
 }
 function undoSuggestion(): void {
-  if (undoTeam.value) setSavedTeam(undoTeam.value);
+  if (undoTeam.value) props.source.save(undoTeam.value);
   forgetSuggestion();
   publish();
 }
@@ -189,7 +190,7 @@ function offerSwap(): void {
 function toggle(id: string): void {
   if (focusedId.value !== id) compareId.value = null;
   focusedId.value = id;
-  // Parte sempre da equipe já limitada na tela: a Arena usa isso para guardar só seis sem apagar por engano antes do toque.
+  // Parte sempre da equipe já limitada na tela, a mesma que a pessoa vê nas vagas.
   const next = toggleMember(team.value.ids, id, props.max);
   if (next.full) {
     notice.value = `A equipe já tem ${props.max} Pokémon. Tire um para colocar outro.`;
@@ -198,13 +199,13 @@ function toggle(id: string): void {
   }
   // Lista vazia significa «automática», então o último a sair traz de volta as mais recentes: melhor avisar do que surpreender.
   notice.value = next.team.length === 0 ? 'Sem ninguém escolhido, a equipe voltou a ser automática (as mais recentes).' : '';
-  setSavedTeam(next.team);
+  props.source.save(next.team);
   forgetSuggestion();
   publish();
 }
 
 function useAuto(): void {
-  setSavedTeam([]);
+  props.source.save([]);
   notice.value = '';
   forgetSuggestion();
   publish();
@@ -212,7 +213,7 @@ function useAuto(): void {
 
 function swapFocusedIn(): void {
   if (!focused.value || !compared.value) return;
-  setSavedTeam(replaceMember(team.value.ids, compared.value.id, focused.value.id));
+  props.source.save(replaceMember(team.value.ids, compared.value.id, focused.value.id));
   notice.value = '';
   compareId.value = null;
   forgetSuggestion();
@@ -226,15 +227,13 @@ const factsLabel = (row: Row): string => {
   return `${types}, golpe ${facts.main.form}`;
 };
 
-/** A Arena guarda só os escolhidos aqui: quem tinha uma equipe maior na Caixa precisa saber antes de mexer. */
-const trimsBiggerTeam = computed(() => battleMode.value && savedTeam.value.length > props.max);
-
 onMounted(async () => {
   try {
     const cache = await getCache();
     const list = await cache.list();
     if (disposed) return;
     rows.value = [...list, ...digitalBoxRows(loadVillage().digital)];
+    props.source.prepare?.(new Set(rows.value.map((row) => row.id)));
     loading.value = false;
     emit('ready', team.value.ids);
     emit('available', usable.value.length);
@@ -292,8 +291,6 @@ onBeforeUnmount(() => { disposed = true; urls.splice(0).forEach((url) => URL.rev
         </template>
         <p v-else class="team-threat">Escolha alguém para ver a cobertura de tipos.</p>
       </section>
-
-      <p v-if="trimsBiggerTeam" class="hint" role="note">Sua equipe da Caixa tem {{ savedTeam.length }} Pokémon. A luta usa os {{ max }} primeiros; mudar aqui deixa a equipe só com estes {{ max }}.</p>
 
       <div class="selection-tabs" role="group" aria-label="Mostrar Pokémon">
         <button type="button" :aria-pressed="!onlySelected" @click="onlySelected = false">Todos · {{ usable.length }}</button>
