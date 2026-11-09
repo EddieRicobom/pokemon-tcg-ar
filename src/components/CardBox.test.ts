@@ -74,6 +74,34 @@ describe('Box (tela)', () => {
     expect(host!.querySelector('.pbox-detail')).toBeNull();
   });
 
+  it('ao abrir, leva o foco para o painel; Escape fecha e devolve o foco à carta', async () => {
+    await mount();
+    cells()[0]!.focus();
+    cells()[0]!.click();
+    await nextTick();
+    await nextTick();
+    expect(document.activeElement).toBe(host!.querySelector('.pbox-detail-close'));
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+    await nextTick();
+    await nextTick();
+    expect(host!.querySelector('.pbox-detail')).toBeNull();
+    expect(document.activeElement).toBe(cells()[0]);
+  });
+
+  it('Escape respeita quem já tratou a tecla, e o painel fechado não engole Escape', async () => {
+    await mount();
+    const closed = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+    document.dispatchEvent(closed);
+    expect(closed.defaultPrevented).toBe(false);
+    cells()[0]!.click();
+    await nextTick();
+    const handled = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+    handled.preventDefault();
+    document.dispatchEvent(handled);
+    await nextTick();
+    expect(host!.querySelector('.pbox-detail')).not.toBeNull();
+  });
+
   it('permite escolher diretamente entre caixas adicionais', async () => {
     await mount();
     host!.querySelector<HTMLButtonElement>('.pbox-tools button:last-child')!.click();

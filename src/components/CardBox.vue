@@ -4,7 +4,7 @@
  * Toque numa carta para ver os detalhes e as ações; em "Mover", toque numa carta e depois no espaço de destino
  * (vazio: ela vai; ocupado: as duas trocam). A organização é só de lugares — as cartas continuam no cache.
  */
-import { computed, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import CardMarks from './CardMarks.vue';
 import CardArtwork from './CardArtwork.vue';
 import { routeHref } from '../app/route';
@@ -61,6 +61,34 @@ const notice = ref('');
 const selectedCard = computed(() => (selected.value ? byId.value.get(selected.value) ?? null : null));
 /** Remover uma carta pede um segundo toque; o backup inclui a coleção local. */
 const confirmRemove = ref<string | null>(null);
+
+const detailClose = ref<HTMLButtonElement | null>(null);
+/** Espaço que abriu o painel: o foco volta para ele ao fechar. */
+let detailOpener: HTMLElement | null = null;
+watch(
+  () => (selectedCard.value && !moving.value ? selectedCard.value.id : null),
+  (open) => {
+    if (open) {
+      const active = document.activeElement;
+      if (active instanceof HTMLElement && active !== detailClose.value) detailOpener = active;
+      detailClose.value?.focus({ preventScroll: true });
+      return;
+    }
+    confirmRemove.value = null;
+    const opener = detailOpener;
+    detailOpener = null;
+    // A carta pode ter sido apagada ou a caixa trocada: sem o elemento na tela, o foco fica onde estiver.
+    if (opener?.isConnected) opener.focus({ preventScroll: true });
+  },
+  { flush: 'post' },
+);
+function closeDetailOnEscape(event: KeyboardEvent): void {
+  if (event.key !== 'Escape' || event.defaultPrevented || !selectedCard.value || moving.value) return;
+  event.preventDefault();
+  selected.value = null;
+}
+onMounted(() => document.addEventListener('keydown', closeDetailOnEscape));
+onBeforeUnmount(() => document.removeEventListener('keydown', closeDetailOnEscape));
 
 function tapSlot(slot: number): void {
   const id = box.value.slots[slot] ?? null;
@@ -196,7 +224,7 @@ const teamIndex = (id: string) => props.team.indexOf(id);
     </p></details>
 
     <div v-if="selectedCard && !moving" class="pbox-detail" role="region" :aria-label="`Detalhes de ${selectedCard.name}`">
-      <button type="button" class="pbox-detail-close" aria-label="Fechar detalhes" @click="selected = null">×</button>
+      <button ref="detailClose" type="button" class="pbox-detail-close" aria-label="Fechar detalhes" @click="selected = null">×</button>
       <img v-if="selectedCard.thumb" :src="selectedCard.thumb" :alt="`Carta ${selectedCard.name}`" width="72" height="100" />
       <div>
         <p v-if="teamNotice && teamNoticeId === selectedCard.id" class="message error" role="alert">{{ teamNotice }}</p>
