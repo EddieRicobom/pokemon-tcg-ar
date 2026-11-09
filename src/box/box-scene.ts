@@ -76,6 +76,7 @@ export class BoxScene {
   private half = DEFAULT_HALF_SIZE_M;
   private lastNow = 0;
   private smoothing: SmoothingMode = DEFAULT_SMOOTHING;
+  private cinematicShadows = false;
   mode: BoxMode = 'passeio';
   private readonly rng: Rng;
   /** Luz do ambiente, compartilhada por todos os sprites. */
@@ -290,6 +291,8 @@ export class BoxScene {
     for (const creature of this.creatures) creature.setSmoothing(mode);
   }
 
+  setCinematicShadows(on: boolean): void { this.cinematicShadows = on; }
+
   /** Luz do ambiente real (da câmera): multiplica a cor dos sprites. Mudanças são suavizadas. */
   setEnvironment(r: number, g: number, b: number): void {
     this.envTarget.set(r, g, b);
@@ -474,6 +477,7 @@ export class BoxScene {
       creature.groundY = this.boxGround?.heightAt(creature.state.x, creature.state.z) ?? 0;
       // Pisando numa poça: o Pokémon aparece refletido nela.
       creature.setReflection(weatherOn ? this.weatherFx.puddleStrengthAt(creature.state.x, creature.state.z) : 0);
+      creature.setCinematicShadow(this.cinematicShadows);
       creature.update(nowMs, dt, base, this.camera.position, right, this.view);
       const at = creature.group.position;
       this.shadows.add(at.x, at.y + 0.004, at.z, creature.shadowX, creature.shadowZ);

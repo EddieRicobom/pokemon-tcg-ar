@@ -52,14 +52,14 @@ useDialogFocus(dialogEl);
       </div>
       <p class="hint">{{ effectiveVisual.smoothing === visual.smoothing ? SMOOTHING_HINTS_PT[visual.smoothing] : `Suavização em uso: ${SMOOTHING_LABELS_PT[effectiveVisual.smoothing]}.` }}</p>
     </section>
-    <section v-if="!battle">
+    <section>
       <h4>Sombra no chão</h4>
       <div class="chips" role="group" aria-label="Sombra no chão">
         <button type="button" :class="{ active: visual.shadow }" :aria-pressed="visual.shadow" @click="visual.shadow = true">Ligada</button>
         <button type="button" :class="{ active: !visual.shadow }" :aria-pressed="!visual.shadow" @click="visual.shadow = false">Desligada</button>
       </div>
       <p class="hint">
-        {{ visual.shadow ? 'Uma sombra suave e um brilho fino aparecem na carta, embaixo do Pokémon.' : 'Sem sombra nem brilho: mais leve para celulares fracos.' }}
+        {{ visual.shadow ? 'Na carta há sombra e brilho; no perfil Cinemático, os Pokémon também projetam sua silhueta suavizada no jogo.' : 'Desliga a sombra na carta e as silhuetas cinematográficas, reduzindo o custo gráfico.' }}
       </p>
     </section>
     <section v-if="!battle">

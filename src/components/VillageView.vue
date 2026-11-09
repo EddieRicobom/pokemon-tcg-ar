@@ -3467,6 +3467,7 @@ onMounted(async () => {
   game.windFx = () => effectiveVisual.value.villageWind;
   game.hd2d = () => effectiveVisual.value.villageHd2d;
   game.smoothSprites = () => effectiveVisual.value.renderProfile === 'cinema';
+  game.castShadows = () => effectiveVisual.value.shadow;
   game.nocturnal = (id) => types.get(id)?.includes('dark') === true;
   game.maxFps = () => effectiveVisual.value.frameRate === 'auto' ? 0 : Number(effectiveVisual.value.frameRate);
   // Presente recebido enquanto a cena abria: entra agora, ao lado do jogador.

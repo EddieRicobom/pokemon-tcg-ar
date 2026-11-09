@@ -1,9 +1,12 @@
 import type { CinemaBanner, CinemaLook } from '../core/survivor-cinema';
 import { shadowFrom } from '../core/survivor-impacts';
+import type { SurvivorSpriteDirection } from '../core/survivor-sprite-direction';
+import { frameIndex, survivorSpritePose } from './survivor-sprite';
+import type { SpriteAsset } from './survivor-sprite';
 
 /**
- * Desenho da luz cinematográfica da Torre. Feito para custar pouco: sem `shadowBlur` nem filtros; o brilho é um sprite
- * pronto, as sombras saem num único traço, a noite é uma máscara pequena e tudo tem limite por quadro.
+ * Desenho da luz cinematográfica da Torre. Brilhos e silhuetas são pré-renderizados, a noite é uma máscara pequena
+ * e tudo tem limite por quadro.
  */
 
 const GLOW_SIZE = 64;
@@ -36,6 +39,63 @@ export interface CinemaLight {
   r: number;
   color: string;
   alpha: number;
+}
+
+const SHADOW_PAD = 5;
+const SHADOW_SIZE = 64;
+const shadowMasks = new WeakMap<HTMLCanvasElement, HTMLCanvasElement | null>();
+
+function shadowMask(frame: HTMLCanvasElement): HTMLCanvasElement | null {
+  const cached = shadowMasks.get(frame);
+  if (cached !== undefined) return cached;
+  const scale = Math.min(1, SHADOW_SIZE / Math.max(frame.width, frame.height));
+  const w = Math.max(1, Math.round(frame.width * scale));
+  const h = Math.max(1, Math.round(frame.height * scale));
+  const mask = document.createElement('canvas');
+  mask.width = w + 2 * SHADOW_PAD;
+  mask.height = h + 2 * SHADOW_PAD;
+  const c = mask.getContext('2d');
+  if (c) {
+    // O quadro cai fora do canvas, mas sua sombra desfocada fica dentro. Só roda uma vez por quadro de animação.
+    c.shadowColor = '#080814';
+    c.shadowBlur = 3;
+    c.shadowOffsetX = mask.width;
+    c.drawImage(frame, SHADOW_PAD - mask.width, SHADOW_PAD, w, h);
+  }
+  const result = c ? mask : null;
+  shadowMasks.set(frame, result);
+  return result;
+}
+
+/** Projeta o quadro animado no piso, ancorando a base dos pixels opacos no chão. */
+export function drawPokemonShadow(
+  c: CanvasRenderingContext2D, asset: SpriteAsset | null, direction: SurvivorSpriteDirection, timeMs: number,
+  x: number, y: number, scale: number, flip: boolean, cast: ReturnType<typeof shadowFrom>, depth = 1, alpha = 1,
+): boolean {
+  const sprite = survivorSpritePose(asset, direction);
+  if (!sprite) return false;
+  const frame = sprite.frames[frameIndex(sprite, timeMs)] ?? sprite.frames[0];
+  if (!frame) return false;
+  const mask = shadowMask(frame);
+  if (!mask) return false;
+  const w = sprite.w * sprite.fit * scale;
+  const h = sprite.h * sprite.fit * scale;
+  const contentH = Math.max(1, (sprite.bounds.bottom - sprite.bounds.top) * h);
+  const angle = cast?.angle ?? 0.9;
+  const reach = Math.min(cast?.reach ?? contentH * 0.48, contentH * 1.3);
+  const alongX = Math.cos(angle);
+  const alongY = Math.sin(angle);
+  const across = (alongY < 0 ? -1 : 1) * (flip && asset && 'frames' in asset ? -1 : 1);
+  const px = w / (mask.width - 2 * SHADOW_PAD);
+  const py = h / (mask.height - 2 * SHADOW_PAD);
+  const left = -((sprite.bounds.left + sprite.bounds.right) / 2) * w - SHADOW_PAD * px;
+  const top = -sprite.bounds.bottom * h - SHADOW_PAD * py;
+  c.save();
+  c.globalAlpha *= (cast ? 0.44 : 0.27) * alpha;
+  c.transform(alongY * across, -alongX * across * depth, -alongX * reach / contentH, -alongY * reach * depth / contentH, x, y);
+  c.drawImage(mask, left, top, mask.width * px, mask.height * py);
+  c.restore();
+  return true;
 }
 
 /** Sombras só de quem está perto de um clarão, apontando para longe dele, num traço só. */

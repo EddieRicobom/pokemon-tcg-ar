@@ -7,8 +7,8 @@ import { MusicPlayer } from '../app/music-player';
 import { CINEMA_BEATS, cinemaFrame, cinemaLook, cinemaPower, cinemaTimeScale, createCinemaCamera, presentationMayResume, resetCinema, showCinemaBanner, simulationSteps, stepCinema, triggerCinema } from '../core/survivor-cinema';
 import type { CinemaBeat, CinemaFrame } from '../core/survivor-cinema';
 import { SURVIVOR_SUPREMES } from '../core/survivor-supreme';
-import { flashAlpha, impactFromFx, moveLight } from '../core/survivor-impacts';
-import { drawCastShadows, drawCinemaBanner, drawLights, drawNight, drawScreenFlash, drawSpeedLines } from '../village/survivor-cinema-art';
+import { flashAlpha, impactFromFx, moveLight, shadowFrom } from '../core/survivor-impacts';
+import { drawCastShadows, drawCinemaBanner, drawLights, drawNight, drawPokemonShadow, drawScreenFlash, drawSpeedLines } from '../village/survivor-cinema-art';
 import { ImpactSparks } from '../village/survivor-impact-art';
 import { ARTIFACT_ICONS, artifactIconUrl, drawArtifactIcon } from '../village/artifact-icons-art';
 import type { CinemaLight } from '../village/survivor-cinema-art';
@@ -76,7 +76,7 @@ import { omegaShardCount, settleOmegaShard, survivorMegaForm, survivorMegaForms,
 import type { SurvivorMegaForm, SurvivorMegaSprite } from '../core/survivor-mega';
 import { nextEvolutions, speciesName } from '../core/survivor-evolution';
 import type { DecodedGif } from '../core/gif';
-import { firstSpriteFrame, frameIndex, polishedFrame, SURVIVOR_TILE_PX, toSprite } from '../village/survivor-sprite';
+import { firstSpriteFrame, frameIndex, polishedFrame, survivorSpritePose, SURVIVOR_TILE_PX, toSprite } from '../village/survivor-sprite';
 import type { Sprite, SpriteAsset } from '../village/survivor-sprite';
 import { SoundEngine } from '../box/sound';
 import { survivorRegionLabel } from '../core/survivor-regions';
@@ -198,6 +198,7 @@ function readCinema(): boolean {
 }
 /** Luz cinematográfica: escuridão, sombras e brilhos que crescem com a corrida. */
 const cinemaOn = ref(readCinema());
+const cinemaSpriteShadows = computed(() => effectiveVisual.value.shadow && effectiveVisual.value.renderProfile === 'cinema' && !effectiveVisual.value.rotomMode);
 function toggleCinema(): void {
   cinemaOn.value = !cinemaOn.value;
   try { localStorage.setItem(CINEMA_KEY, cinemaOn.value ? '1' : '0'); } catch { /* vale só nesta sessão */ }
@@ -1377,7 +1378,7 @@ function drawSprite(asset: SpriteAsset | null, x: number, y: number, flip: boole
     return;
   }
   const directional = !('frames' in asset);
-  const sprite = directional ? (asset[direction] ?? asset.down ?? asset.right ?? asset.left ?? asset.up ?? null) : asset;
+  const sprite = survivorSpritePose(asset, direction);
   if (!sprite) return;
   const frame = sprite.frames[frameIndex(sprite, animMs)] ?? sprite.frames[0]!;
   const w = sprite.w * sprite.fit * scale;
@@ -1564,6 +1565,23 @@ function drawAlertMark(c: CanvasRenderingContext2D, x: number, y: number, t: num
   c.restore();
 }
 
+function enemySpriteScale(e: SurvivorEnemy): number {
+  return e.shadowBoss ? 1.7 : e.boss ? 1.2 : e.grade === 'chefao' ? 1.3 : e.grade === 'elite' ? 1.1 : 1;
+}
+
+function bonkEnemySpriteScale(e: SurvivorEnemy, scale: number): number {
+  return (e.shadowBoss ? 1.7 : e.boss ? 1.2 : e.grade === 'chefao' ? 1.12 : e.grade === 'elite' ? 0.96 : 0.84) * scale;
+}
+
+function paintPokemonShadow(
+  c: CanvasRenderingContext2D, sprite: SpriteAsset | null, point: { x: number; y: number }, scale: number,
+  direction: SurvivorSpriteDirection, reach: number, flip = false, depth = 1, alpha = 1,
+): boolean {
+  if (!sprite) return false;
+  const cast = shadowFrom(point.x, point.y, 14 * scale, cinemaLights, reach * Math.min(scale, 1.5));
+  return drawPokemonShadow(c, sprite, direction, animMs, point.x, point.y, scale, flip, cast, depth, alpha);
+}
+
 function drawEnemy(e: SurvivorEnemy): void {
   if (!ctx) return;
   // Chefões dão um pequeno tranco quando o golpe conecta. O flash já existia; o deslocamento torna o impacto legível.
@@ -1592,7 +1610,7 @@ function drawEnemy(e: SurvivorEnemy): void {
     ctx.arc(e.x, e.y, (e.grade === 'chefao' ? 22 : 18), 0, Math.PI * 2);
     ctx.stroke();
   }
-  const scale = e.shadowBoss ? 1.7 : e.boss ? 1.2 : e.grade === 'chefao' ? 1.3 : e.grade === 'elite' ? 1.1 : 1;
+  const scale = enemySpriteScale(e);
   if (e.shadowBoss) drawShadowFlames(e.x, e.y, 31);
   if (e.archetype === 'protetor' || e.archetype === 'suporte' || e.protectedMs) {
     ctx.save();
@@ -1758,7 +1776,7 @@ function drawBonkEnemy(e: SurvivorEnemy, x: number, y: number, scale: number): v
     : 0;
   x += shake;
   const sprite = e.dexId === undefined ? null : (enemySprites.get(e.dexId) ?? null);
-  const size = (e.shadowBoss ? 1.7 : e.boss ? 1.2 : e.grade === 'chefao' ? 1.12 : e.grade === 'elite' ? 0.96 : 0.84) * scale;
+  const size = bonkEnemySpriteScale(e, scale);
   if (e.shadowBoss) drawShadowFlames(x, y, 20 * size);
   if (e.grade !== 'comum') {
     ctx.save();
@@ -1900,6 +1918,29 @@ function drawBonkScene(s: SurvivorState, physics: BonkPhysics): void {
   };
   const move = s.player.move;
   const detailed = detailedSpecialEffects.value;
+  const look = cinemaLook(cinemaPower({ progressMs: survivorProgressMs({ survivedMs: s.elapsedMs, fast: s.fast }), level: s.player.level, bossOnField: s.enemies.some((e) => e.boss || e.grade === 'chefao') }), renderScaleCap.value < 3);
+  const cinema = cinemaOn.value && !effectiveVisual.value.rotomMode;
+  const lights = cinemaLights;
+  lights.length = 0;
+  if (cinema) {
+    for (const proj of s.projectiles) {
+      if (lights.length >= look.glows) break;
+      const p = drawPoint(proj, 14);
+      if (p) lights.push({ x: p.x, y: p.y, r: clamp((16 + (proj.size ?? 4) * 2.4) * p.scale, 6, 60), color: proj.move?.color ?? move.color, alpha: 0.6 * moveLight(proj.move?.type) });
+    }
+    for (const f of s.fx) {
+      if (lights.length >= look.glows) break;
+      if (f.kind !== 'blast' && f.kind !== 'pulse') continue;
+      const p = drawPoint(f, 10);
+      if (p) lights.push({ x: p.x, y: p.y, r: clamp(f.r * 1.5 * p.scale, 10, 150), color: f.color, alpha: 0.8 * moveLight(f.moveType) * flashAlpha(f.ageMs, f.lifeMs) });
+    }
+    for (const e of s.enemies) {
+      if (lights.length >= look.glows) break;
+      if (!e.boss && e.grade === 'comum') continue;
+      const p = drawPoint(e, 14);
+      if (p) lights.push({ x: p.x, y: p.y, r: clamp((e.boss || e.grade === 'chefao' ? 80 : 46) * p.scale, 12, 130), color: e.grade === 'elite' ? '#ffd84a' : '#ff3b2f', alpha: 0.32 });
+    }
+  }
   // Marcas de alcance no chão vão antes das figuras: o Pokémon e os inimigos ficam por cima delas.
   if (move.category === 'aura') drawElementAuraField(c, s.player, move.type, toScreen, animMs, detailed);
   else if (move.category === 'cone') drawConeGuide(c, s.player, s.player.attackRange, move.type, toScreen, 1 - s.player.attackTimerMs / Math.max(1, s.player.attackCooldownMs));
@@ -1970,19 +2011,34 @@ function drawBonkScene(s: SurvivorState, physics: BonkPhysics): void {
       c.restore();
     } });
   }
-  for (const enemy of s.enemies) {
-    if (enemy.hp <= 0) continue;
-    const p = drawPoint(enemy);
-    if (!p || p.scale < 0.08) continue;
-    figures.push({ depth: p.depth, draw: () => drawBonkEnemy(enemy, p.x, p.y, clamp(p.scale * 0.8, 0.55, 3)) });
+  const playerGround = drawPoint(s.player);
+  const playerPoint = drawPoint(s.player, physics.z);
+  let remaining = cinemaSpriteShadows.value ? look.shadows : 0;
+  if (remaining > 0 && playerGround && playerPoint) {
+    const groundScale = clamp(playerGround.scale * 0.92, 0.3, 3.2);
+    const lift = clamp(physics.z / 220, 0, 0.6);
+    if (paintPokemonShadow(c, playerBackSprite ?? playerSprite, playerGround, groundScale * (1 - lift), 'down', look.shadowLength, bonkFacing < 0, 0.65, 1 - lift)) remaining--;
   }
   for (const support of s.supports) {
     const p = drawPoint(support);
     if (!p || p.scale < 0.08) continue;
-    figures.push({ depth: p.depth, draw: () => drawBonkBillboard(supportSprites.get(support.dexId) ?? null, p.x, p.y, clamp(p.scale * 0.6, 0.18, 2), bonkFacing < 0, 0.82, null, 0, survivorSpriteDirection(s.player.x - support.x, s.player.y - support.y), supportAccessories.get(support.dexId)) });
+    const sprite = supportSprites.get(support.dexId) ?? null;
+    const scale = clamp(p.scale * 0.6, 0.18, 2);
+    const pose = survivorSpriteDirection(s.player.x - support.x, s.player.y - support.y);
+    if (remaining > 0 && paintPokemonShadow(c, sprite, p, scale, pose, look.shadowLength, bonkFacing < 0, 0.65, 0.82)) remaining--;
+    figures.push({ depth: p.depth, draw: () => drawBonkBillboard(sprite, p.x, p.y, scale, bonkFacing < 0, 0.82, null, 0, pose, supportAccessories.get(support.dexId)) });
   }
-  const playerGround = drawPoint(s.player);
-  const playerPoint = drawPoint(s.player, physics.z);
+  for (const enemy of s.enemies) {
+    if (enemy.hp <= 0) continue;
+    const p = drawPoint(enemy);
+    if (!p || p.scale < 0.08) continue;
+    const scale = clamp(p.scale * 0.8, 0.55, 3);
+    if (remaining > 0 && enemy.dexId !== undefined) {
+      const pose = survivorSpriteDirection(s.player.x - enemy.x, s.player.y - enemy.y);
+      if (paintPokemonShadow(c, enemySprites.get(enemy.dexId) ?? null, p, bonkEnemySpriteScale(enemy, scale), pose, look.shadowLength, false, 0.65)) remaining--;
+    }
+    figures.push({ depth: p.depth, draw: () => drawBonkEnemy(enemy, p.x, p.y, scale) });
+  }
   if (playerPoint && playerGround) {
     const scale = clamp(playerPoint.scale * 0.92, 0.3, 3.2);
     // Quanto mais alto, menor e mais clara a sombra.
@@ -2145,30 +2201,8 @@ function drawBonkScene(s: SurvivorState, physics: BonkPhysics): void {
     }
   }
   if (!effectiveVisual.value.rotomMode) drawBonkPointers(c, s, physics, drawPoint, viewport);
-  const look = cinemaOn.value && !effectiveVisual.value.rotomMode
-    ? cinemaLook(cinemaPower({ progressMs: survivorProgressMs({ survivedMs: s.elapsedMs, fast: s.fast }), level: s.player.level, bossOnField: s.enemies.some((e) => e.boss || e.grade === 'chefao') }), renderScaleCap.value < 3)
-    : null;
-  if (look && playerPoint) {
+  if (cinema && playerPoint) {
     const screen = { x: 0, y: 0, w: viewport.width, h: viewport.height };
-    const lights = cinemaLights;
-    lights.length = 0;
-    for (const proj of s.projectiles) {
-      if (lights.length >= look.glows) break;
-      const p = drawPoint(proj, 14);
-      if (p) lights.push({ x: p.x, y: p.y, r: clamp((16 + (proj.size ?? 4) * 2.4) * p.scale, 6, 60), color: proj.move?.color ?? move.color, alpha: 0.6 * moveLight(proj.move?.type) });
-    }
-    for (const f of s.fx) {
-      if (lights.length >= look.glows) break;
-      if (f.kind !== 'blast' && f.kind !== 'pulse') continue;
-      const p = drawPoint(f, 10);
-      if (p) lights.push({ x: p.x, y: p.y, r: clamp(f.r * 1.5 * p.scale, 10, 150), color: f.color, alpha: 0.8 * moveLight(f.moveType) * flashAlpha(f.ageMs, f.lifeMs) });
-    }
-    for (const e of s.enemies) {
-      if (lights.length >= look.glows) break;
-      if (!e.boss && e.grade === 'comum') continue;
-      const p = drawPoint(e, 14);
-      if (p) lights.push({ x: p.x, y: p.y, r: clamp((e.boss || e.grade === 'chefao' ? 80 : 46) * p.scale, 12, 130), color: e.grade === 'elite' ? '#ffd84a' : '#ff3b2f', alpha: 0.32 });
-    }
     drawNight(c, look, lights, screen, animMs);
     drawLights(c, lights);
   }
@@ -2389,12 +2423,13 @@ function draw(): void {
   for (const well of s.gravityWells ?? []) drawGravityWell(ctx, well.x, well.y, well.radius, well.ageMs / Math.max(1, well.lifeMs), animMs, detailed);
   for (const bubble of s.timeBubbles ?? []) drawTimeBubble(ctx, bubble.x, bubble.y, bubble.radius, bubble.ageMs / Math.max(1, bubble.lifeMs), animMs, detailed);
 
-  // Luz cinematográfica: só na visão de cima, e os limites caem sozinhos se o aparelho sofrer (`renderScaleCap`).
+  // Os limites caem sozinhos se o aparelho sofrer (`renderScaleCap`).
   const cinemaStrength = cinemaPower({ progressMs: survivorProgressMs({ survivedMs: s.elapsedMs, fast: s.fast }), level: s.player.level, bossOnField: s.enemies.some((e) => e.boss || e.grade === 'chefao') });
-  const cinema = cinemaOn.value && !effectiveVisual.value.rotomMode ? cinemaLook(cinemaStrength, renderScaleCap.value < 3) : null;
+  const look = cinemaLook(cinemaStrength, renderScaleCap.value < 3);
+  const cinema = cinemaOn.value && !effectiveVisual.value.rotomMode ? look : null;
+  cinemaLights.length = 0;
   if (cinema) {
     const lights = cinemaLights;
-    lights.length = 0;
     for (const f of s.fx) {
       if (!seenImpactFx.has(f)) {
         seenImpactFx.add(f);
@@ -2427,6 +2462,25 @@ function draw(): void {
       if (e.x < left || e.x > right || e.y < top || e.y > bottom) continue;
       lights.push({ x: e.x, y: e.y - 14, r: 90, color: '#ff3b2f', alpha: 0.4 });
     }
+  }
+  if (cinemaSpriteShadows.value) {
+    const aimAngle = s.player.aimAngle ?? (s.player.facing < 0 ? Math.PI : 0);
+    const direction = survivorSpriteDirectionFromAngle(aimAngle, s.player.facing);
+    paintPokemonShadow(ctx, playerSprite, s.player, 1, direction, look.shadowLength, s.player.facing < 0);
+    let remaining = look.shadows - 1;
+    for (const support of s.supports) {
+      if (remaining <= 0) break;
+      if (support.x < left || support.x > right || support.y < top || support.y > bottom) continue;
+      const pose = survivorSpriteDirection(s.player.x - support.x, s.player.y - support.y);
+      if (paintPokemonShadow(ctx, supportSprites.get(support.dexId) ?? null, support, 0.76, pose, look.shadowLength, s.player.facing < 0, 1, 0.84)) remaining--;
+    }
+    for (const e of s.enemies) {
+      if (remaining <= 0) break;
+      if (e.dexId === undefined || e.x < left || e.x > right || e.y < top || e.y > bottom) continue;
+      const pose = survivorSpriteDirection(s.player.x - e.x, s.player.y - e.y);
+      if (paintPokemonShadow(ctx, enemySprites.get(e.dexId) ?? null, e, enemySpriteScale(e), pose, look.shadowLength)) remaining--;
+    }
+  } else if (cinema && effectiveVisual.value.shadow) {
     cinemaCasters.length = 0;
     for (const e of s.enemies) {
       if (cinemaCasters.length >= cinema.shadows) break;

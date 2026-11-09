@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { Vector3 } from 'three';
+import { Mesh, ShaderMaterial, Vector3 } from 'three';
 import { BoxScene, MAX_CREATURES } from './box-scene';
 import type { CreatureEntry } from './box-scene';
 import { minBoxDistance } from './floor';
@@ -203,6 +203,25 @@ describe('BoxScene', () => {
     scene.setSmoothing('suave');
     expect(dims(0)).toBe(smooth);
 });
+
+  it('a sombra cinematográfica compartilha a textura do sprite e acompanha trocas de qualidade', () => {
+    const scene = sceneLookingDown();
+    scene.place(new Vector3(0, -1.3, -4));
+    scene.setCreatures([entry(0)]);
+    const creature = scene.creatureList[0]!;
+    scene.setCinematicShadows(true);
+    scene.update(100);
+    const shadow = creature.group.getObjectByName('cinematic-silhouette-shadow') as Mesh;
+    expect(shadow).toBeDefined();
+    const material = shadow.material as ShaderMaterial;
+    expect(material.uniforms.sprite!.value).toBe(creature.mesh.material.map);
+    scene.setSmoothing('bordas');
+    expect(material.uniforms.sprite!.value).toBe(creature.mesh.material.map);
+    scene.setCinematicShadows(false);
+    scene.update(116);
+    expect(shadow.visible).toBe(false);
+    scene.dispose();
+  });
 });
 
 describe('BoxScene: relevo e vida social', () => {
