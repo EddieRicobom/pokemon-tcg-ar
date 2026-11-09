@@ -99,6 +99,7 @@ const shotCount = ref(0);
 
 const stageEl = ref<HTMLElement | null>(null);
 const canvasEl = ref<HTMLCanvasElement | null>(null);
+const trayEl = ref<HTMLUListElement | null>(null);
 const spriteLayer = ref<HTMLElement | null>(null);
 
 let world: PinWorld | null = null;
@@ -147,7 +148,7 @@ function broadcastAim(force = false): void {
   aimShown = true;
   peer.value.send({ t: 'aim', pinId: selectedId.value, ...shotToWire(frame.value, shot) });
 }
-let virtualAimAngle = -Math.PI / 2;
+let virtualAim = false;
 let popups: Popup[] = [];
 let terrainFx: TerrainFx[] = [];
 let impactFx: ImpactFx[] = [];
@@ -580,39 +581,58 @@ function selectPin(id: string): void {
 
 function setVirtualAim(direction: 'up' | 'right' | 'down' | 'left'): void {
   if (phase.value !== 'aim' || !world || !selectedId.value) return;
-  const angles = { up: -Math.PI / 2, right: -Math.PI / 4, down: Math.PI / 2, left: -3 * Math.PI / 4 };
-  virtualAimAngle = angles[direction];
+  const angles = { up: -Math.PI / 2, right: 0, down: Math.PI / 2, left: Math.PI };
+  const angle = angles[direction];
   const pin = world.pins.find((candidate) => candidate.id === selectedId.value);
   if (!pin) return;
   const pull = MAX_PULL * 0.68;
+  virtualAim = true;
   drag = {
     fromX: pin.x,
     fromY: pin.y,
-    toX: pin.x - Math.cos(virtualAimAngle) * pull,
-    toY: pin.y - Math.sin(virtualAimAngle) * pull,
+    toX: pin.x - Math.cos(angle) * pull,
+    toY: pin.y - Math.sin(angle) * pull,
   };
   broadcastAim();
 }
 
 function handleGamepadDirection(event: Event): void {
-  const custom = event as CustomEvent<{ handled: boolean; direction?: 'up' | 'right' | 'down' | 'left' }>;
-  if (!custom.detail.direction || phase.value !== 'aim' || !selectedId.value) return;
-  if ('pressed' in custom.detail && custom.detail.pressed === false) return;
+  const custom = event as CustomEvent<{ handled: boolean; direction?: 'up' | 'right' | 'down' | 'left'; pressed?: boolean }>;
+  if (custom.detail.handled || !custom.detail.direction || custom.detail.pressed === false || !canAimWithGamepad()) return;
   setVirtualAim(custom.detail.direction);
   custom.detail.handled = true;
 }
 
 function handleGamepadAction(event: Event): void {
   const custom = event as CustomEvent<{ handled: boolean }>;
-  if (phase.value !== 'aim' || !world || !selectedId.value) return;
-  if (!drag) setVirtualAim('up');
+  if (custom.detail.handled || !canAimWithGamepad()) return;
+  if (!virtualAim || !drag) setVirtualAim('up');
   const currentDrag = drag;
+  virtualAim = false;
   drag = null;
   const shot = currentDrag ? shotFromDrag(currentDrag.fromX, currentDrag.fromY, currentDrag.toX, currentDrag.toY) : null;
   if (shot) {
     custom.detail.handled = true;
     fireMine(shot);
   }
+}
+
+function canAimWithGamepad(): boolean {
+  return phase.value === 'aim' && !!selectedId.value && canvasEl.value === document.activeElement;
+}
+
+function clearVirtualAim(): void {
+  if (!virtualAim) return;
+  virtualAim = false;
+  onCancel();
+}
+
+function handleGamepadBack(event: Event): void {
+  const custom = event as CustomEvent<{ handled: boolean }>;
+  if (custom.detail.handled || !canAimWithGamepad()) return;
+  custom.detail.handled = true;
+  clearVirtualAim();
+  trayEl.value?.querySelector<HTMLElement>('button[aria-pressed="true"]:not(:disabled)')?.focus();
 }
 
 function selectMove(index: number | null): void {
@@ -1353,7 +1373,7 @@ function onDown(ev: PointerEvent): void {
   if (phase.value !== 'aim' || !world) return;
   const p = toWorld(ev.clientX, ev.clientY);
   if (!p) return;
-  drag = null;
+  virtualAim = false;
   (ev.currentTarget as HTMLElement).setPointerCapture?.(ev.pointerId);
   drag = { fromX: p.x, fromY: p.y, toX: p.x, toY: p.y };
 }
@@ -1668,7 +1688,7 @@ function draw(now: number): void {
   const z = zoomLevel.value;
   ctx.save();
   ctx.setTransform(z, 0, 0, z, cx - z * (cx + (camX + shakeX) * k), viewCy - z * (cx + (camY + shakeY) * k));
-  ctx.imageSmoothingEnabled = false;
+  ctx.imageSmoothingEnabled = effectiveVisual.value.renderProfile === 'cinema';
   ctx.drawImage(artCanvas, 0, 0, canvas.width, canvas.width);
   if (terrainCanvas && terrainArt) {
     syncTerrain();
@@ -1950,6 +1970,7 @@ onMounted(() => window.addEventListener('resize', onResize));
 onMounted(() => {
   window.addEventListener('tcg-gamepad-direction', handleGamepadDirection);
   window.addEventListener('tcg-gamepad-action', handleGamepadAction);
+  window.addEventListener('tcg-gamepad-back', handleGamepadBack);
 });
 onMounted(() => {
   motionQuery = typeof window.matchMedia === 'function' ? window.matchMedia('(prefers-reduced-motion: reduce)') : null;
@@ -1967,15 +1988,12 @@ onBeforeUnmount(() => {
   window.removeEventListener('resize', onResize);
   window.removeEventListener('tcg-gamepad-direction', handleGamepadDirection);
   window.removeEventListener('tcg-gamepad-action', handleGamepadAction);
+  window.removeEventListener('tcg-gamepad-back', handleGamepadBack);
   motionQuery?.removeEventListener('change', onMotionPreferenceChange);
   Object.values(thumbs.value).forEach((url) => URL.revokeObjectURL(url));
 });
 
 /** Direcional e A só existem no teclado, no controle e nos botões da tela grande; no toque, a mira é arrastar. */
-const aimHint = window.matchMedia?.('(pointer: coarse)').matches
-  ? 'Puxe para trás e solte'
-  : 'Direcional e A, ou arraste para trás';
-
 /** A vez em poucas palavras, na linha do placar. */
 const turnLabel = computed(() => {
   if (phase.value === 'aim') return 'Sua vez';
@@ -1994,7 +2012,7 @@ const stageNote = computed(() => {
   if (message.value) return message.value;
   if (phase.value !== 'aim') return '';
   if (!selectedId.value) return 'Escolha um pin abaixo.';
-  return shotCount.value === 0 ? aimHint : '';
+  return shotCount.value === 0 ? 'Puxe para trás e solte' : '';
 });
 
 const legend = [
@@ -2289,7 +2307,7 @@ function setField(field: PinField): void {
         @pointerup="onUp"
         @pointercancel="onCancel"
       >
-        <canvas ref="canvasEl" role="img" aria-label="Arena vista de cima com os pins"></canvas>
+        <canvas ref="canvasEl" :tabindex="phase === 'aim' ? 0 : -1" role="img" aria-label="Arena dos pins. Controle: use o direcional para mirar, A para disparar e B para voltar aos seus pins" @blur="clearVirtualAim"></canvas>
         <canvas v-show="phase !== 'over'" ref="miniEl" class="pin-minimap" width="192" height="192" role="img" aria-label="Minimapa da arena: toque para olhar aquele ponto" @pointerdown.stop="onMiniDown" @pointerup.stop @pointermove.stop></canvas>
         <div ref="spriteLayer" class="pin-sprites" aria-hidden="true"></div>
         <div v-show="phase !== 'over'" class="pin-zoom" :class="{ open: zoomOpen }" @pointerdown.stop @pointermove.stop @pointerup.stop @pointercancel.stop>
@@ -2330,7 +2348,8 @@ function setField(field: PinField): void {
       </div>
 
       <div class="pins-tray">
-        <ul class="tray" aria-label="Seus pins">
+        <p v-if="phase === 'aim'" class="pin-gamepad-hint hint">Selecione a arena para mirar. <kbd>A</kbd> dispara · <kbd>B</kbd> volta aos pins</p>
+        <ul ref="trayEl" class="tray" aria-label="Seus pins">
           <li v-for="p in tray" :key="p.id" :class="{ on: p.selected, dim: !p.affordable }">
             <button type="button" class="tray-pin" :disabled="phase !== 'aim' || !p.affordable" :aria-pressed="p.selected" @click="selectPin(p.id)">
               <span class="chip-token" aria-hidden="true"><img v-if="p.thumb" :src="p.thumb" alt="" /></span>
@@ -2366,3 +2385,8 @@ function setField(field: PinField): void {
     </template>
   </section>
 </template>
+
+<style scoped>
+.pin-gamepad-hint { display: none; }
+:global(.gamepad-connected .pin-gamepad-hint) { display: block; }
+</style>

@@ -7,8 +7,8 @@ import { MusicPlayer } from '../app/music-player';
 import { CINEMA_BEATS, cinemaFrame, cinemaLook, cinemaPower, cinemaTimeScale, createCinemaCamera, presentationMayResume, resetCinema, showCinemaBanner, simulationSteps, stepCinema, triggerCinema } from '../core/survivor-cinema';
 import type { CinemaBeat, CinemaFrame } from '../core/survivor-cinema';
 import { SURVIVOR_SUPREMES } from '../core/survivor-supreme';
-import { flashAlpha, impactFromFx, moveLight } from '../core/survivor-impacts';
-import { drawCastShadows, drawCinemaBanner, drawLights, drawNight, drawScreenFlash, drawSpeedLines } from '../village/survivor-cinema-art';
+import { flashAlpha, impactFromFx, moveLight, shadowFrom } from '../core/survivor-impacts';
+import { drawCastShadows, drawCinemaBanner, drawLights, drawNight, drawPokemonShadow, drawScreenFlash, drawSpeedLines } from '../village/survivor-cinema-art';
 import { ImpactSparks } from '../village/survivor-impact-art';
 import { ARTIFACT_ICONS, artifactIconUrl, drawArtifactIcon } from '../village/artifact-icons-art';
 import type { CinemaLight } from '../village/survivor-cinema-art';
@@ -76,7 +76,7 @@ import { omegaShardCount, settleOmegaShard, survivorMegaForm, survivorMegaForms,
 import type { SurvivorMegaForm, SurvivorMegaSprite } from '../core/survivor-mega';
 import { nextEvolutions, speciesName } from '../core/survivor-evolution';
 import type { DecodedGif } from '../core/gif';
-import { firstSpriteFrame, frameIndex, polishedFrame, SURVIVOR_TILE_PX, toSprite } from '../village/survivor-sprite';
+import { firstSpriteFrame, frameIndex, polishedFrame, survivorSpritePose, SURVIVOR_TILE_PX, toSprite } from '../village/survivor-sprite';
 import type { Sprite, SpriteAsset } from '../village/survivor-sprite';
 import { SoundEngine } from '../box/sound';
 import { survivorRegionLabel } from '../core/survivor-regions';
@@ -99,7 +99,7 @@ import { drawSurvivorSpecial, drawSurvivorSupreme } from '../village/survivor-sp
 import { emptySurvivorFeedbackAnswers, encodeSurvivorFeedback } from '../core/survivor-feedback';
 import type { FeedbackRating, FeedbackRatingKey } from '../core/survivor-feedback';
 import { BONK_LANDING_MS, bonkInputToWorld, bonkJumpsRemaining, createBonkPhysics, projectBonkPoint, resolveBonkPosition, stepBonkPhysics } from '../core/survivor-bonk';
-import type { BonkPhysics } from '../core/survivor-bonk';
+import type { BonkObstacle, BonkPhysics } from '../core/survivor-bonk';
 import { isBonkDoubleTap, isBonkTap } from '../core/survivor-gesture';
 import { survivorStick } from '../core/survivor-controls';
 import type { SurvivorPointerSample } from '../core/survivor-gesture';
@@ -198,6 +198,7 @@ function readCinema(): boolean {
 }
 /** Luz cinematográfica: escuridão, sombras e brilhos que crescem com a corrida. */
 const cinemaOn = ref(readCinema());
+const cinemaSpriteShadows = computed(() => effectiveVisual.value.shadow && effectiveVisual.value.renderProfile === 'cinema' && !effectiveVisual.value.rotomMode);
 function toggleCinema(): void {
   cinemaOn.value = !cinemaOn.value;
   try { localStorage.setItem(CINEMA_KEY, cinemaOn.value ? '1' : '0'); } catch { /* vale só nesta sessão */ }
@@ -709,6 +710,7 @@ const shadowBossSprite = ref<string | null>(null);
 let specialQueued = false;
 /** Botão de carga (Foco e Teleporte) apertado agora; o motor lê se está segurado a cada passo. */
 const chargeHeld = ref(false);
+let chargePointerId: number | null = null;
 const autoCharge = ref(false);
 let cancelChargeQueued = false;
 const chargeStyle = computed(() => {
@@ -730,21 +732,29 @@ const chargeLabel = computed(() => {
   return charge.level >= 1 ? 'MÁXIMO' : charge.level > 0 || chargeHeld.value ? `${Math.floor(charge.level * 100)}%` : 'SEGURE';
 });
 function pressCharge(event?: PointerEvent): void {
-  if (!state.value || state.value.over || paused.value || !chargeStyle.value) return;
-  if (event?.currentTarget instanceof HTMLElement) event.currentTarget.setPointerCapture?.(event.pointerId);
+  if (!state.value || state.value.over || paused.value || !chargeStyle.value || chargeHeld.value) return;
+  if (event) {
+    if (event.button !== 0 || !(event.currentTarget instanceof HTMLElement)) return;
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    chargePointerId = event.pointerId;
+  }
   unlockSound();
   chargeHeld.value = true;
 }
-function releaseCharge(): void {
+function releaseCharge(event?: PointerEvent): void {
+  if ((event?.pointerId ?? null) !== chargePointerId) return;
+  chargePointerId = null;
   chargeHeld.value = false;
 }
 function cancelCharge(): void {
+  chargePointerId = null;
   chargeHeld.value = false;
+  gamepadCharging = false;
   cancelChargeQueued = true;
 }
 /** `lostpointercapture` também vem logo depois de um `pointerup` normal: só cancela se o botão ainda estava apertado. */
-function lostChargeCapture(): void {
-  if (chargeHeld.value) cancelCharge();
+function cancelChargePointer(event: PointerEvent): void {
+  if (event.pointerId === chargePointerId) cancelCharge();
 }
 /** Tudo que mexe a câmera ou desacelera respeita "Impactos", Modo Rotom e movimento reduzido. */
 const cinemaMotion = computed(() => effectiveVisual.value.impactFx && !reducedMotion && !effectiveVisual.value.rotomMode);
@@ -877,10 +887,12 @@ function showTrainerPresentation(event: { trainerId: number; count: number; fina
   trainerPresentation.value = event;
   trainerPresentationTimer = setTimeout(() => clearTrainerPresentation(true), event.final ? 3400 : 2800);
 }
-const minimap = ref({
+const minimap = shallowRef({
   markers: [] as ReturnType<typeof survivorMinimapSnapshot>['markers'],
   bounds: { x: 0, y: 0, width: ARENA_W, height: ARENA_H },
   viewport: { x: 0, y: 0, width: ARENA_W, height: ARENA_H },
+  obstacles: [] as BonkObstacle[],
+  camera: null as { x: number; y: number; yaw: number } | null,
 });
 
 function minimapX(x: number): number { return ((x - minimap.value.bounds.x) / minimap.value.bounds.width) * 100; }
@@ -1124,6 +1136,8 @@ let initialPlayerSpeed = 1;
 interface DustPuff { ox: number; oy: number; vx: number; vy: number; ageMs: number; lifeMs: number; size: number }
 const footDust = { strength: 0, ratio: 0, dx: 0, dy: 0, step: 1, spawnAcc: 0, puffs: [] as DustPuff[] };
 const heldKeys = new Set<string>();
+const gamepadKeys = new Set<SurvivorDirection>();
+let gamepadCharging = false;
 /** Joystick flutuante: aparece onde o dedo encostou na tela da Torre (`lx`, `ly`, relativos à tela). */
 const joystick = reactive({ active: false, pointerId: null as number | null, cx: 0, cy: 0, dx: 0, dy: 0, lx: 0, ly: 0 });
 let bonkPointerStart: (SurvivorPointerSample & { pointerId: number }) | null = null;
@@ -1140,12 +1154,12 @@ const KEY_DIR: Record<string, SurvivorDirection> = {
   w: 'up', s: 'down', a: 'left', d: 'right', W: 'up', S: 'down', A: 'left', D: 'right',
 };
 
-const SURVIVOR_ACTION_SELECTOR = 'button:not(:disabled), [role="button"][tabindex]:not([tabindex="-1"]), a[href], input:not(:disabled), select:not(:disabled)';
+const SURVIVOR_ACTION_SELECTOR = 'button:not(:disabled), [role="button"][tabindex]:not([tabindex="-1"]), a[href], input:not(:disabled), select:not(:disabled), details > summary:first-child';
 
 function activeSurvivorDialog(): HTMLElement | null {
   // Alguns momentos (como a afinidade do segundo tipo) pausam a corrida e deixam
   // o aviso de pausa no DOM. O último overlay visível é o que está por cima.
-  return [...document.querySelectorAll<HTMLElement>('.survivor-overlay[role="dialog"], .survivor-overlay[role="alertdialog"]')].reverse()
+  return [...(stageEl.value?.querySelectorAll<HTMLElement>('.survivor-overlay[role="dialog"], .survivor-overlay[role="alertdialog"]') ?? [])].reverse()
     .find((element) => element.getClientRects().length > 0) ?? null;
 }
 
@@ -1221,7 +1235,9 @@ function onKey(e: KeyboardEvent): void {
   if ((e.key === 'e' || e.key === 'E') && e.type === 'keydown' && !e.repeat) { e.preventDefault(); queueSpecial(); return; }
   if ((e.key === 'f' || e.key === 'F') && e.type === 'keydown' && !e.repeat) { e.preventDefault(); queueSupreme(); return; }
   if (e.key === 'r' || e.key === 'R') {
-    if (e.type === 'keyup') releaseCharge();
+    if (e.type === 'keyup') {
+      if (!gamepadCharging) releaseCharge();
+    }
     else if (!e.repeat) pressCharge();
     if (chargeStyle.value) e.preventDefault();
     return;
@@ -1236,24 +1252,49 @@ function onKey(e: KeyboardEvent): void {
   else heldKeys.delete(dir);
 }
 
+function canUseGamepadInRun(): boolean {
+  return ready.value && !!state.value && !state.value.over && !paused.value && !shadowCutsceneOpen.value
+    && !summary.value && !pickOptions.value && !pendingUpgrade.value && !evolving.value
+    && !specialModalOpen.value && !leaveConfirm.value && !debugOpen.value && !activeSurvivorDialog();
+}
+
 function onGamepadDirection(event: Event): void {
-  const custom = event as CustomEvent<{ handled: boolean; direction?: string; pressed?: boolean }>;
-  const direction = custom.detail.direction;
-  if (custom.detail.handled || !direction || custom.detail.pressed === undefined) return;
-  // Soltar precisa funcionar mesmo se um diálogo abriu enquanto o botão estava pressionado.
-  if (!custom.detail.pressed) heldKeys.delete(direction);
-  if (!ready.value || paused.value || shadowCutsceneOpen.value || summary.value || pickOptions.value || pendingUpgrade.value || evolving.value || specialModalOpen.value) return;
-  if (custom.detail.pressed) heldKeys.add(direction);
-  else heldKeys.delete(direction);
-  custom.detail.handled = true;
+  const detail = (event as CustomEvent<{ handled: boolean; direction: SurvivorDirection; pressed?: boolean }>).detail;
+  // A soltura também chega enquanto um diálogo está aberto.
+  if (detail.pressed === false) gamepadKeys.delete(detail.direction);
+  if (detail.handled || detail.pressed === undefined || !canUseGamepadInRun()) return;
+  if (detail.pressed) gamepadKeys.add(detail.direction);
+  detail.handled = true;
 }
 
 function onGamepadAction(event: Event): void {
-  const custom = event as CustomEvent<{ handled: boolean }>;
-  if (custom.detail.handled || !ready.value || !state.value || paused.value || shadowCutsceneOpen.value || summary.value || pickOptions.value || pendingUpgrade.value || evolving.value || specialModalOpen.value) return;
-  if (!chosenSpecial.value || state.value.special.cooldownMs > 0) return;
-  custom.detail.handled = true;
-  queueSpecial();
+  const detail = (event as CustomEvent<{ handled: boolean }>).detail;
+  if (detail.handled) return;
+  if (finishRunOutro()) { detail.handled = true; return; }
+  if (!canUseGamepadInRun()) return;
+  detail.handled = true;
+  if (bonkRun.value && !chosenSpecial.value) queueBonkJump();
+  else queueSpecial();
+}
+
+function onGamepadButton(event: Event): void {
+  const detail = (event as CustomEvent<{ handled: boolean; button: number; pressed: boolean }>).detail;
+  if (detail.button === 7 && !detail.pressed && gamepadCharging) {
+    gamepadCharging = false;
+    releaseCharge();
+    detail.handled = true;
+    return;
+  }
+  if (detail.handled || !detail.pressed || !canUseGamepadInRun()) return;
+  if (detail.button === 2 && bonkRun.value) queueBonkJump();
+  else if (detail.button === 3) queueSupreme();
+  else if (detail.button === 7 && chargeStyle.value) {
+    if (!chargeHeld.value) {
+      pressCharge();
+      gamepadCharging = chargeHeld.value;
+    }
+  } else return;
+  detail.handled = true;
 }
 
 function onGamepadBack(event: Event): void {
@@ -1265,15 +1306,18 @@ function onGamepadBack(event: Event): void {
 
 function onGamepadMenu(event: Event): void {
   const custom = event as CustomEvent<{ handled: boolean }>;
-  if (custom.detail.handled || !ready.value || !state.value || paused.value || summary.value || pendingUpgrade.value || evolving.value) return;
+  if (custom.detail.handled) return;
+  if (canUseGamepadInRun()) togglePause();
+  else if (paused.value && activeSurvivorDialog()?.classList.contains('survivor-pause-overlay')) {
+    if (hudExpanded.value) toggleHudMenu();
+    else togglePause();
+  } else return;
   custom.detail.handled = true;
-  if (specialModalOpen.value) return;
-  togglePause();
 }
 
 function joyDown(e: PointerEvent): void {
   if (finishRunOutro()) return;
-  if (joystick.active || paused.value || shadowCutsceneOpen.value || !ready.value || summary.value || pickOptions.value || specialModalOpen.value) return;
+  if (e.button !== 0 || joystick.active || paused.value || shadowCutsceneOpen.value || !ready.value || summary.value || pickOptions.value || specialModalOpen.value) return;
   // Botões das cartas (escolha, upgrades, resumo) continuam sendo botões: o joystick não pega esse toque.
   if ((e.target as HTMLElement | null)?.closest?.('button, .card')) return;
   unlockSound();
@@ -1285,7 +1329,7 @@ function joyDown(e: PointerEvent): void {
   joystick.cy = e.clientY;
   joystick.lx = e.clientX - rect.left;
   joystick.ly = e.clientY - rect.top;
-  if (bonkRun.value && e.button === 0) bonkPointerStart = { pointerId: e.pointerId, x: e.clientX, y: e.clientY, at: e.timeStamp };
+  if (bonkRun.value) bonkPointerStart = { pointerId: e.pointerId, x: e.clientX, y: e.clientY, at: e.timeStamp };
   el.setPointerCapture?.(e.pointerId);
   joyMove(e);
 }
@@ -1334,7 +1378,7 @@ function drawSprite(asset: SpriteAsset | null, x: number, y: number, flip: boole
     return;
   }
   const directional = !('frames' in asset);
-  const sprite = directional ? (asset[direction] ?? asset.down ?? asset.right ?? asset.left ?? asset.up ?? null) : asset;
+  const sprite = survivorSpritePose(asset, direction);
   if (!sprite) return;
   const frame = sprite.frames[frameIndex(sprite, animMs)] ?? sprite.frames[0]!;
   const w = sprite.w * sprite.fit * scale;
@@ -1521,6 +1565,23 @@ function drawAlertMark(c: CanvasRenderingContext2D, x: number, y: number, t: num
   c.restore();
 }
 
+function enemySpriteScale(e: SurvivorEnemy): number {
+  return e.shadowBoss ? 1.7 : e.boss ? 1.2 : e.grade === 'chefao' ? 1.3 : e.grade === 'elite' ? 1.1 : 1;
+}
+
+function bonkEnemySpriteScale(e: SurvivorEnemy, scale: number): number {
+  return (e.shadowBoss ? 1.7 : e.boss ? 1.2 : e.grade === 'chefao' ? 1.12 : e.grade === 'elite' ? 0.96 : 0.84) * scale;
+}
+
+function paintPokemonShadow(
+  c: CanvasRenderingContext2D, sprite: SpriteAsset | null, point: { x: number; y: number }, scale: number,
+  direction: SurvivorSpriteDirection, reach: number, flip = false, depth = 1, alpha = 1,
+): boolean {
+  if (!sprite) return false;
+  const cast = shadowFrom(point.x, point.y, 14 * scale, cinemaLights, reach * Math.min(scale, 1.5));
+  return drawPokemonShadow(c, sprite, direction, animMs, point.x, point.y, scale, flip, cast, depth, alpha);
+}
+
 function drawEnemy(e: SurvivorEnemy): void {
   if (!ctx) return;
   // Chefões dão um pequeno tranco quando o golpe conecta. O flash já existia; o deslocamento torna o impacto legível.
@@ -1549,7 +1610,7 @@ function drawEnemy(e: SurvivorEnemy): void {
     ctx.arc(e.x, e.y, (e.grade === 'chefao' ? 22 : 18), 0, Math.PI * 2);
     ctx.stroke();
   }
-  const scale = e.shadowBoss ? 1.7 : e.boss ? 1.2 : e.grade === 'chefao' ? 1.3 : e.grade === 'elite' ? 1.1 : 1;
+  const scale = enemySpriteScale(e);
   if (e.shadowBoss) drawShadowFlames(e.x, e.y, 31);
   if (e.archetype === 'protetor' || e.archetype === 'suporte' || e.protectedMs) {
     ctx.save();
@@ -1715,7 +1776,7 @@ function drawBonkEnemy(e: SurvivorEnemy, x: number, y: number, scale: number): v
     : 0;
   x += shake;
   const sprite = e.dexId === undefined ? null : (enemySprites.get(e.dexId) ?? null);
-  const size = (e.shadowBoss ? 1.7 : e.boss ? 1.2 : e.grade === 'chefao' ? 1.12 : e.grade === 'elite' ? 0.96 : 0.84) * scale;
+  const size = bonkEnemySpriteScale(e, scale);
   if (e.shadowBoss) drawShadowFlames(x, y, 20 * size);
   if (e.grade !== 'comum') {
     ctx.save();
@@ -1857,6 +1918,29 @@ function drawBonkScene(s: SurvivorState, physics: BonkPhysics): void {
   };
   const move = s.player.move;
   const detailed = detailedSpecialEffects.value;
+  const look = cinemaLook(cinemaPower({ progressMs: survivorProgressMs({ survivedMs: s.elapsedMs, fast: s.fast }), level: s.player.level, bossOnField: s.enemies.some((e) => e.boss || e.grade === 'chefao') }), renderScaleCap.value < 3);
+  const cinema = cinemaOn.value && !effectiveVisual.value.rotomMode;
+  const lights = cinemaLights;
+  lights.length = 0;
+  if (cinema) {
+    for (const proj of s.projectiles) {
+      if (lights.length >= look.glows) break;
+      const p = drawPoint(proj, 14);
+      if (p) lights.push({ x: p.x, y: p.y, r: clamp((16 + (proj.size ?? 4) * 2.4) * p.scale, 6, 60), color: proj.move?.color ?? move.color, alpha: 0.6 * moveLight(proj.move?.type) });
+    }
+    for (const f of s.fx) {
+      if (lights.length >= look.glows) break;
+      if (f.kind !== 'blast' && f.kind !== 'pulse') continue;
+      const p = drawPoint(f, 10);
+      if (p) lights.push({ x: p.x, y: p.y, r: clamp(f.r * 1.5 * p.scale, 10, 150), color: f.color, alpha: 0.8 * moveLight(f.moveType) * flashAlpha(f.ageMs, f.lifeMs) });
+    }
+    for (const e of s.enemies) {
+      if (lights.length >= look.glows) break;
+      if (!e.boss && e.grade === 'comum') continue;
+      const p = drawPoint(e, 14);
+      if (p) lights.push({ x: p.x, y: p.y, r: clamp((e.boss || e.grade === 'chefao' ? 80 : 46) * p.scale, 12, 130), color: e.grade === 'elite' ? '#ffd84a' : '#ff3b2f', alpha: 0.32 });
+    }
+  }
   // Marcas de alcance no chão vão antes das figuras: o Pokémon e os inimigos ficam por cima delas.
   if (move.category === 'aura') drawElementAuraField(c, s.player, move.type, toScreen, animMs, detailed);
   else if (move.category === 'cone') drawConeGuide(c, s.player, s.player.attackRange, move.type, toScreen, 1 - s.player.attackTimerMs / Math.max(1, s.player.attackCooldownMs));
@@ -1927,19 +2011,34 @@ function drawBonkScene(s: SurvivorState, physics: BonkPhysics): void {
       c.restore();
     } });
   }
-  for (const enemy of s.enemies) {
-    if (enemy.hp <= 0) continue;
-    const p = drawPoint(enemy);
-    if (!p || p.scale < 0.08) continue;
-    figures.push({ depth: p.depth, draw: () => drawBonkEnemy(enemy, p.x, p.y, clamp(p.scale * 0.8, 0.55, 3)) });
+  const playerGround = drawPoint(s.player);
+  const playerPoint = drawPoint(s.player, physics.z);
+  let remaining = cinemaSpriteShadows.value ? look.shadows : 0;
+  if (remaining > 0 && playerGround && playerPoint) {
+    const groundScale = clamp(playerGround.scale * 0.92, 0.3, 3.2);
+    const lift = clamp(physics.z / 220, 0, 0.6);
+    if (paintPokemonShadow(c, playerBackSprite ?? playerSprite, playerGround, groundScale * (1 - lift), 'down', look.shadowLength, bonkFacing < 0, 0.65, 1 - lift)) remaining--;
   }
   for (const support of s.supports) {
     const p = drawPoint(support);
     if (!p || p.scale < 0.08) continue;
-    figures.push({ depth: p.depth, draw: () => drawBonkBillboard(supportSprites.get(support.dexId) ?? null, p.x, p.y, clamp(p.scale * 0.6, 0.18, 2), bonkFacing < 0, 0.82, null, 0, survivorSpriteDirection(s.player.x - support.x, s.player.y - support.y), supportAccessories.get(support.dexId)) });
+    const sprite = supportSprites.get(support.dexId) ?? null;
+    const scale = clamp(p.scale * 0.6, 0.18, 2);
+    const pose = survivorSpriteDirection(s.player.x - support.x, s.player.y - support.y);
+    if (remaining > 0 && paintPokemonShadow(c, sprite, p, scale, pose, look.shadowLength, bonkFacing < 0, 0.65, 0.82)) remaining--;
+    figures.push({ depth: p.depth, draw: () => drawBonkBillboard(sprite, p.x, p.y, scale, bonkFacing < 0, 0.82, null, 0, pose, supportAccessories.get(support.dexId)) });
   }
-  const playerGround = drawPoint(s.player);
-  const playerPoint = drawPoint(s.player, physics.z);
+  for (const enemy of s.enemies) {
+    if (enemy.hp <= 0) continue;
+    const p = drawPoint(enemy);
+    if (!p || p.scale < 0.08) continue;
+    const scale = clamp(p.scale * 0.8, 0.55, 3);
+    if (remaining > 0 && enemy.dexId !== undefined) {
+      const pose = survivorSpriteDirection(s.player.x - enemy.x, s.player.y - enemy.y);
+      if (paintPokemonShadow(c, enemySprites.get(enemy.dexId) ?? null, p, bonkEnemySpriteScale(enemy, scale), pose, look.shadowLength, false, 0.65)) remaining--;
+    }
+    figures.push({ depth: p.depth, draw: () => drawBonkEnemy(enemy, p.x, p.y, scale) });
+  }
   if (playerPoint && playerGround) {
     const scale = clamp(playerPoint.scale * 0.92, 0.3, 3.2);
     // Quanto mais alto, menor e mais clara a sombra.
@@ -2102,30 +2201,8 @@ function drawBonkScene(s: SurvivorState, physics: BonkPhysics): void {
     }
   }
   if (!effectiveVisual.value.rotomMode) drawBonkPointers(c, s, physics, drawPoint, viewport);
-  const look = cinemaOn.value && !effectiveVisual.value.rotomMode
-    ? cinemaLook(cinemaPower({ progressMs: survivorProgressMs({ survivedMs: s.elapsedMs, fast: s.fast }), level: s.player.level, bossOnField: s.enemies.some((e) => e.boss || e.grade === 'chefao') }), renderScaleCap.value < 3)
-    : null;
-  if (look && playerPoint) {
+  if (cinema && playerPoint) {
     const screen = { x: 0, y: 0, w: viewport.width, h: viewport.height };
-    const lights = cinemaLights;
-    lights.length = 0;
-    for (const proj of s.projectiles) {
-      if (lights.length >= look.glows) break;
-      const p = drawPoint(proj, 14);
-      if (p) lights.push({ x: p.x, y: p.y, r: clamp((16 + (proj.size ?? 4) * 2.4) * p.scale, 6, 60), color: proj.move?.color ?? move.color, alpha: 0.6 * moveLight(proj.move?.type) });
-    }
-    for (const f of s.fx) {
-      if (lights.length >= look.glows) break;
-      if (f.kind !== 'blast' && f.kind !== 'pulse') continue;
-      const p = drawPoint(f, 10);
-      if (p) lights.push({ x: p.x, y: p.y, r: clamp(f.r * 1.5 * p.scale, 10, 150), color: f.color, alpha: 0.8 * moveLight(f.moveType) * flashAlpha(f.ageMs, f.lifeMs) });
-    }
-    for (const e of s.enemies) {
-      if (lights.length >= look.glows) break;
-      if (!e.boss && e.grade === 'comum') continue;
-      const p = drawPoint(e, 14);
-      if (p) lights.push({ x: p.x, y: p.y, r: clamp((e.boss || e.grade === 'chefao' ? 80 : 46) * p.scale, 12, 130), color: e.grade === 'elite' ? '#ffd84a' : '#ff3b2f', alpha: 0.32 });
-    }
     drawNight(c, look, lights, screen, animMs);
     drawLights(c, lights);
   }
@@ -2219,7 +2296,7 @@ function draw(): void {
   const s = toRaw(state.value);
   // Trocar o tamanho do canvas zera a transformação: ela é refeita a cada quadro.
   ctx.setTransform(renderScale.value, 0, 0, renderScale.value, 0, 0);
-  ctx.imageSmoothingEnabled = false;
+  ctx.imageSmoothingEnabled = effectiveVisual.value.renderProfile === 'cinema';
   const cine = cinemaFrame(cinemaCam, animMs);
   if (bonkRun.value && bonkPhysics.value) {
     drawBonkScene(s, bonkPhysics.value);
@@ -2346,12 +2423,13 @@ function draw(): void {
   for (const well of s.gravityWells ?? []) drawGravityWell(ctx, well.x, well.y, well.radius, well.ageMs / Math.max(1, well.lifeMs), animMs, detailed);
   for (const bubble of s.timeBubbles ?? []) drawTimeBubble(ctx, bubble.x, bubble.y, bubble.radius, bubble.ageMs / Math.max(1, bubble.lifeMs), animMs, detailed);
 
-  // Luz cinematográfica: só na visão de cima, e os limites caem sozinhos se o aparelho sofrer (`renderScaleCap`).
+  // Os limites caem sozinhos se o aparelho sofrer (`renderScaleCap`).
   const cinemaStrength = cinemaPower({ progressMs: survivorProgressMs({ survivedMs: s.elapsedMs, fast: s.fast }), level: s.player.level, bossOnField: s.enemies.some((e) => e.boss || e.grade === 'chefao') });
-  const cinema = cinemaOn.value && !effectiveVisual.value.rotomMode ? cinemaLook(cinemaStrength, renderScaleCap.value < 3) : null;
+  const look = cinemaLook(cinemaStrength, renderScaleCap.value < 3);
+  const cinema = cinemaOn.value && !effectiveVisual.value.rotomMode ? look : null;
+  cinemaLights.length = 0;
   if (cinema) {
     const lights = cinemaLights;
-    lights.length = 0;
     for (const f of s.fx) {
       if (!seenImpactFx.has(f)) {
         seenImpactFx.add(f);
@@ -2384,6 +2462,25 @@ function draw(): void {
       if (e.x < left || e.x > right || e.y < top || e.y > bottom) continue;
       lights.push({ x: e.x, y: e.y - 14, r: 90, color: '#ff3b2f', alpha: 0.4 });
     }
+  }
+  if (cinemaSpriteShadows.value) {
+    const aimAngle = s.player.aimAngle ?? (s.player.facing < 0 ? Math.PI : 0);
+    const direction = survivorSpriteDirectionFromAngle(aimAngle, s.player.facing);
+    paintPokemonShadow(ctx, playerSprite, s.player, 1, direction, look.shadowLength, s.player.facing < 0);
+    let remaining = look.shadows - 1;
+    for (const support of s.supports) {
+      if (remaining <= 0) break;
+      if (support.x < left || support.x > right || support.y < top || support.y > bottom) continue;
+      const pose = survivorSpriteDirection(s.player.x - support.x, s.player.y - support.y);
+      if (paintPokemonShadow(ctx, supportSprites.get(support.dexId) ?? null, support, 0.76, pose, look.shadowLength, s.player.facing < 0, 1, 0.84)) remaining--;
+    }
+    for (const e of s.enemies) {
+      if (remaining <= 0) break;
+      if (e.dexId === undefined || e.x < left || e.x > right || e.y < top || e.y > bottom) continue;
+      const pose = survivorSpriteDirection(s.player.x - e.x, s.player.y - e.y);
+      if (paintPokemonShadow(ctx, enemySprites.get(e.dexId) ?? null, e, enemySpriteScale(e), pose, look.shadowLength)) remaining--;
+    }
+  } else if (cinema && effectiveVisual.value.shadow) {
     cinemaCasters.length = 0;
     for (const e of s.enemies) {
       if (cinemaCasters.length >= cinema.shadows) break;
@@ -3000,7 +3097,17 @@ function updateMinimap(s: SurvivorState): void {
   // O minimapa é uma fotografia leve, atualizada algumas vezes por segundo; a arena continua no canvas a cada frame.
   if (animMs - lastMinimapMs < 120) return;
   lastMinimapMs = animMs;
-  minimap.value = survivorMinimapSnapshot(s, { width: ARENA_W, height: ARENA_H }, { width: view.w, height: view.h });
+  if (minimapEnabled.value) {
+    const snapshot = survivorMinimapSnapshot(s, { width: ARENA_W, height: ARENA_H }, { width: view.w, height: view.h });
+    const { x, y, width, height } = snapshot.bounds;
+    const physics = bonkRun.value ? bonkPhysics.value : null;
+    minimap.value = {
+      ...snapshot,
+      obstacles: physics?.obstacles.filter((obstacle) => obstacle.x < x + width && obstacle.x + obstacle.w > x
+        && obstacle.y < y + height && obstacle.y + obstacle.h > y) ?? [],
+      camera: physics ? { x: s.player.x, y: s.player.y, yaw: physics.cameraYaw } : null,
+    };
+  }
   objectives.value = survivorObjectives(s);
 }
 
@@ -3103,8 +3210,8 @@ function loop(ts: number): void {
     // Os números de dano só existem com os impactos ligados; sem eles nem se guarda a vida dos inimigos.
     const trackEnemyDamage = effectiveVisual.value.impactFx && !reducedMotion;
     if (trackEnemyDamage) snapshotEnemyHp(s.enemies);
-    const kx = (heldKeys.has('right') ? 1 : 0) - (heldKeys.has('left') ? 1 : 0);
-    const ky = (heldKeys.has('down') ? 1 : 0) - (heldKeys.has('up') ? 1 : 0);
+    const kx = Number(heldKeys.has('right') || gamepadKeys.has('right')) - Number(heldKeys.has('left') || gamepadKeys.has('left'));
+    const ky = Number(heldKeys.has('down') || gamepadKeys.has('down')) - Number(heldKeys.has('up') || gamepadKeys.has('up'));
     const dx = kx + (joystick.active ? joystick.dx : 0);
     const dy = ky + (joystick.active ? joystick.dy : 0);
     const beforePlayerPosition = { x: s.player.x, y: s.player.y };
@@ -3484,11 +3591,11 @@ function requestBack(): void {
   if (attackChoice.value) { attackChoice.value = null; return; }
   if (typeChoice.value) { typeChoice.value = null; return; }
   if (helpOpen.value) { helpOpen.value = false; return; }
-  if (hudExpanded.value) { hudExpanded.value = false; return; }
-  if (paused.value) { togglePause(); return; }
+  if (hudExpanded.value) { toggleHudMenu(); return; }
   if (summary.value) { playAgain(); return; }
   // Escolhas que alteram a corrida não podem ser descartadas pelo botão Voltar.
   if (pickOptions.value || noCompanion.value || pendingUpgrade.value || typeAffinityOffer.value || shadowCutsceneOpen.value || specialModalOpen.value) return;
+  if (paused.value) { togglePause(); return; }
   // Durante a corrida, Voltar abre a pausa; outro Voltar retoma.
   if (ready.value && state.value) togglePause();
 }
@@ -3656,6 +3763,7 @@ async function beginRun(dexId: number, name: string, picked?: PokemonType, infin
     guardianSprite.value = null;
     shadowBossSprite.value = null;
     specialQueued = false;
+    chargePointerId = null;
     chargeHeld.value = false;
     bonkJumpQueued = false;
     clearBonkTap();
@@ -3716,7 +3824,11 @@ const typeAffinityOffer = ref<PokemonType[] | null>(null);
 watch(
   [pickOptions, typeChoice, attackChoice, typeAffinityOffer, pendingUpgrade, paused, leaveConfirm, specialModalOpen],
   (next, previous) => {
-    if (next.some((value, index) => Boolean(value) && !previous[index])) focusFirstSurvivorAction();
+    if (next.some((value, index) => Boolean(value) && !previous[index])) {
+      gamepadKeys.clear();
+      if (gamepadCharging) cancelCharge();
+      focusFirstSurvivorAction();
+    }
   },
 );
 /** Marcou "Modo infinito" na tela de escolha (so vale se ja estiver destravado). */
@@ -3867,25 +3979,27 @@ onMounted(() => {
   }
   window.addEventListener('keydown', onKey);
   window.addEventListener('keyup', onKey);
+  window.addEventListener('blur', onBlur);
   window.addEventListener('tcg-gamepad-direction', onGamepadDirection);
   window.addEventListener('tcg-gamepad-action', onGamepadAction);
+  window.addEventListener('tcg-gamepad-button', onGamepadButton);
   window.addEventListener('tcg-gamepad-back', onGamepadBack);
   window.addEventListener('tcg-gamepad-menu', onGamepadMenu);
   void openPicker();
 });
+function onBlur(): void {
+  heldKeys.clear();
+  gamepadKeys.clear();
+  cancelCharge();
+  joyUp();
+  clearBonkTap();
+}
+
 /** Saiu do app (outra aba, tela apagada): ninguém fica andando sozinho com uma tecla "presa" ao voltar. */
 function onVisibility(): void {
   sound.setPaused(document.hidden);
   syncMusic();
-  if (document.hidden) {
-    heldKeys.clear();
-    cancelCharge();
-    joystick.active = false;
-    joystick.pointerId = null;
-    joystick.dx = 0;
-    joystick.dy = 0;
-    clearBonkTap();
-  }
+  if (document.hidden) onBlur();
 }
 document.addEventListener('visibilitychange', onVisibility);
 
@@ -3897,8 +4011,10 @@ onBeforeUnmount(() => {
   rafId = 0;
   window.removeEventListener('keydown', onKey);
   window.removeEventListener('keyup', onKey);
+  window.removeEventListener('blur', onBlur);
   window.removeEventListener('tcg-gamepad-direction', onGamepadDirection);
   window.removeEventListener('tcg-gamepad-action', onGamepadAction);
+  window.removeEventListener('tcg-gamepad-button', onGamepadButton);
   window.removeEventListener('tcg-gamepad-back', onGamepadBack);
   window.removeEventListener('tcg-gamepad-menu', onGamepadMenu);
   document.removeEventListener('visibilitychange', onVisibility);
@@ -4039,22 +4155,18 @@ onBeforeUnmount(() => {
           </section>
         </div>
 
-        <div v-if="ready && state && minimapEnabled" class="survivor-minimap" role="img" aria-label="Mapa próximo da arena; o ponto azul é você, pontos vermelhos são chefes, pontos amarelos são elites e estrelas são Pokébolas">
-          <span class="survivor-minimap-title">Perto</span>
-          <span v-if="!bonkRun" class="survivor-minimap-viewport" :style="{ left: `${minimapX(minimap.viewport.x)}%`, top: `${minimapY(minimap.viewport.y)}%`, width: `${(minimap.viewport.width / minimap.bounds.width) * 100}%`, height: `${(minimap.viewport.height / minimap.bounds.height) * 100}%` }"></span>
-          <template v-if="bonkRun && bonkPhysics">
-            <!-- No BONK o mapa mostra o que bloqueia de verdade e um cone para onde a câmera olha. -->
-            <span v-for="obstacle in bonkPhysics.obstacles" :key="obstacle.id" class="survivor-minimap-obstacle" :class="`kind-${obstacle.kind}`"
-              :style="{ left: `${minimapX(obstacle.x)}%`, top: `${minimapY(obstacle.y)}%`, width: `${(obstacle.w / minimap.bounds.width) * 100}%`, height: `${(obstacle.h / minimap.bounds.height) * 100}%` }"></span>
-            <span class="survivor-minimap-view" :style="{ left: `${minimapX(state.player.x)}%`, top: `${minimapY(state.player.y)}%`, transform: `rotate(${bonkPhysics.cameraYaw}rad)` }"></span>
-          </template>
-          <span
-            v-for="marker in minimap.markers"
-            :key="`${marker.kind}-${marker.id}`"
-            class="survivor-minimap-marker"
-            :class="`kind-${marker.kind}`"
-            :style="{ left: `${minimapX(marker.x)}%`, top: `${minimapY(marker.y)}%` }"
-          ></span>
+        <div v-if="ready && state && minimapEnabled" class="survivor-minimap" role="img" aria-label="Mapa local. Círculo azul: você. Quadrados vermelhos: chefes. Losangos amarelos: elites. Estrelas: Pokébolas">
+          <span class="survivor-minimap-title" aria-hidden="true">Mapa local</span>
+          <div class="survivor-minimap-plot" aria-hidden="true">
+            <span v-if="!bonkRun" class="survivor-minimap-viewport" :style="{ left: `${minimapX(minimap.viewport.x)}%`, top: `${minimapY(minimap.viewport.y)}%`, width: `${(minimap.viewport.width / minimap.bounds.width) * 100}%`, height: `${(minimap.viewport.height / minimap.bounds.height) * 100}%` }"></span>
+            <template v-if="minimap.camera">
+              <span v-for="obstacle in minimap.obstacles" :key="obstacle.id" class="survivor-minimap-obstacle" :class="`kind-${obstacle.kind}`"
+                :style="{ left: `${minimapX(obstacle.x)}%`, top: `${minimapY(obstacle.y)}%`, width: `${(obstacle.w / minimap.bounds.width) * 100}%`, height: `${(obstacle.h / minimap.bounds.height) * 100}%` }"></span>
+              <span class="survivor-minimap-view" :style="{ left: `${minimapX(minimap.camera.x)}%`, top: `${minimapY(minimap.camera.y)}%`, transform: `rotate(${minimap.camera.yaw}rad)` }"></span>
+            </template>
+            <span v-for="marker in minimap.markers" :key="`${marker.kind}-${marker.id}`" class="survivor-minimap-marker"
+              :class="`kind-${marker.kind}`" :style="{ left: `${minimapX(marker.x)}%`, top: `${minimapY(marker.y)}%` }"></span>
+          </div>
         </div>
 
         <div v-if="ready && state && !summary" class="survivor-danger-meter" role="progressbar" aria-valuemin="0" aria-valuemax="100" :aria-valuenow="Math.round(state.digitalDanger)" :aria-label="state.digitalDangerCooldownMs > 0 ? 'Perigo digital em recarga' : state.digitalDanger >= 60 ? 'Você está atraindo treinadores!' : 'Perigo digital'">
@@ -4065,24 +4177,31 @@ onBeforeUnmount(() => {
         <div v-if="ready && !summary && joystick.active" class="survivor-joy-base active" :style="{ left: `${joystick.lx}px`, top: `${joystick.ly}px` }" aria-hidden="true">
           <div class="survivor-joy-stick" :style="{ transform: `translate(${joystick.dx * JOY_MAX}px, ${joystick.dy * JOY_MAX}px)` }"></div>
         </div>
-        <div v-if="paused && !trainerPresentation && !typeAffinityOffer && !leaveConfirm" class="survivor-overlay" role="dialog" aria-label="Jogo pausado" aria-modal="true">
-          <div class="card survivor-pause">
-            <h2>Jogo pausado</h2>
+        <div v-if="paused && !trainerPresentation && !typeAffinityOffer && !leaveConfirm" class="survivor-overlay survivor-pause-overlay" role="dialog" aria-label="Jogo pausado" aria-modal="true">
+          <div class="card survivor-pause survivor-pause-panel">
+            <header class="survivor-pause-header">
+              <span class="survivor-pause-eyebrow">TORRE SURVIVOR</span>
+              <h2>Jogo pausado</h2>
+              <p>Respire e prepare sua próxima jogada.</p>
+            </header>
+            <button type="button" class="primary survivor-pause-resume" @pointerdown.stop @click.stop="togglePause">▶ Retomar partida <small class="gamepad-hint" aria-hidden="true">Start</small></button>
+            <div class="survivor-pause-content">
             <MusicControls v-model:enabled="survivorAudio.enabled" v-model:volume="survivorAudio.volume" v-model:attack-sounds="survivorAudio.attackSounds" :track="survivorMusicTitle(state?.elapsedMs ?? 0, state?.runSeed ?? 0)" :unavailable="musicUnavailable" regional @unlock="unlockMusic" />
             <p class="note">O relógio, os inimigos e os projéteis estão parados.</p>
             <details class="survivor-help" :open="helpOpen" @toggle="helpOpen = ($event.target as HTMLDetailsElement).open">
               <summary>Como jogar · controles</summary>
               <ul>
-                <li v-if="bonkRun"><b>Andar:</b> arraste para cima para avançar e para os lados para virar a câmera. Teclado: setas ou WASD.</li>
-                <li v-else><b>Andar:</b> arraste em qualquer lugar da tela. Teclado: setas ou WASD. Controle: analógico.</li>
+                <li v-if="bonkRun"><b>Andar:</b> arraste para cima para avançar e para os lados para virar a câmera. Teclado: setas ou WASD. Controle: direcional ou analógico.</li>
+                <li v-else><b>Andar:</b> arraste em qualquer lugar da tela. Teclado: setas ou WASD. Controle: direcional ou analógico.</li>
                 <li><b>Atacar:</b> automático, em quem chegar perto.</li>
-                <li v-if="bonkRun"><b>Pular:</b> botão PULAR, toque duplo na tela, Q ou Espaço. Dá para pular de novo no ar enquanto sobrar bolinha no botão.</li>
-                <li><b>Especial:</b> botão do canto ou tecla E. Libera aos 3 minutos e recarrega sozinho.</li>
-                <li><b>Golpe Supremo:</b> o medidor enche com abates e dano. Cheio, toque em SUPREMO ou na tecla F: cada tipo tem o seu.</li>
+                <li v-if="bonkRun"><b>Pular:</b> botão PULAR, toque duplo na tela, Q, Espaço ou X no controle. Dá para pular de novo no ar enquanto sobrar bolinha no botão.</li>
+                <li><b>Especial:</b> botão do canto, tecla E ou A no controle. Libera aos 3 minutos e recarrega sozinho.</li>
+                <li><b>Golpe Supremo:</b> o medidor enche com abates e dano. Quando encher, toque em SUPREMO, pressione F ou use Y no controle.</li>
                 <li v-if="chargeStyle === 'foco'"><b>Foco:</b> segure o botão ◎ (ou R) para carregar, devagar e andando mais lento; solte para um feixe que atravessa todos. Cheio, vira um canhão que cruza a arena.</li>
                 <li v-if="state?.player.move.category === 'rapido'"><b>Rajada:</b> dispara três tiros rápidos e faz uma breve pausa antes da próxima onda.</li>
                 <li v-if="chargeStyle === 'teleporte'"><b>Teleporte:</b> segure » (ou R) e solte. A carga máxima dá mais proteção e empurra inimigos com uma onda.</li>
-                <li><b>Pausar:</b> botão ⏸ ou Start no controle. O botão ? abre esta ajuda.</li>
+                <li v-if="chargeStyle"><b>Carregar no controle:</b> segure RT e solte para usar.</li>
+                <li><b>Pausar:</b> botão ⏸, Start ou B no controle. O botão ? abre esta ajuda.</li>
               </ul>
             </details>
             <section class="survivor-button-prefs" aria-label="Botões Pular e Especial">
@@ -4095,9 +4214,11 @@ onBeforeUnmount(() => {
               </div>
               <small>Empilhados deixa os dois mais perto da borda; Trocados põe o Pular no canto e o Especial ao lado.</small>
             </section>
-            <button type="button" class="primary" @pointerdown.stop @click.stop="togglePause">▶ Retomar</button>
+            </div>
+            <div class="survivor-pause-actions">
             <button type="button" class="link survivor-back" @pointerdown.stop @click.stop="requestBack">← Voltar</button>
             <button type="button" class="link survivor-exit" @pointerdown.stop @click.stop="requestLeave">Sair da Torre</button>
+            </div>
           </div>
         </div>
 
@@ -4329,6 +4450,7 @@ onBeforeUnmount(() => {
           @pointerdown.stop.prevent="queueBonkJump">
           <svg class="jump-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5 20 12h-5v7.5H9V12H4z" /></svg>
           <strong>PULAR</strong>
+          <small class="gamepad-hint" aria-hidden="true">{{ chosenSpecial ? 'X' : 'A / X' }}</small>
           <span class="jump-pips" aria-hidden="true"><i v-for="(available, index) in bonkJumpPips" :key="index" :class="{ on: available }"></i></span>
         </button>
 
@@ -4341,10 +4463,11 @@ onBeforeUnmount(() => {
           type="button" class="survivor-charge-button" :class="{ 'is-held': chargeHeld, 'is-full': state.charge.level >= 1 || (chargeStyle === 'teleporte' && state.charge.teleportHoldMs >= 1200), 'is-rush': chargeStyle === 'teleporte' && state.charge.teleportHoldMs >= 1200 }"
           :style="{ '--special-color': state.player.move.color, '--charge': `${chargeMeter * 100}%` }"
           :aria-label="chargeStyle === 'foco' ? `Foco: segure para carregar, solte para disparar; carga ${Math.floor(state.charge.level * 100)}%; tecla R` : chargeStyle === 'trilha' ? `Trilha: ande para carregar; ${chargeLabel}; toque para desenhar` : `Teleporte: segure para carregar e solte para usar; ${chargeLabel}; tecla R`"
-          @pointerdown.stop.prevent="pressCharge" @pointerup.stop.prevent="releaseCharge" @pointercancel="cancelCharge" @lostpointercapture="lostChargeCapture">
+          @pointerdown.stop.prevent="pressCharge" @pointerup.stop.prevent="releaseCharge" @pointercancel="cancelChargePointer" @lostpointercapture="cancelChargePointer">
           <span class="special-icon" aria-hidden="true">{{ chargeStyle === 'foco' ? '◎' : chargeStyle === 'trilha' ? '〰' : '»' }}</span>
           <strong>{{ chargeLabel }}</strong>
           <small>{{ chargeStyle === 'foco' ? 'Foco' : chargeStyle === 'trilha' ? 'Trilha' : 'Teleporte' }}</small>
+          <small class="gamepad-hint" aria-hidden="true">RT</small>
         </button>
 
         <button v-if="ready && state && !summary && !pickOptions && !pendingUpgrade && !evolving && !leaveConfirm && !specialModalOpen"
@@ -4355,6 +4478,7 @@ onBeforeUnmount(() => {
           @pointerdown.stop.prevent="queueSupreme">
           <span class="sv-supreme-fill" aria-hidden="true"></span>
           <strong>{{ state.supreme.meter >= 1 ? `⚡ ${supremeDef?.name}` : `SUPREMO ${Math.floor(state.supreme.meter * 100)}%` }}</strong>
+          <small class="gamepad-hint survivor-supreme-hint" aria-hidden="true">Y</small>
         </button>
 
         <button v-if="ready && state && !summary && !pickOptions && !pendingUpgrade && !evolving && !leaveConfirm && !specialModalOpen"
@@ -4366,6 +4490,7 @@ onBeforeUnmount(() => {
           <span class="special-icon" aria-hidden="true">{{ chosenSpecial?.icon ?? '🔒' }}</span>
           <strong>{{ !chosenSpecial ? '3:00' : state.special.activeMs > 0 ? 'ATIVO' : state.special.cooldownMs > 0 ? `${Math.ceil(state.special.cooldownMs / 1000)}s` : 'PRONTO' }}</strong>
           <small>{{ state.player.move.icon }} Especial</small>
+          <small v-if="chosenSpecial" class="gamepad-hint" aria-hidden="true">A</small>
         </button>
 
         <div v-if="ready && state && shadowCutsceneOpen && !leaveConfirm" class="survivor-overlay survivor-shadow-cutscene" :class="{ 'reduced-motion': !detailedSpecialEffects }" role="dialog" aria-modal="true" aria-label="Chegada de lendário sombrio" @pointerdown.stop>
@@ -4594,6 +4719,14 @@ onBeforeUnmount(() => {
 }
 .sv-supreme:disabled { cursor: default; }
 .sv-supreme strong { position: relative; display: block; font-size: 11px; line-height: 1.1; letter-spacing: .03em; white-space: nowrap; text-overflow: ellipsis; overflow: hidden; text-shadow: 0 1px 2px #000; }
+.survivor-supreme-hint { position: relative; }
+.survivor-jump-button .gamepad-hint,
+.survivor-charge-button .gamepad-hint,
+.survivor-special-button .gamepad-hint {
+  position: absolute;
+  inset: 0 -2px auto auto;
+  pointer-events: none;
+}
 .sv-supreme-fill { position: absolute; inset: 0 auto 0 0; width: var(--supreme); background: var(--special-color); opacity: .75; }
 .sv-supreme.is-ready { border-color: #fff; cursor: pointer; box-shadow: 0 0 0 3px var(--special-color); animation: sv-supreme-pulse .7s ease-in-out infinite alternate; }
 .sv-supreme.is-ready.calm { animation: none; }

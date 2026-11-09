@@ -73,6 +73,59 @@ describe('arena do PvP do Survival: montagem das duas telas', () => {
     expect(el.querySelector('[role="dialog"]')).toBeNull();
   });
 
+  it('move com o controle, para ao soltar e pula aliados desmaiados na troca', async () => {
+    vi.useFakeTimers();
+    const host = new SurvivalHostLink({ send: () => true }, [mon('a', 'Pikachu'), mon('b', 'Raichu'), mon('c', 'Pichu')], [mon('x', 'Eevee')]);
+    const step = vi.spyOn(host, 'step');
+    mount(host);
+    await vi.advanceTimersByTimeAsync(4000);
+    const sendDirection = (pressed: boolean) => window.dispatchEvent(new CustomEvent('tcg-gamepad-direction', {
+      detail: { handled: false, direction: 'right', pressed },
+    }));
+    sendDirection(true);
+    await vi.advanceTimersByTimeAsync(100);
+    expect(step.mock.lastCall?.[1]).toMatchObject({ dx: 1, dy: 0 });
+    sendDirection(false);
+    await vi.advanceTimersByTimeAsync(100);
+    expect(step.mock.lastCall?.[1]).toMatchObject({ dx: 0, dy: 0 });
+
+    host.state.sides[0].mons[1]!.hp = 0;
+    const detail = { handled: false, button: 5, pressed: true };
+    window.dispatchEvent(new CustomEvent('tcg-gamepad-button', { detail }));
+    expect(detail.handled).toBe(true);
+    await vi.advanceTimersByTimeAsync(3300);
+    expect(host.state.sides[0].active).toBe(2);
+  });
+
+  it('mantém o joystick ao usar escudo e esquiva com outro dedo', async () => {
+    vi.useFakeTimers();
+    const host = new SurvivalHostLink({ send: () => true }, [mon('a', 'Pikachu')], [mon('x', 'Eevee')]);
+    const el = mount(host);
+    const arena = el.querySelector('.svp-arena')!;
+    const shield = el.querySelector('.svp-guard:not(.svp-dodge)')!;
+    const dodge = el.querySelector('.svp-dodge')!;
+    const touch = (target: Element, type: string, pointerId: number, clientX = 0) => {
+      target.dispatchEvent(new PointerEvent(type, { bubbles: true, pointerId, pointerType: 'touch', isPrimary: pointerId === 1, button: 0, clientX }));
+    };
+
+    await vi.advanceTimersByTimeAsync(4000);
+    touch(arena, 'pointerdown', 1);
+    touch(arena, 'pointermove', 1, 350);
+    touch(shield, 'pointerdown', 2);
+    await vi.advanceTimersByTimeAsync(50);
+    expect(host.state.sides[0].guardMs).toBeGreaterThan(0);
+    touch(shield, 'pointerup', 2);
+
+    touch(dodge, 'pointerdown', 3);
+    await vi.advanceTimersByTimeAsync(50);
+    expect(host.state.sides[0].dodgeVx).toBeGreaterThan(0);
+    expect(host.state.sides[0].dodgeVy).toBe(0);
+    expect(el.querySelector('.svp-joy')).not.toBeNull();
+    touch(arena, 'lostpointercapture', 1);
+    await nextTick();
+    expect(el.querySelector('.svp-joy')).toBeNull();
+  });
+
   it('o convidado desenha o que o anfitrião manda, com o próprio Pokémon embaixo', async () => {
     vi.useFakeTimers();
     const hostTeam = [mon('a', 'Pikachu')];
@@ -99,6 +152,15 @@ describe('arena do PvP do Survival: montagem das duas telas', () => {
     const el = mount(host, true);
     await nextTick();
     expect(el.querySelector('[role="dialog"]')?.textContent).toContain('O amigo saiu');
+    for (const [name, input] of [
+      ['tcg-gamepad-direction', { direction: 'right', pressed: true }],
+      ['tcg-gamepad-action', {}],
+      ['tcg-gamepad-button', { button: 2, pressed: true }],
+    ] as const) {
+      const detail = { handled: false, ...input };
+      window.dispatchEvent(new CustomEvent(name, { detail }));
+      expect(detail.handled).toBe(false);
+    }
   });
 });
 

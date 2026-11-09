@@ -271,20 +271,21 @@ describe('CardSprite: animação do GIF', () => {
     expect(sprite.uploads).toBe(2);
   });
 
-  it('preserva a transparência (alpha 0 no GIF vira alpha 0 na textura) e usa alphaTest', () => {
+  it('o padrão nítido preserva a transparência e usa vizinho mais próximo', () => {
     const data = encodeGif(2, 1, PALETTE, [{ left: 0, top: 0, width: 2, height: 1, indices: [0, 1], delayCs: 10, disposal: 1, transparentIndex: 0 }]);
     const sprite = new CardSprite();
-    sprite.setLayout({ ...DEFAULT_LAYOUT, smoothing: 'nitido' });
     sprite.setAnimation(decodeGif(data));
     const pixels = pixelsOf(sprite);
+    expect(sprite.mesh.material.map!.magFilter).toBe(NearestFilter);
     expect(pixels[3]).toBe(0);
     expect(pixels[7]).toBe(255);
     expect(sprite.mesh.material.alphaTest).toBeGreaterThan(0);
   });
 
-  it('suavizado (padrão): textura ampliada ×4 com filtro bilinear; a transparência continua', () => {
+  it('bordas suaves: textura ampliada ×4 com filtro bilinear; a transparência continua', () => {
     const data = encodeGif(2, 1, PALETTE, [{ left: 0, top: 0, width: 2, height: 1, indices: [0, 1], delayCs: 10, disposal: 1, transparentIndex: 0 }]);
     const sprite = new CardSprite();
+    sprite.setLayout({ ...DEFAULT_LAYOUT, smoothing: 'bordas' });
     sprite.setAnimation(decodeGif(data));
     const texture = sprite.mesh.material.map!;
     expect((texture.image as { width: number }).width).toBe(8);
@@ -298,6 +299,7 @@ describe('CardSprite: animação do GIF', () => {
 
   it('ligar e desligar a suavização refaz a textura sem reiniciar a animação', () => {
     const sprite = new CardSprite();
+    sprite.setLayout({ ...DEFAULT_LAYOUT, smoothing: 'bordas' });
     sprite.setAnimation(threeFrameGif(), 0);
     sprite.update(150);
     expect((sprite.mesh.material.map!.image as { width: number }).width).toBe(8);
@@ -517,6 +519,32 @@ describe('CardSprite: inclinação e sombra no chão', () => {
     expect(sprite.glow.visible).toBe(false);
     sprite.setLayout({ ...DEFAULT_LAYOUT, showShadow: true });
     expect(sprite.shadow.visible).toBe(true);
+  });
+
+  it('sombra cinematográfica acompanha a textura, seus ciclos e as preferências', () => {
+    const sprite = new CardSprite();
+    sprite.setLayout({ ...DEFAULT_LAYOUT, cinematicShadow: true });
+    sprite.setStatic(makePlaceholder(8));
+    const first = sprite.mesh.material.map!;
+    expect(sprite.silhouetteShadow.visible).toBe(true);
+    expect(sprite.shadow.visible).toBe(false);
+    expect(sprite.silhouetteShadow.material.uniforms.sprite!.value).toBe(first);
+    sprite.setStatic(makePlaceholder(16));
+    expect(sprite.silhouetteShadow.material.uniforms.sprite!.value).toBe(sprite.mesh.material.map);
+    expect(sprite.mesh.material.map).not.toBe(first);
+    sprite.setLayout({ ...DEFAULT_LAYOUT, cinematicShadow: true, showShadow: false });
+    expect(sprite.silhouetteShadow.visible).toBe(false);
+    expect(sprite.shadow.visible).toBe(false);
+    sprite.setLayout(DEFAULT_LAYOUT);
+    expect(sprite.shadow.visible).toBe(true);
+    expect(sprite.silhouetteShadow.visible).toBe(false);
+    sprite.clear();
+    expect(sprite.silhouetteShadow.material.uniforms.sprite!.value).toBeNull();
+    sprite.setPlaceholder();
+    sprite.setLayout({ ...DEFAULT_LAYOUT, cinematicShadow: true });
+    expect(sprite.shadow.visible).toBe(true);
+    expect(sprite.silhouetteShadow.visible).toBe(false);
+    sprite.dispose();
   });
 
   it('clear() esconde a sombra junto com o sprite', () => {

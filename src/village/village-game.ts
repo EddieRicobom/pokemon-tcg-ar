@@ -70,6 +70,7 @@ import { HD2D_GROUND_TILT, hd2dDepthStyle, hd2dFrameRate, hd2dGroundProjection, 
 import type { Hd2dBounds } from '../core/village/hd2d';
 import { hd2dDepthBand, hd2dPerspectiveBounds, hd2dPerspectiveScale } from '../core/village/hd2d';
 import { DepthSpriteCache } from './depth-sprite-cache';
+import { PokemonShadowCache } from './pokemon-shadow-cache';
 
 /**
  * O jogo da Vila no navegador: canvas 2D em escala inteira (pixels nítidos), câmera que segue você, profundidade por
@@ -95,6 +96,7 @@ export class VillageGame {
   private trainerAtlas: TrainerAtlas | null = null;
   private readonly sprites = new Map<string, HTMLCanvasElement>();
   private readonly depthSprites = new DepthSpriteCache();
+  private readonly pokemonShadows = new PokemonShadowCache();
   private readonly mountainTiles = new Map<string, HTMLCanvasElement>();
   /** O chão foi montado sem o mato alto e as flores, que balançam ao vento por cima (opção «Mato alto e flores»). */
   private groundWind = false;
@@ -219,6 +221,8 @@ export class VillageGame {
   windFx: () => boolean = () => true;
   /** Profundidade de campo por objeto, no estilo 2D-HD; o Modo Rotom a suspende. */
   hd2d: () => boolean = () => false;
+  smoothSprites: () => boolean = () => false;
+  castShadows: () => boolean = () => false;
   maxFps: () => number = () => 0;
   private readonly reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)');
   weatherMode: () => WeatherMode = () => 'ciclo';
@@ -1492,7 +1496,9 @@ export class VillageGame {
     const W = canvas.width;
     const H = canvas.height;
     const scale = this.scale;
-    ctx.imageSmoothingEnabled = false;
+    const cinema = !this.diorama && this.smoothSprites();
+    ctx.imageSmoothingEnabled = cinema;
+    const castShadows = cinema && this.castShadows();
     const pp = drawPos(this.player);
     // A Vila 2D-HD continua sendo um canvas: o chão é comprimido no eixo y,
     // enquanto os objetos apoiados nele permanecem em pé. Isso cria a leitura
@@ -2185,12 +2191,23 @@ export class VillageGame {
             h: (sprite.bounds.bottom - sprite.bounds.top) * fullH,
             target: { x: w.x, y: w.y, id },
           });
-          shadow(cx, sy(pos.y + 1) - 2 * scale, (5 - hop / (2 * scale) * 0.3) * scale, 2 * scale, 0.22);
+          const groundY = sy(pos.y + 1) - 2 * scale;
+          const mirrored = !dirSet && w.dir === 'right';
+          if (castShadows) {
+            const perspective = hd2d ? hd2dPerspectiveScale(base, H) : 1;
+            this.pokemonShadows.draw(ctx, frame, {
+              x: (Math.round(frameLeft) - cx) * perspective,
+              y: (Math.round(frameTop) - base) * perspective,
+              w: Math.round(fullW) * perspective,
+              h: Math.round(fullH) * perspective,
+            }, cx, groundY, mirrored, groundTilt, 0.44 * shadowStrength);
+          }
+          shadow(cx, groundY, (5 - hop / (2 * scale) * 0.3) * scale, 2 * scale, 0.22);
           drawDioramaTilted(cx, base, Math.max(fullW, wpx), () => {
             ctx.save();
             // Os sprites do Showdown olham para a esquerda: andando para a direita, espelha. Quem já tem a pose
             // direita de verdade (sprite local) não precisa desse truque.
-            if (!dirSet && w.dir === 'right') {
+            if (mirrored) {
               ctx.translate(cx, 0);
               ctx.scale(-1, 1);
               ctx.translate(-cx, 0);

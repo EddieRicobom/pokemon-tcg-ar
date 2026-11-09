@@ -79,7 +79,7 @@ function select(cell: { x: number; y: number; item?: string }): void {
 .home-map-header { display: flex; align-items: center; justify-content: space-between; gap: .6rem; flex-wrap: wrap; }
 .home-map-residents { display: flex; gap: .6rem; flex-wrap: wrap; }
 .home-resident { display: inline-flex; align-items: center; gap: .3rem; font-size: .84rem; }
-.home-resident img { object-fit: contain; image-rendering: pixelated; }
+.home-resident img { object-fit: contain; image-rendering: var(--game-image-rendering, pixelated); }
 .home-edit-toggle { min-height: 44px; padding: .5rem .75rem; font: inherit; font-size: .8rem; }
 .home-room-scene { --wall: #f3e5bf; --wall-detail: #d4c395; --floor: #c89b6b; --grain: #9e754b; padding: 0 8px; border: 4px solid #72513e; border-radius: 5px; background: #8c684f; box-shadow: 0 4px 0 #4e392e; }
 .home-back-wall { height: clamp(58px, 12vw, 96px); display: flex; justify-content: space-around; align-items: center; background-color: var(--wall); background-image: repeating-linear-gradient(90deg, transparent 0 22px, var(--wall-detail) 22px 23px); border-bottom: 8px solid #9d754f; box-shadow: inset 0 5px 0 #fff7dd; }
@@ -88,7 +88,7 @@ function select(cell: { x: number; y: number; item?: string }): void {
 .home-room-floor { display: grid; grid-template-columns: repeat(var(--home-cols), minmax(0, 1fr)); grid-template-rows: repeat(5, minmax(0, 1fr)); aspect-ratio: 7 / 5; background-color: var(--floor); background-image: repeating-linear-gradient(0deg, transparent 0 calc(20% - 1px), var(--grain) calc(20% - 1px) 20%), repeating-linear-gradient(90deg, transparent 0 calc(14.285% - 1px), #b2875a calc(14.285% - 1px) 14.285%); box-shadow: inset 0 5px 0 #694c3428; }
 .home-floor-tile { position: relative; display: grid; min-width: 0; min-height: 0; }
 .home-furniture, .home-empty { width: 100%; height: 100%; min-width: 0; min-height: 0; padding: 0; border: 0; border-radius: 3px; background: transparent; box-shadow: none; display: grid; place-items: center; cursor: pointer; touch-action: manipulation; }
-.home-furniture img { width: 96%; height: 96%; max-height: 82px; object-fit: contain; image-rendering: pixelated; }
+.home-furniture img { width: 96%; height: 96%; max-height: 82px; object-fit: contain; image-rendering: var(--game-image-rendering, pixelated); }
 .home-furniture:hover, .home-furniture:focus-visible, .home-empty:hover { background: #fff1c855; outline: 2px solid #624b35; outline-offset: -2px; transform: none; }
 .home-furniture-caption { position: absolute; left: 50%; bottom: 100%; z-index: 2; width: max-content; max-width: 150px; padding: .25rem .4rem; border-radius: .25rem; background: #fff5dc; color: #3e352a; font-size: .68rem; font-weight: 700; pointer-events: none; opacity: 0; transform: translateX(-50%); }
 .home-furniture:focus-visible .home-furniture-caption, .home-furniture:hover .home-furniture-caption { opacity: 1; }

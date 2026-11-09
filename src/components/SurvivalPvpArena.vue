@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref, shallowRef } from 'vue';
 import AttackIcon from './AttackIcon.vue';
 import { pokemonSpriteUrl } from '../ar/sprite-url';
+import type { GamepadDirection } from '../app/gamepad';
 import { vibrate } from '../app/haptics';
 import { effectiveVisual, maxVisualFps, visual } from '../app/visual-settings';
 import { isFrameDue } from '../core/frame-rate';
@@ -190,6 +191,7 @@ const reduceMotion = typeof matchMedia === 'function' && matchMedia('(prefers-re
 const fxOn = (): boolean => effectiveVisual.value.impactFx && !reduceMotion;
 /** Sem os efeitos: a abertura, o cut-in e a pose ficam parados (ou nem entram), como pede o Modo Rotom e o sistema. */
 const lite = computed(() => !fxOn());
+const cinemaShadow = computed(() => effectiveVisual.value.renderProfile === 'cinema' && effectiveVisual.value.shadow);
 const director = new ArenaDirector();
 const stageEl = ref<HTMLElement | null>(null);
 const cutIn = shallowRef<{ id: number; name: string; move: string; dexId: number; shiny: boolean; color: string; mine: boolean } | null>(null);
@@ -362,6 +364,7 @@ let joyId: number | null = null;
 let joyVx = 0;
 let joyVy = 0;
 const keys = { up: false, down: false, left: false, right: false };
+const gamepadKeys = new Set<GamepadDirection>();
 let queuedSwitch = -1;
 let queuedGuard = false;
 let queuedAttack = false;
@@ -467,7 +470,11 @@ function requestSpecial(): void {
   queuedSpecial = true;
 }
 
-/** Esquiva e Especial valem no toque, sem esperar o clique; `detail` 0 é o Enter ou espaço do teclado. */
+function pressAction(event: PointerEvent, action: () => void): void {
+  if (event.button === 0) action();
+}
+
+/** O toque já foi tratado no pointerdown. O clique sem ponteiro atende teclado e tecnologias assistivas. */
 function keyClick(event: MouseEvent, action: () => void): void {
   if (event.detail === 0) action();
 }
@@ -480,8 +487,8 @@ function addFx(kind: Fx['kind'], mine: boolean, color: string, style: Record<str
 }
 
 function inputVector(): { dx: number; dy: number } {
-  const dx = (keys.right ? 1 : 0) - (keys.left ? 1 : 0) + joyVx;
-  const dy = (keys.down ? 1 : 0) - (keys.up ? 1 : 0) + joyVy;
+  const dx = Number(keys.right || gamepadKeys.has('right')) - Number(keys.left || gamepadKeys.has('left')) + joyVx;
+  const dy = Number(keys.down || gamepadKeys.has('down')) - Number(keys.up || gamepadKeys.has('up')) + joyVy;
   const len = Math.hypot(dx, dy);
   return len > 1 ? { dx: dx / len, dy: dy / len } : { dx, dy };
 }
@@ -1200,11 +1207,11 @@ function frame(ts: number): void {
 }
 
 function joyDown(e: PointerEvent): void {
+  if (e.button !== 0 || joyId !== null || !arenaEl.value) return;
   wake();
-  if (e.button > 0 || joyId !== null || !arenaEl.value) return;
   const r = arenaEl.value.getBoundingClientRect();
   joyId = e.pointerId;
-  arenaEl.value.setPointerCapture(e.pointerId);
+  arenaEl.value.setPointerCapture?.(e.pointerId);
   joy.active = true;
   joy.ox = e.clientX - r.left;
   joy.oy = e.clientY - r.top;
@@ -1215,23 +1222,19 @@ function joyDown(e: PointerEvent): void {
 function joyMove(e: PointerEvent): void {
   if (e.pointerId !== joyId || !arenaEl.value) return;
   const r = arenaEl.value.getBoundingClientRect();
-  let dx = e.clientX - r.left - joy.ox;
-  let dy = e.clientY - r.top - joy.oy;
+  const dx = e.clientX - r.left - joy.ox;
+  const dy = e.clientY - r.top - joy.oy;
   const len = Math.hypot(dx, dy);
-  if (len > JOY_RADIUS) {
-    dx = (dx / len) * JOY_RADIUS;
-    dy = (dy / len) * JOY_RADIUS;
-  }
-  joy.kx = dx;
-  joy.ky = dy;
+  const scale = Math.max(JOY_RADIUS, len);
+  joy.kx = (dx / scale) * JOY_RADIUS;
+  joy.ky = (dy / scale) * JOY_RADIUS;
   // Uma pequena zona morta evita andar por tremida do dedo.
-  const mag = Math.min(1, len / JOY_RADIUS);
-  joyVx = mag < 0.12 ? 0 : (dx / (len || 1)) * mag;
-  joyVy = mag < 0.12 ? 0 : (dy / (len || 1)) * mag;
+  joyVx = len < JOY_RADIUS * 0.12 ? 0 : dx / scale;
+  joyVy = len < JOY_RADIUS * 0.12 ? 0 : dy / scale;
 }
 
-function joyUp(e: PointerEvent): void {
-  if (e.pointerId !== joyId) return;
+function joyUp(e?: PointerEvent): void {
+  if (e && e.pointerId !== joyId) return;
   joyId = null;
   joy.active = false;
   joyVx = 0;
@@ -1243,6 +1246,7 @@ const KEY_DIR: Record<string, keyof typeof keys> = {
 };
 
 function onKey(e: KeyboardEvent): void {
+  if (e.defaultPrevented || result.value || props.friendLeft) return;
   const dir = KEY_DIR[e.key];
   const down = e.type === 'keydown';
   if (dir) {
@@ -1254,19 +1258,63 @@ function onKey(e: KeyboardEvent): void {
   if (down && !e.repeat && (e.key === 'q' || e.key === 'Q')) requestAttackSwap();
   if (down && !e.repeat && (e.key === 'f' || e.key === 'F' || e.key === 'Shift')) requestDodge();
   if (down && !e.repeat && (e.key === 'r' || e.key === 'R')) requestSpecial();
-  if (down && !e.repeat && (e.key === ' ' || e.key === 'e' || e.key === 'E')) {
+  if (down && !e.repeat && (e.key === 'e' || e.key === 'E' || (e.key === ' ' && !(document.activeElement instanceof HTMLButtonElement)))) {
     e.preventDefault();
     requestGuard();
   }
 }
 
+function canUseGamepadInArena(): boolean {
+  return state.winner === null && !result.value && !props.friendLeft;
+}
+
+function onGamepadDirection(event: Event): void {
+  const detail = (event as CustomEvent<{ handled: boolean; direction: GamepadDirection; pressed?: boolean }>).detail;
+  if (detail.pressed === false) gamepadKeys.delete(detail.direction);
+  if (detail.handled || detail.pressed === undefined || !canUseGamepadInArena()) return;
+  if (detail.pressed) gamepadKeys.add(detail.direction);
+  detail.handled = true;
+}
+
+function onGamepadAction(event: Event): void {
+  const detail = (event as CustomEvent<{ handled: boolean }>).detail;
+  if (detail.handled || !canUseGamepadInArena()) return;
+  detail.handled = true;
+  requestSpecial();
+}
+
+function cyclePokemon(direction: -1 | 1): void {
+  const { active, mons } = state.sides[mySide];
+  for (let offset = 1; offset < mons.length; offset++) {
+    const index = (active + direction * offset + mons.length) % mons.length;
+    if ((mons[index]?.hp ?? 0) > 0) {
+      requestSwitch(index);
+      return;
+    }
+  }
+}
+
+function onGamepadButton(event: Event): void {
+  const detail = (event as CustomEvent<{ handled: boolean; button: number; pressed: boolean }>).detail;
+  if (detail.handled || !detail.pressed || !canUseGamepadInArena()) return;
+  if (detail.button === 2) requestDodge();
+  else if (detail.button === 3) requestAttackSwap();
+  else if (detail.button === 4) cyclePokemon(-1);
+  else if (detail.button === 5) cyclePokemon(1);
+  else if (detail.button === 6) requestGuard();
+  else return;
+  detail.handled = true;
+}
+
+function onGamepadMenu(): void {
+  gamepadKeys.clear();
+}
+
 function onBlur(): void {
   keys.up = keys.down = keys.left = keys.right = false;
+  gamepadKeys.clear();
   // Sem isto, um dedo que estava arrastando quando o app perdeu o foco continuaria andando sozinho.
-  joyId = null;
-  joy.active = false;
-  joyVx = 0;
-  joyVy = 0;
+  joyUp();
 }
 
 const unitStyle = (u: Unit): Record<string, string> => ({ left: `${u.x}%`, top: `${u.y}%`, '--kx': u.kx, '--ky': u.ky, '--sw': String(u.sw) });
@@ -1275,6 +1323,10 @@ onMounted(() => {
   window.addEventListener('keydown', onKey);
   window.addEventListener('keyup', onKey);
   window.addEventListener('blur', onBlur);
+  window.addEventListener('tcg-gamepad-direction', onGamepadDirection);
+  window.addEventListener('tcg-gamepad-action', onGamepadAction);
+  window.addEventListener('tcg-gamepad-button', onGamepadButton);
+  window.addEventListener('tcg-gamepad-menu', onGamepadMenu);
   buildScene(performance.now());
   buildHud();
   raf = requestAnimationFrame(frame);
@@ -1285,6 +1337,10 @@ onBeforeUnmount(() => {
   window.removeEventListener('keydown', onKey);
   window.removeEventListener('keyup', onKey);
   window.removeEventListener('blur', onBlur);
+  window.removeEventListener('tcg-gamepad-direction', onGamepadDirection);
+  window.removeEventListener('tcg-gamepad-action', onGamepadAction);
+  window.removeEventListener('tcg-gamepad-button', onGamepadButton);
+  window.removeEventListener('tcg-gamepad-menu', onGamepadMenu);
   if (resultTimer) clearTimeout(resultTimer);
   if (hurtTimer) clearTimeout(hurtTimer);
   if (shakeTimer) clearTimeout(shakeTimer);
@@ -1318,11 +1374,13 @@ onBeforeUnmount(() => {
       @pointermove="joyMove"
       @pointerup="joyUp"
       @pointercancel="joyUp"
+      @lostpointercapture="joyUp"
     >
       <div ref="stageEl" class="svp-stage">
       <div class="svp-floor" :style="floorStyle" aria-hidden="true"></div>
       <div v-for="u in units" :key="u.key" class="svp-unit" :class="{ mine: u.mine, shield: u.shield, guard: u.guard, hit: u.hit, swap: !!u.swap, down: u.down, low: u.low, 'face-right': u.faceRight, dodge: u.dodge, ready: u.ready }" :style="unitStyle(u)">
-        <span class="svp-shadow" aria-hidden="true"></span>
+        <img v-if="cinemaShadow && !broken.includes(u.dexId)" class="svp-shadow svp-shadow-sprite" :src="pokemonSpriteUrl(u.dexId, u.shiny)" alt="" draggable="false" aria-hidden="true" />
+        <span v-else class="svp-shadow svp-shadow-fallback" aria-hidden="true"></span>
         <span class="svp-bubble" aria-hidden="true"></span>
         <span class="svp-ring"></span>
         <span v-if="u.status" class="svp-status" aria-hidden="true">{{ u.status }}</span>
@@ -1388,11 +1446,12 @@ onBeforeUnmount(() => {
         class="svp-guard"
         :class="{ on: hud.guardOn, wait: hud.guardPct > 0 && !hud.guardOn }"
         :aria-label="hud.guardOn ? 'Escudo ativo' : hud.guardPct > 0 ? `Escudo recarregando, ${hud.guardSec} segundos` : 'Escudo: toque para ficar imune por 2 segundos'"
-        @pointerdown.stop
+        @pointerdown.stop.prevent="pressAction($event, requestGuard)"
         aria-keyshortcuts="E Space"
-        @click="requestGuard"
+        @click="keyClick($event, requestGuard)"
       >
         <span class="svp-guard-icon" aria-hidden="true">🛡</span>
+        <small class="gamepad-hint" aria-hidden="true">LT</small>
         <small>{{ hud.guardOn ? 'Ativo' : hud.guardPct > 0 ? `${hud.guardSec} s` : 'Escudo' }}</small>
         <span v-if="hud.guardPct > 0 && !hud.guardOn" class="svp-cd" :style="{ height: `${hud.guardPct}%` }" aria-hidden="true"></span>
       </button>
@@ -1402,10 +1461,11 @@ onBeforeUnmount(() => {
         :class="{ wait: hud.dodgePct > 0 }"
         :aria-label="hud.dodgePct > 0 ? `Esquiva recarregando, ${hud.dodgeSec} segundos` : 'Esquiva: toque para arrancar e atravessar os golpes'"
         aria-keyshortcuts="F Shift"
-        @pointerdown.stop="requestDodge"
+        @pointerdown.stop.prevent="pressAction($event, requestDodge)"
         @click="keyClick($event, requestDodge)"
       >
         <span class="svp-guard-icon" aria-hidden="true">💨</span>
+        <small class="gamepad-hint" aria-hidden="true">X</small>
         <small>{{ hud.dodgePct > 0 ? `${hud.dodgeSec} s` : 'Esquiva' }}</small>
         <span v-if="hud.dodgePct > 0" class="svp-cd" :style="{ height: `${hud.dodgePct}%` }" aria-hidden="true"></span>
       </button>
@@ -1417,11 +1477,12 @@ onBeforeUnmount(() => {
         :style="{ '--attack-color': hud.special.color }"
         :aria-label="hud.special.ready ? `Especial pronto: ${hud.special.label}. Toque para lançar` : `Especial carregando, ${hud.special.pct}%`"
         aria-keyshortcuts="R"
-        @pointerdown.stop="requestSpecial"
+        @pointerdown.stop.prevent="pressAction($event, requestSpecial)"
         @click="keyClick($event, requestSpecial)"
       >
         <span class="svp-fill" :style="{ height: `${hud.special.pct}%` }" aria-hidden="true"></span>
         <span class="svp-guard-icon" aria-hidden="true">✨</span>
+        <small class="gamepad-hint" aria-hidden="true">A</small>
         <small>{{ hud.special.ready ? 'Especial!' : `${hud.special.pct}%` }}</small>
       </button>
       <button
@@ -1431,10 +1492,10 @@ onBeforeUnmount(() => {
         :class="{ alt: hud.attack.alt, wait: hud.attack.pct > 0 }"
         :style="{ '--attack-color': hud.attack.color }"
         :aria-label="`Ataque em uso: ${hud.attack.now.typeLabel}, ${hud.attack.now.categoryLabel}, ${hud.attack.now.name}. Toque para trocar para ${hud.attack.next.typeLabel}, ${hud.attack.next.categoryLabel}, ${hud.attack.next.name}`"
-        @pointerdown.stop
+        @pointerdown.stop.prevent="pressAction($event, requestAttackSwap)"
         aria-keyshortcuts="Q"
         :aria-disabled="hud.attack.pct > 0"
-        @click="requestAttackSwap"
+        @click="keyClick($event, requestAttackSwap)"
       >
         <span class="svp-atk-pair" aria-hidden="true">
           <span class="svp-atk on" :style="{ '--c': TYPE_COLORS[hud.attack.now.type] }" :title="`${hud.attack.now.typeLabel} · ${hud.attack.now.categoryLabel}`">
@@ -1446,10 +1507,12 @@ onBeforeUnmount(() => {
           </span>
         </span>
         <small class="svp-attack-now">{{ hud.attack.now.name }}</small>
+        <small class="gamepad-hint" aria-hidden="true">Y</small>
         <small>{{ hud.attack.pct > 0 ? `Trocar em ${hud.attack.sec} s` : 'Toque: trocar' }}</small>
         <span v-if="hud.attack.pct > 0" class="svp-cd" :style="{ height: `${hud.attack.pct}%` }" aria-hidden="true"></span>
       </button>
       <div class="svp-team mine" role="group" aria-label="Sua equipe: toque para trocar de Pokémon">
+        <small class="gamepad-hint svp-team-hint" aria-hidden="true">LB / RB · Trocar Pokémon</small>
         <button
           v-for="r in hud.mine"
           :key="r.index"
@@ -1458,9 +1521,9 @@ onBeforeUnmount(() => {
           :class="{ active: r.active, down: r.fainted, wait: !r.active && !r.fainted && hud.switchPct > 0 }"
           :aria-pressed="r.active"
           :aria-label="`${r.index + 1}: ${r.name}, ${r.fainted ? 'fora de combate' : r.active ? 'em campo' : hud.switchPct > 0 ? `trocar em ${hud.switchSec} segundos` : 'toque para trocar'}, ${r.hpPct}% de vida`"
-          @pointerdown.stop
+          @pointerdown.stop.prevent="pressAction($event, () => requestSwitch(r.index))"
           :aria-keyshortcuts="String(r.index + 1)"
-          @click="requestSwitch(r.index)"
+          @click="keyClick($event, () => requestSwitch(r.index))"
         >
           <img v-if="!broken.includes(r.dexId)" :src="pokemonSpriteUrl(r.dexId, r.shiny)" alt="" @error="markBroken(r.dexId)" />
           <span v-else class="svp-fallback" aria-hidden="true">{{ r.name.slice(0, 2) }}</span>
@@ -1552,6 +1615,7 @@ onBeforeUnmount(() => {
 
 .svp-pip img,
 .svp-swap img {
+  image-rendering: var(--game-image-rendering, pixelated);
   height: 30px;
   max-width: 100%;
   object-fit: contain;
@@ -1729,7 +1793,7 @@ onBeforeUnmount(() => {
   height: 30cqw;
   max-width: 38cqw;
   object-fit: contain;
-  image-rendering: pixelated;
+  image-rendering: var(--game-image-rendering, pixelated);
 }
 
 .svp-vs-side.foe img {
@@ -1808,7 +1872,7 @@ onBeforeUnmount(() => {
   height: 26cqw;
   max-width: 30cqw;
   object-fit: contain;
-  image-rendering: pixelated;
+  image-rendering: var(--game-image-rendering, pixelated);
 }
 
 .svp-cutin b {
@@ -1920,7 +1984,7 @@ onBeforeUnmount(() => {
   height: 96px;
   max-width: 80%;
   object-fit: contain;
-  image-rendering: pixelated;
+  image-rendering: var(--game-image-rendering, pixelated);
   animation: svp-pose 0.6s cubic-bezier(0.2, 1.4, 0.4, 1) both, svp-hop 0.9s ease-in-out 0.6s infinite alternate;
 }
 
@@ -2032,7 +2096,7 @@ onBeforeUnmount(() => {
   pointer-events: none;
 }
 
-.svp-shadow {
+.svp-shadow-fallback {
   position: absolute;
   left: 0;
   top: 0;
@@ -2042,6 +2106,25 @@ onBeforeUnmount(() => {
   border-radius: 50%;
   background: radial-gradient(ellipse, rgba(0, 0, 0, 0.45), transparent 70%);
   pointer-events: none;
+}
+
+/* A cópia do GIF mantém a silhueta animada, achatada sobre o chão. */
+.svp-shadow-sprite {
+  position: absolute;
+  left: 0;
+  top: 0;
+  height: 17.5cqw;
+  max-width: 24cqw;
+  object-fit: contain;
+  transform: translate(-50%, -100%) scaleY(0.22);
+  transform-origin: center bottom;
+  filter: brightness(0) blur(3px);
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+.svp-unit.face-right .svp-shadow-sprite {
+  transform: translate(-50%, -100%) scale(-1, 0.22);
 }
 
 .svp-unit.mine .svp-ring {
@@ -2124,6 +2207,10 @@ onBeforeUnmount(() => {
 .svp-unit.swap .svp-shadow,
 .svp-bars.swap {
   opacity: var(--sw, 1);
+}
+
+.svp-unit.swap .svp-shadow-sprite {
+  opacity: calc(0.4 * var(--sw, 1));
 }
 
 .svp-arena.shake {
@@ -2249,7 +2336,7 @@ onBeforeUnmount(() => {
   object-fit: contain;
   transform: translate(-50%, -62%);
   pointer-events: none;
-  image-rendering: pixelated;
+  image-rendering: var(--game-image-rendering, pixelated);
 }
 
 .svp-unit .svp-fallback {
@@ -2398,6 +2485,11 @@ onBeforeUnmount(() => {
   gap: 8px;
 }
 
+.svp-team-hint {
+  grid-column: 1 / -1;
+  justify-self: center;
+}
+
 /* Seis de cada lado: a fila do rival vira uma linha só, e a sua, duas linhas de três com botões mais baixos. */
 .svp.six .svp-top .svp-team {
   grid-template-columns: repeat(6, minmax(0, 1fr));
@@ -2497,7 +2589,7 @@ onBeforeUnmount(() => {
   background: rgba(216, 184, 74, 0.18);
   color: var(--text);
   font: inherit;
-  touch-action: manipulation;
+  touch-action: none;
 }
 
 .svp-guard-icon {
@@ -2534,7 +2626,7 @@ onBeforeUnmount(() => {
   background: var(--surface-2);
   color: var(--text);
   font: inherit;
-  touch-action: manipulation;
+  touch-action: none;
 }
 
 .svp-swap.active {

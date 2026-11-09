@@ -5,8 +5,12 @@ import { normalizeWeatherMode } from '../core/weather';
 import type { WeatherMode } from '../core/weather';
 
 export interface VisualSettings {
-  /** Suavização de pixels dos GIFs (compartilhada entre Escanear, Várias e Caixa). */
+  /** Perfil do jogo: pixels nítidos ou sprites e cores mais suaves. */
+  renderProfile: 'pixel' | 'cinema';
+  /** Suavização de pixels dos sprites animados. */
   smoothing: SmoothingMode;
+  /** Aparência LCD inspirada no Game Boy Advance, aplicada sobre as telas do jogo. */
+  gbaDisplay: boolean;
   /** Luz dos golpes nos Pokémon, no chão e no vídeo (Caixa). Desligar poupa a GPU de celulares fracos. */
   lighting: boolean;
   /** Partículas e ondas de choque intensas na Arena, além do aviso ao tomar dano na Torre. */
@@ -47,16 +51,19 @@ export interface VisualSettings {
 
 const KEY = 'tcg-ar-visual-v2';
 const LEGACY_KEY = 'tcg-ar-visual-v1';
-const DEFAULTS: VisualSettings = { smoothing: DEFAULT_SMOOTHING, lighting: true, impactFx: true, terrain: true, social: true, weather: 'ciclo', scenery: true, sound: true, shadow: true, metallic: true, caseFx: true, villageFx: true, villageGlow: true, villageWind: true, villageHd2d: false, evolutionFx: true, archetypeFx: true, frameRate: 'auto', rotomMode: false };
+const DEFAULTS: VisualSettings = { renderProfile: 'pixel', smoothing: DEFAULT_SMOOTHING, gbaDisplay: false, lighting: true, impactFx: true, terrain: true, social: true, weather: 'ciclo', scenery: true, sound: true, shadow: true, metallic: true, caseFx: true, villageFx: true, villageGlow: true, villageWind: true, villageHd2d: false, evolutionFx: true, archetypeFx: true, frameRate: 'auto', rotomMode: false };
 
 export function normalizeVisual(raw: Partial<VisualSettings> | null | undefined): VisualSettings {
-  return { smoothing: normalizeSmoothing(raw?.smoothing), lighting: raw?.lighting !== false, impactFx: raw?.impactFx !== false, terrain: raw?.terrain !== false, social: raw?.social !== false, weather: normalizeWeatherMode(raw?.weather), scenery: raw?.scenery !== false, sound: raw?.sound !== false, shadow: raw?.shadow !== false, metallic: raw?.metallic !== false, caseFx: raw?.caseFx !== false, villageFx: raw?.villageFx !== false, villageGlow: raw?.villageGlow !== false, villageWind: raw?.villageWind !== false, villageHd2d: raw?.villageHd2d === true, evolutionFx: raw?.evolutionFx !== false, archetypeFx: raw?.archetypeFx !== false, frameRate: raw?.frameRate === '30' || raw?.frameRate === '20' ? raw.frameRate : 'auto', rotomMode: raw?.rotomMode === true };
+  return { renderProfile: raw?.renderProfile === 'cinema' ? 'cinema' : 'pixel', smoothing: normalizeSmoothing(raw?.smoothing), gbaDisplay: raw?.gbaDisplay === true, lighting: raw?.lighting !== false, impactFx: raw?.impactFx !== false, terrain: raw?.terrain !== false, social: raw?.social !== false, weather: normalizeWeatherMode(raw?.weather), scenery: raw?.scenery !== false, sound: raw?.sound !== false, shadow: raw?.shadow !== false, metallic: raw?.metallic !== false, caseFx: raw?.caseFx !== false, villageFx: raw?.villageFx !== false, villageGlow: raw?.villageGlow !== false, villageWind: raw?.villageWind !== false, villageHd2d: raw?.villageHd2d === true, evolutionFx: raw?.evolutionFx !== false, archetypeFx: raw?.archetypeFx !== false, frameRate: raw?.frameRate === '30' || raw?.frameRate === '20' ? raw.frameRate : 'auto', rotomMode: raw?.rotomMode === true };
 }
 
 /** Preferências efetivas sem alterar o que a pessoa escolheu para cada efeito. */
 export function effectiveVisualSettings(settings: VisualSettings): VisualSettings {
-  if (!settings.rotomMode) return { ...settings };
-  return { ...settings, smoothing: 'nitido', lighting: false, impactFx: false, terrain: false, social: false, weather: 'off', scenery: false, shadow: false, metallic: false, caseFx: false, villageFx: false, villageGlow: false, villageWind: false, villageHd2d: false, evolutionFx: false, archetypeFx: false, frameRate: '20' };
+  if (!settings.rotomMode) {
+    const smoothing = settings.renderProfile === 'cinema' && settings.smoothing === 'nitido' ? 'suave' : settings.smoothing;
+    return { ...settings, smoothing };
+  }
+  return { ...settings, renderProfile: 'pixel', smoothing: 'nitido', gbaDisplay: false, lighting: false, impactFx: false, terrain: false, social: false, weather: 'off', scenery: false, shadow: false, metallic: false, caseFx: false, villageFx: false, villageGlow: false, villageWind: false, villageHd2d: false, evolutionFx: false, archetypeFx: false, frameRate: '20' };
 }
 
 function read(): VisualSettings {

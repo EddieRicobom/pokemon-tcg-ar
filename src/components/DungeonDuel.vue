@@ -552,7 +552,7 @@ onBeforeUnmount(() => {
 .dd-foe-team li { display: flex; flex-direction: column; align-items: center; width: 44px; gap: 1px; opacity: 0.85; }
 .dd-foe-team li.field { opacity: 1; outline: 1px solid #ff9aa8; border-radius: 6px; }
 .dd-foe-team li.down { opacity: 0.4; filter: grayscale(1); }
-.dd-foe-team img { width: 30px; height: 30px; object-fit: contain; image-rendering: pixelated; }
+.dd-foe-team img { width: 30px; height: 30px; object-fit: contain; image-rendering: var(--game-image-rendering, pixelated); }
 .dd-foe-team small { font-size: 0.7rem; color: var(--muted); }
 .dd-hp { position: relative; display: block; height: 5px; width: 100%; background: #0006; border-radius: 3px; overflow: hidden; flex: 1; }
 .dd-hp i { position: absolute; inset: 0 auto 0 0; background: var(--ok); transition: width 0.3s; }
@@ -577,7 +577,7 @@ onBeforeUnmount(() => {
 .dd-mon.mine { box-shadow: 0 0 0 2px var(--gold); }
 .dd-mon.theirs { box-shadow: 0 0 0 2px #ff6b7a; }
 .dd-mon.fused { box-shadow: 0 0 0 2px #b38cff, 0 0 10px #b38cff; }
-.dd-mon img { width: 120%; height: 120%; object-fit: contain; image-rendering: pixelated; pointer-events: none; position: relative; top: -14%; animation: dd-bob 1.8s ease-in-out infinite; }
+.dd-mon img { width: 120%; height: 120%; object-fit: contain; image-rendering: var(--game-image-rendering, pixelated); pointer-events: none; position: relative; top: -14%; animation: dd-bob 1.8s ease-in-out infinite; }
 .dd-mon.fused img { width: 70%; height: 70%; top: 0; }
 .dd-burn { position: absolute; top: 0; right: 0; z-index: 3; font-size: 0.8rem; }
 .dd-hp.bar { position: absolute; left: 10%; right: 10%; bottom: 3px; width: auto; height: 4px; z-index: 2; box-shadow: 0 0 0 1px #0009; }
@@ -628,7 +628,7 @@ onBeforeUnmount(() => {
 .dd-team button.fusing { border-color: #b38cff; }
 .dd-team button.out { opacity: 0.55; }
 .dd-team button:disabled.active, .dd-team button:disabled.fusing { opacity: 1; }
-.dd-team img { width: 30px; height: 30px; object-fit: contain; align-self: center; image-rendering: pixelated; }
+.dd-team img { width: 30px; height: 30px; object-fit: contain; align-self: center; image-rendering: var(--game-image-rendering, pixelated); }
 .dd-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: center; }
 .dd-num { position: absolute; top: 2px; left: 4px; color: var(--muted); }
 .dd-log { color: var(--muted); font-size: 0.78rem; }

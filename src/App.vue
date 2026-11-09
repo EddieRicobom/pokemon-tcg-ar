@@ -63,6 +63,7 @@ const scanModes: { name: RouteName; label: string }[] = [
 /** Modos que se acessam por prédios da Vila: a aba da Vila fica acesa neles. */
 const villageRoutes: readonly RouteName[] = ['arena', 'caixa', 'torre', 'pins'];
 const inScanGroup = computed(() => scanModes.some((m) => m.name === route.value.name));
+const showDisplayFilter = computed(() => !inScanGroup.value && route.value.name !== 'diagnostico');
 const subModes = computed(() => (inScanGroup.value ? scanModes : null));
 const tabActive = (name: RouteName): boolean =>
   name === 'escanear' ? inScanGroup.value : name === 'vila' ? route.value.name === 'vila' || villageRoutes.includes(route.value.name) : route.value.name === name;
@@ -84,7 +85,11 @@ watch(
 </script>
 
 <template>
-  <main class="app">
+  <main class="app" :class="{
+    'cinema-profile': effectiveVisual.renderProfile === 'cinema',
+    'cinema-display': showDisplayFilter && effectiveVisual.renderProfile === 'cinema',
+    'gba-display': showDisplayFilter && effectiveVisual.gbaDisplay,
+  }">
     <header class="app-header">
       <span class="brand-mark" aria-hidden="true"></span>
       <h1>Digital Holo</h1>

@@ -12,6 +12,7 @@ import { browserDecoders, loadCreatureEntries } from '../box/load-creatures';
 import { routeHref } from '../app/route';
 import type { VilaExit } from '../app/route';
 import { handleDialogEscape, isGameKeyboardControl } from '../app/game-keyboard';
+import { adjustFocusedControl } from '../app/gamepad-controls';
 import { CameraError, startRearCamera, stopCamera } from '../core/camera';
 import { loadChunk } from '../app/stale-build';
 import type { RunningVillageAr } from '../ar/start-village';
@@ -382,6 +383,21 @@ let dialogFocusReturn: HTMLElement | null = null;
 let sheetFocusReturn: HTMLElement | null = null;
 let quizOpenFocusReturn: HTMLElement | null = null;
 let focusedVillageAction: HTMLElement | null = null;
+const villageEl = ref<HTMLElement | null>(null);
+const villageDialogSelector = '[role="dialog"], [role="alertdialog"]';
+const villageActionSelector = 'button:not(:disabled), a[href], input:not(:disabled), select:not(:disabled), summary, [tabindex="0"]';
+
+function activeVillageDialog(): HTMLElement | undefined {
+  return [...(villageEl.value?.querySelectorAll<HTMLElement>(villageDialogSelector) ?? [])]
+    .reverse().find((panel) => panel.getClientRects().length > 0 && getComputedStyle(panel).visibility !== 'hidden');
+}
+
+function villageDialogActions(panel: HTMLElement): HTMLElement[] {
+  return [...panel.querySelectorAll<HTMLElement>(villageActionSelector)].filter((element) =>
+    !element.closest('[inert], [aria-hidden="true"]') && !element.matches(':disabled, [aria-disabled="true"]')
+    && element.getClientRects().length > 0 && getComputedStyle(element).visibility !== 'hidden');
+}
+
 function focusWithArrowIndicator(target: HTMLElement | undefined): void {
   if (!target) return;
   document.querySelector<HTMLElement>('.arrow-focus')?.classList.remove('arrow-focus');
@@ -392,7 +408,7 @@ function focusWithArrowIndicator(target: HTMLElement | undefined): void {
 function rememberVillageActionFocus(event: FocusEvent): void {
   const target = event.target;
   if (!(target instanceof HTMLElement) || target.closest('.village-pad')) return;
-  focusedVillageAction = target.closest('.legend-cutscene, .village-sheet, .village-dialog, .quiz-dialog') ? target : null;
+  focusedVillageAction = villageEl.value?.contains(target) && target.closest(villageDialogSelector) ? target : null;
 }
 function focusFirstVillageAction(selector: string): void {
   const panel = document.querySelector<HTMLElement>(selector);
@@ -1243,47 +1259,60 @@ function handleGamepadDirection(event: Event): void {
   const custom = event as CustomEvent<{ handled: boolean; direction?: Dir; pressed?: boolean }>;
   const direction = custom.detail.direction;
   if (!direction || custom.detail.pressed === undefined || custom.detail.handled) return;
-  // A Torre gerencia o direcional durante a corrida; escolhas e pausas passam ao foco dos diálogos.
   if (props.towerOnly) return;
-  if (sheet.value || dialog.value || quiz.value || quizOpen.value || legendaryScene.value) {
-    if (custom.detail.pressed) moveVillageFocus(direction);
+  if (!custom.detail.pressed) {
+    if (gamepadKeys.delete(direction)) applyKeys();
     custom.detail.handled = true;
     return;
   }
-  if (custom.detail.pressed) gamepadKeys.add(direction);
-  else gamepadKeys.delete(direction);
+  const panel = activeVillageDialog();
+  if (panel || worldBlocked() || welcome.value || loading.value) {
+    if (panel && !adjustFocusedControl(direction, panel)) moveVillageFocus(direction, panel);
+    custom.detail.handled = true;
+    return;
+  }
+  gamepadKeys.add(direction);
   applyKeys();
   custom.detail.handled = true;
 }
 function handleGamepadAction(event: Event): void {
   const custom = event as CustomEvent<{ handled: boolean }>;
-  // A Torre tem seu próprio alvo: deixe o evento chegar ao minigame para A ativar o especial.
-  if (custom.detail.handled) return;
+  if (props.towerOnly || custom.detail.handled) return;
   custom.detail.handled = true;
+  const panel = activeVillageDialog();
+  if (panel) {
+    if (confirmFocusedAction()) return;
+    const first = villageDialogActions(panel)[0];
+    if (first) { focusWithArrowIndicator(first); return; }
+  }
   pressA();
 }
 function handleGamepadBack(event: Event): void {
   const custom = event as CustomEvent<{ handled: boolean }>;
-  // B pausa/retoma a Torre; não navegue para fora da Vila durante a corrida.
-  if (custom.detail.handled) return;
+  if (props.towerOnly || custom.detail.handled) return;
   custom.detail.handled = true;
+  const panel = activeVillageDialog();
+  if (panel?.parentElement?.closest(villageDialogSelector) || backpackOpen.value) {
+    const close = panel && villageDialogActions(panel).find((action) =>
+      action.matches('button, a[href]') && /^(fechar|voltar|cancelar)\b/i.test(action.getAttribute('aria-label') ?? action.textContent?.trim() ?? ''));
+    close?.click();
+    return;
+  }
   pressB();
 }
 function handleGamepadMenu(event: Event): void {
   const custom = event as CustomEvent<{ handled: boolean }>;
-  if (custom.detail.handled) return;
+  if (props.towerOnly || custom.detail.handled) return;
   custom.detail.handled = true;
   pressMenu();
 }
-function moveVillageFocus(direction: Dir): void {
-  const panel = document.querySelector<HTMLElement>('.legend-cutscene, .village-sheet, .village-dialog, .quiz-dialog');
+function moveVillageFocus(direction: Dir, panel = activeVillageDialog()): void {
   if (!panel) return;
-  const selector = 'button:not(:disabled), a[href], input:not(:disabled), select:not(:disabled), [tabindex="0"]';
-  const candidates = [...panel.querySelectorAll<HTMLElement>(selector)].filter((element) => element.getClientRects().length > 0);
+  const candidates = villageDialogActions(panel);
   if (!candidates.length) return;
   const active = document.activeElement;
   const current = candidates.find((element) => element === active)
-    ?? (focusedVillageAction?.isConnected && panel.contains(focusedVillageAction) ? focusedVillageAction : undefined);
+    ?? candidates.find((element) => element === focusedVillageAction);
   if (!current) {
     focusWithArrowIndicator(candidates[0]);
     return;
@@ -1331,8 +1360,9 @@ function pressAClick(event: MouseEvent): void {
 }
 /** Trocar de janela com uma seta apertada perde o keyup: sem isto, o treinador seguiria andando sozinho. */
 function releaseHeldKeys(): void {
-  if (heldKeys.size === 0) return;
+  if (heldKeys.size === 0 && gamepadKeys.size === 0) return;
   heldKeys.clear();
+  gamepadKeys.clear();
   applyKeys();
 }
 
@@ -2585,6 +2615,7 @@ function onVisibility(): void {
   if (document.hidden) {
     // Saiu do app com uma tecla ou o dedo no joystick: ninguém fica andando sozinho ao voltar.
     heldKeys.clear();
+    gamepadKeys.clear();
     dpadPointers.clear();
     Object.assign(joy, { active: false, pointerId: -1, x: 0, y: 0 });
     game?.holdStick(null);
@@ -2763,10 +2794,14 @@ function refreshDay(): string {
 }
 
 function confirmFocusedAction(): boolean {
-  const active = document.activeElement;
-  const action = active instanceof HTMLButtonElement && !active.closest('.village-pad') ? active : focusedVillageAction;
-  if (!(action instanceof HTMLButtonElement) || action.disabled || !action.isConnected || !action.closest('.village')) return false;
-  action.click();
+  const panel = activeVillageDialog();
+  if (!panel) return false;
+  const actions = villageDialogActions(panel);
+  const action = actions.find((element) => element === document.activeElement)
+    ?? actions.find((element) => element === focusedVillageAction);
+  if (!action) return false;
+  if (action.matches('select, input:not([type="checkbox"]):not([type="radio"])')) action.focus();
+  else action.click();
   return true;
 }
 
@@ -3431,6 +3466,8 @@ onMounted(async () => {
   game.glowFx = () => effectiveVisual.value.villageGlow;
   game.windFx = () => effectiveVisual.value.villageWind;
   game.hd2d = () => effectiveVisual.value.villageHd2d;
+  game.smoothSprites = () => effectiveVisual.value.renderProfile === 'cinema';
+  game.castShadows = () => effectiveVisual.value.shadow;
   game.nocturnal = (id) => types.get(id)?.includes('dark') === true;
   game.maxFps = () => effectiveVisual.value.frameRate === 'auto' ? 0 : Number(effectiveVisual.value.frameRate);
   // Presente recebido enquanto a cena abria: entra agora, ao lado do jogador.
@@ -3537,7 +3574,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="village" role="application" :aria-label="props.towerOnly ? 'Torre de Sobrevivência' : 'Vila: modo vida da Caixa'" aria-keyshortcuts="ArrowUp ArrowDown ArrowLeft ArrowRight W A S D Enter Space Z X Escape">
+  <div ref="villageEl" class="village" role="application" :aria-label="props.towerOnly ? 'Torre de Sobrevivência' : 'Vila: modo vida da Caixa'" aria-keyshortcuts="ArrowUp ArrowDown ArrowLeft ArrowRight W A S D Enter Space Z X Escape">
     <section v-if="props.towerOnly" class="tower-route" aria-label="Torre de Sobrevivência">
       <header class="tower-route-head"><strong>🗼 Torre de Sobrevivência</strong><button type="button" class="link" @click="emit('close')">Voltar à Vila</button></header>
       <SurvivalPvp v-if="towerPvp" :digital="state.digital.instances.map((i) => ({ instanceId: i.instanceId, dexId: i.dexId, name: i.name, accessory: state.wear.mons[i.instanceId] ?? null }))" :accessories="state.wear.mons" @leave="towerPvp = false" />
@@ -4139,6 +4176,17 @@ onBeforeUnmount(() => {
             </select>
           </label>
           <label class="art-option">
+            <span>Perfil visual do jogo</span>
+            <select v-model="visual.renderProfile" :disabled="visual.rotomMode">
+              <option value="pixel">Pixel art nítida</option>
+              <option value="cinema">Cinemático</option>
+            </select>
+          </label>
+          <label class="art-option">
+            <input v-model="visual.gbaDisplay" type="checkbox" :disabled="visual.rotomMode" />
+            <span>Aparência LCD de GBA</span>
+          </label>
+          <label class="art-option">
             <input v-model="visual.metallic" type="checkbox" />
             <span>Brilho metálico nos Digital Pokémon (desligue em celular fraco)</span>
           </label>
@@ -4234,6 +4282,7 @@ onBeforeUnmount(() => {
 
 <style>
 /* Só o que é novo nesta tela; o restante da Vila continua em `styles.css`. */
+.gamepad-connected .village-arrow-hint { display: block; }
 .village-next {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;

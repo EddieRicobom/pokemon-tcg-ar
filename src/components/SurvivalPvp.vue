@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, shallowRef } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, shallowRef } from 'vue';
 import MinigameSobrevivencia from './MinigameSobrevivencia.vue';
 import PvpLobby from './PvpLobby.vue';
 import SurvivalPvpArena from './SurvivalPvpArena.vue';
@@ -341,12 +341,19 @@ function leaveNow(): void {
 
 /** Dois toques para sair no meio da partida (um toque sem querer não derruba a luta). */
 function askLeave(): void {
-  if (phase.value === 'lobby' || closed.value || leaveArmed.value) {
+  if (phase.value === 'lobby' || closed.value || leaveArmed.value || (phase.value === 'arena' && link.value?.state.winner != null)) {
     leaveNow();
     return;
   }
   leaveArmed.value = true;
   leaveTimer = setTimeout(() => (leaveArmed.value = false), 3000);
+}
+
+function onGamepadBack(event: Event): void {
+  const detail = (event as CustomEvent<{ handled: boolean }>).detail;
+  if (detail.handled || (phase.value === 'runs' && !closed.value)) return;
+  detail.handled = true;
+  askLeave();
 }
 
 function detach(): void {
@@ -361,7 +368,10 @@ function detach(): void {
   }
 }
 
+onMounted(() => window.addEventListener('tcg-gamepad-back', onGamepadBack));
+
 onBeforeUnmount(() => {
+  window.removeEventListener('tcg-gamepad-back', onGamepadBack);
   if (leaveTimer) clearTimeout(leaveTimer);
   if (fanTimer) clearTimeout(fanTimer);
   if (cooldownTimer) clearInterval(cooldownTimer);
@@ -376,7 +386,7 @@ onBeforeUnmount(() => {
       <header class="svpvp-strip">
         <span class="svpvp-progress" role="status">⚔ {{ progress }}</span>
         <button type="button" class="link svpvp-taunt-btn" :aria-expanded="fanOpen" aria-label="Provocações para o rival" @click="toggleFan">💬{{ tauntLeft > 0 ? ` ${tauntLeft}` : '' }}</button>
-        <button type="button" class="link svpvp-leave" @click="askLeave">{{ leaveArmed ? 'Toque de novo para sair' : 'Sair do PvP' }}</button>
+        <button type="button" class="link svpvp-leave" @click="askLeave">{{ leaveArmed ? 'Toque de novo para sair' : 'Sair do PvP' }} <small v-if="phase !== 'runs' || closed" class="gamepad-hint" aria-hidden="true">B</small></button>
       </header>
 
       <div v-if="fanOpen" class="svpvp-fan" role="group" aria-label="Provocações">

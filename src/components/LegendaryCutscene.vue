@@ -98,7 +98,7 @@ defineExpose({ advance });
 .land-stone .legend-landscape i { background: #33303c; clip-path: polygon(10% 35%,45% 0,85% 20%,100% 100%,0 100%); }
 .land-water .legend-landscape { opacity: .5; inset-block-start: 84%; }
 .legend-visitor { position: absolute; inset: 6% 7% 14%; display: grid; place-items: center; animation: legend-enter 1.2s ease-out both; }
-.legend-visitor canvas { max-width: 100%; max-height: 100%; width: min(78vw,520px); height: min(45vh,410px); object-fit: contain; image-rendering: pixelated; animation: legend-hover 6s ease-in-out infinite alternate; }
+.legend-visitor canvas { max-width: 100%; max-height: 100%; width: min(78vw,520px); height: min(45vh,410px); object-fit: contain; image-rendering: var(--game-image-rendering, pixelated); animation: legend-hover 6s ease-in-out infinite alternate; }
 .theme-guardian .legend-visitor canvas,.theme-stone .legend-visitor canvas { animation: none; }
 .theme-ocean .legend-visitor canvas { animation: legend-surface 7s ease-in-out infinite alternate; }
 .theme-flame .legend-visitor canvas,.theme-rainbow .legend-visitor canvas,.theme-storm .legend-visitor canvas { animation: legend-soar 9s ease-in-out infinite alternate; }

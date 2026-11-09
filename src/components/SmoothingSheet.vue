@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue';
 import { useDialogFocus } from '../composables/useDialogFocus';
-import { resetVisual, visual } from '../app/visual-settings';
+import { effectiveVisual, resetVisual, visual } from '../app/visual-settings';
 import { SMOOTHING_HINTS_PT, SMOOTHING_LABELS_PT, SMOOTHING_MODES } from '../core/pixel-upscale';
 import { WEATHER_MODE_LABELS_PT, WEATHER_MODES } from '../core/weather';
 
@@ -31,22 +31,35 @@ useDialogFocus(dialogEl);
     </section>
     <p v-if="visual.rotomMode" class="hint">As preferências individuais abaixo continuam guardadas; seus efeitos voltam quando o Modo Rotom for desligado.</p>
     <section>
+      <h4>Perfil visual do jogo</h4>
+      <div class="chips" role="group" aria-label="Perfil visual">
+        <button type="button" :class="{ active: visual.renderProfile === 'pixel' }" :aria-pressed="visual.renderProfile === 'pixel'" :disabled="visual.rotomMode" @click="visual.renderProfile = 'pixel'">Pixel art nítida</button>
+        <button type="button" :class="{ active: visual.renderProfile === 'cinema' }" :aria-pressed="visual.renderProfile === 'cinema'" :disabled="visual.rotomMode" @click="visual.renderProfile = 'cinema'">Cinemático</button>
+      </div>
+      <p class="hint">{{ visual.renderProfile === 'cinema' ? 'Suaviza os sprites e aplica um tom de cinema às cenas e aos menus do jogo.' : 'Preserva o desenho dos pixels e usa as cores originais do jogo.' }}</p>
+    </section>
+    <section>
+      <h4>Tela de GBA</h4>
+      <label><input v-model="visual.gbaDisplay" type="checkbox" :disabled="visual.rotomMode" /> Ativar aparência LCD de GBA</label>
+      <p class="hint">{{ visual.rotomMode ? 'O Modo Rotom suspende a aparência LCD e guarda sua escolha.' : 'Grade fina de pixels e um tom suave nas cenas e menus. As telas de escaneamento mantêm a imagem da câmera limpa.' }}</p>
+    </section>
+    <section>
       <h4>Qualidade do GIF</h4>
       <div class="chips" role="group" aria-label="Suavização dos pixels">
         <button v-for="mode in SMOOTHING_MODES" :key="mode" type="button" :class="{ active: visual.smoothing === mode }" :aria-pressed="visual.smoothing === mode" @click="visual.smoothing = mode">
           {{ SMOOTHING_LABELS_PT[mode] }}
         </button>
       </div>
-      <p class="hint">{{ SMOOTHING_HINTS_PT[visual.smoothing] }}</p>
+      <p class="hint">{{ effectiveVisual.smoothing === visual.smoothing ? SMOOTHING_HINTS_PT[visual.smoothing] : `Suavização em uso: ${SMOOTHING_LABELS_PT[effectiveVisual.smoothing]}.` }}</p>
     </section>
-    <section v-if="!battle">
+    <section>
       <h4>Sombra no chão</h4>
       <div class="chips" role="group" aria-label="Sombra no chão">
         <button type="button" :class="{ active: visual.shadow }" :aria-pressed="visual.shadow" @click="visual.shadow = true">Ligada</button>
         <button type="button" :class="{ active: !visual.shadow }" :aria-pressed="!visual.shadow" @click="visual.shadow = false">Desligada</button>
       </div>
       <p class="hint">
-        {{ visual.shadow ? 'Uma sombra suave e um brilho fino aparecem na carta, embaixo do Pokémon.' : 'Sem sombra nem brilho: mais leve para celulares fracos.' }}
+        {{ visual.shadow ? 'Na carta há sombra e brilho; no perfil Cinemático, os Pokémon também projetam sua silhueta suavizada no jogo.' : 'Desliga a sombra na carta e as silhuetas cinematográficas, reduzindo o custo gráfico.' }}
       </p>
     </section>
     <section v-if="!battle">

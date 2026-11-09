@@ -1624,7 +1624,7 @@ const pendingText = computed(() => {
 .dg-candidates button:disabled { opacity: 0.45; }
 .dg-candidates small { color: var(--muted); font-size: 0.72rem; text-align: center; }
 .dg-order { position: absolute; top: 4px; left: 6px; width: 18px; height: 18px; border-radius: 50%; background: var(--gold); color: #1a1400 !important; font-weight: 800; display: flex; align-items: center; justify-content: center; }
-.dg-pick-sprite { width: 48px; height: 48px; object-fit: contain; image-rendering: pixelated; }
+.dg-pick-sprite { width: 48px; height: 48px; object-fit: contain; image-rendering: var(--game-image-rendering, pixelated); }
 .dg-types { display: flex; gap: 2px; flex-wrap: wrap; justify-content: center; }
 .dg-nosprite { font-size: 0.6rem; color: var(--muted); line-height: 1; text-align: center; }
 .dg-friend-status { margin: 6px 0; padding: 6px 10px; border-radius: 10px; background: #0006; border: 1px solid var(--line); font-size: 0.86rem; }
@@ -1718,7 +1718,7 @@ button:disabled { opacity: 0.5; }
 .dg-cell.danger { background: linear-gradient(135deg, #a42b39, #581621); box-shadow: inset 0 0 0 2px #ff6670, 0 0 8px #ff344766; }
 .dg-cell.danger::after { content: ''; position: absolute; inset: 0; border-radius: 5px; background: repeating-linear-gradient(45deg, #ff566a8c 0 4px, #7e152566 4px 8px); pointer-events: none; }
 .dg-mon, .dg-player { position: relative; z-index: 1; display: flex; width: 100%; height: 100%; align-items: center; justify-content: center; }
-.dg-mon img, .dg-player img { width: 120%; height: 120%; object-fit: contain; image-rendering: pixelated; pointer-events: none; position: relative; top: -14%; animation: dg-bob 1.8s ease-in-out infinite; }
+.dg-mon img, .dg-player img { width: 120%; height: 120%; object-fit: contain; image-rendering: var(--game-image-rendering, pixelated); pointer-events: none; position: relative; top: -14%; animation: dg-bob 1.8s ease-in-out infinite; }
 .dg-mon.elite img { filter: drop-shadow(0 0 3px #ffcb05); }
 .dg-mon.mini img { width: 135%; height: 135%; top: -20%; filter: drop-shadow(0 0 5px #ff7955); }
 .dg-mon.boss img { width: 150%; height: 150%; top: -25%; filter: drop-shadow(0 0 5px #ff5a5a); }
@@ -1757,7 +1757,7 @@ button:disabled { opacity: 0.5; }
 .dg-enemy-card.elite { border-color: var(--gold); }
 .dg-enemy-card.mini { border-color: #ff8a55; box-shadow: 0 0 8px #ff6b4a44; }
 .dg-enemy-card.boss { border-color: #ff5a5a; box-shadow: 0 0 10px #ff5a5a55; }
-.dg-enemy-card img { width: 44px; height: 44px; object-fit: contain; image-rendering: pixelated; }
+.dg-enemy-card img { width: 44px; height: 44px; object-fit: contain; image-rendering: var(--game-image-rendering, pixelated); }
 .dg-enemy-card div { display: flex; flex-direction: column; gap: 2px; }
 .dg-enemy-card small { color: var(--muted); }
 .dg-intent-text { color: #ffb3b3 !important; }
@@ -1821,7 +1821,7 @@ button:disabled { opacity: 0.5; }
 .dg-team button.fusing { border-color: #b38cff; }
 .dg-team button.out { opacity: 0.55; }
 .dg-team button:disabled.active, .dg-team button:disabled.fusing { opacity: 1; }
-.dg-team img { width: 32px; height: 32px; object-fit: contain; align-self: center; image-rendering: pixelated; }
+.dg-team img { width: 32px; height: 32px; object-fit: contain; align-self: center; image-rendering: var(--game-image-rendering, pixelated); }
 .dg-team-weapon { position: absolute; top: 2px; right: 2px; }
 .dg-team .dg-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dg-num { position: absolute; top: 2px; left: 4px; color: var(--muted); }
@@ -1873,14 +1873,14 @@ button:disabled { opacity: 0.5; }
 .dg-evolve-panel { min-height: 0; display: flex; flex-direction: column; gap: 6px; }
 .dg-evolve-members { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; }
 .dg-evolve-members button { min-height: 52px; display: flex; align-items: center; gap: 5px; padding: 5px; text-align: left; color: inherit; background: var(--surface-2); border: 1px solid var(--line); border-radius: 9px; }
-.dg-evolve-members img { width: 38px; height: 38px; object-fit: contain; image-rendering: pixelated; }
+.dg-evolve-members img { width: 38px; height: 38px; object-fit: contain; image-rendering: var(--game-image-rendering, pixelated); }
 .dg-evolve-members span { display: flex; flex-direction: column; min-width: 0; }
 .dg-evolve-members strong { font-size: 0.72rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dg-evolve-options { display: grid; grid-template-columns: repeat(2, 1fr); gap: 5px; }
 .dg-evolve-options button { min-height: 56px; align-items: flex-start; padding: 7px; text-align: left; }
 .dg-back { align-self: flex-start; padding: 0 8px; }
 .dg-orb-animation { min-height: 150px; display: grid; place-items: center; justify-items: center; position: relative; overflow: hidden; }
-.dg-orb-animation > img { width: 76px; height: 76px; object-fit: contain; image-rendering: pixelated; animation: dg-orb-in 0.72s ease-in forwards; z-index: 2; }
+.dg-orb-animation > img { width: 76px; height: 76px; object-fit: contain; image-rendering: var(--game-image-rendering, pixelated); animation: dg-orb-in 0.72s ease-in forwards; z-index: 2; }
 .dg-orb-animation .dg-orb { position: absolute; font-size: 5.2rem; line-height: 1; color: #f04949; text-shadow: 0 0 12px #fff, 0 0 22px #ffcf57; animation: dg-orb-flash 0.72s ease-out forwards; }
 .dg-orb-animation .weapon-art { position: absolute; opacity: 0; animation: dg-weapon-out 0.72s ease-in forwards; animation-delay: 0.2s; }
 .dg-orb-animation strong { margin-top: -8px; text-align: center; }
