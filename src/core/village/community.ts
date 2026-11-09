@@ -321,9 +321,9 @@ export function communityForecast(state: Pick<VillageState, 'inventory' | 'coins
     foodAvailable,
     foodReservedForCouncil: rawFoodAvailable - foodAvailable,
     foodTarget,
-    mealsAtCurrentStock: foodTarget > 0 ? Math.floor(portionsAvailable(state) / foodTarget) : 0,
+    mealsAtCurrentStock: foodTarget > 0 ? Math.floor(foodAvailable / foodTarget) : 0,
     reserveTarget: foodTarget * COMMUNITY_RULES.reserveDays,
-    reserveDaysAtCurrentStock: foodTarget > 0 ? Math.floor(portionsAvailable(state) / foodTarget) : 0,
+    reserveDaysAtCurrentStock: foodTarget > 0 ? Math.floor(foodAvailable / foodTarget) : 0,
     maintenanceDue,
     maintenanceFunded: state.coins >= maintenanceDue,
   };
@@ -777,6 +777,31 @@ export function advanceCommunity(state: VillageState, today: string, residentIds
   state.community.lastCycleDay = today;
   state.community.history = [...state.community.history, ...cycles].slice(-COMMUNITY_RULES.historyLimit);
   return { cycles, initialized: false, skippedDays };
+}
+
+/** "3 Fruta Oran, 1 Salada e mais 2 tipos": o que saiu da mochila, com os itens mais usados primeiro. */
+export function describeConsumedFood(consumed: readonly { item: string; qty: number }[], limit = 4): string {
+  const total = new Map<string, number>();
+  for (const entry of consumed) total.set(entry.item, (total.get(entry.item) ?? 0) + entry.qty);
+  const list = [...total].filter(([, qty]) => qty > 0).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+  const shown = list.slice(0, limit).map(([item, qty]) => `${qty} ${itemDef(item)?.name ?? item}`);
+  const hidden = list.length - shown.length;
+  if (hidden > 0) return `${shown.join(', ')} e mais ${hidden} tipo(s)`;
+  return shown.length > 1 ? `${shown.slice(0, -1).join(', ')} e ${shown.at(-1)}` : (shown[0] ?? '');
+}
+
+/**
+ * Resumo da virada do dia: a comida sai da mochila e a manutenção sai do saldo sem nenhum gesto do jogador, então
+ * tudo o que foi gasto precisa ser dito. Vazio quando nada foi gasto.
+ */
+export function communityDayDigest(cycles: readonly Pick<CommunityCycle, 'consumed' | 'maintenancePaid'>[]): string {
+  if (cycles.length === 0) return '';
+  const food = describeConsumedFood(cycles.flatMap((cycle) => cycle.consumed));
+  const coins = cycles.reduce((sum, cycle) => sum + cycle.maintenancePaid, 0);
+  if (!food && coins <= 0) return '';
+  const when = cycles.length > 1 ? `Nos ${cycles.length} dias em que você esteve fora` : 'Ao virar o dia';
+  const parts = [food ? `os moradores comeram ${food} da sua mochila` : '', coins > 0 ? `a manutenção custou ${coins} moedas` : ''].filter(Boolean);
+  return `${when}, ${parts.join(' e ')}.`;
 }
 
 /** Aplica somente perdas da liquidação; não consome itens que não estejam catalogados como alimento. */

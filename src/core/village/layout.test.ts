@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { advance, makeWalker, moving, stepVillager, swapPlaces } from './actors';
-import { chokepoints, cutsOff, generateVillage, isWalkable, keyPoints, reachableFrom, setTile, tileAt } from './map';
+import { buildingAt, buildingTapTile, chokepoints, cutsOff, generateVillage, isWalkable, keyPoints, reachableFrom, setTile, tileAt } from './map';
 import type { Tile, VillageMap } from './map';
 import { pathStep } from './pathing';
 import { FURNITURE_IDS, SEED_IDS } from './catalog';
@@ -9,6 +9,17 @@ import { sanitizeTown } from './town';
 import { VILLAGE_SEED } from '../../app/village-store';
 import { TOWN } from './town-layout';
 import { WEST } from './west';
+
+describe('toque em prédio', () => {
+  it('mira um bloco do próprio prédio, onde o A funciona, em todos os prédios do mapa', () => {
+    const map = generateVillage(VILLAGE_SEED);
+    for (const b of map.buildings) {
+      const tile = buildingTapTile(b);
+      expect(buildingAt(map, tile.x, tile.y)).toBe(b);
+      expect(isWalkable(map, b.door.x, b.door.y)).toBe(true);
+    }
+  });
+});
 
 /** Um bloco de grama aberta no gramado a oeste da praça (mapa de `VILLAGE_SEED`). */
 const OPEN = { x: WEST + 24, y: 29 };

@@ -5,7 +5,7 @@ import { add, count, emptyVillage, friendOf, normalizeVillage } from './life';
 import { generateVillage } from './map';
 import { birthdayOf } from './personality';
 import {
-  albumEntries, albumProgress, catchUp, MAX_AWAY_MOMENTS, makeEnv, pickMoment, recentGossip, relationMap, relationsOf, resolveScene, savedMoments, sceneChoice, setFavorite, sceneOfTemplate, TEMPLATE_BY_ID, TEMPLATE_COUNT, TEMPLATES, unreadCount,
+  albumEntries, albumProgress, catchUp, MAX_AWAY_MOMENTS, makeEnv, pickMoment, recentGossip, relationMap, relationsOf, resolveScene, savedMoments, sceneChoice, sceneOptionLacks, setFavorite, sceneOfTemplate, TEMPLATE_BY_ID, TEMPLATE_COUNT, TEMPLATES, unreadCount,
 } from './social';
 import type { Actor, Ctx, Scene } from './social';
 import { emptySocial, FX_EMOJI, MAX_DIARY, MAX_SAVED, MOMENT_KINDS, normalizeSocial, pairKey, relationStatus } from './social-state';
@@ -283,6 +283,16 @@ describe('momentos: resultado', () => {
     const again = resolveScene(s, { ...sc }, null, 2_000_000);
     expect(again.firstTime).toBe(false);
     expect(albumProgress(s).seen).toBe(1);
+  });
+
+  it('a opção paga não aparece disponível com o estoque reservado pelo Conselho', () => {
+    const s = fresh();
+    add(s, 'oran', 2);
+    const needs = { item: 'oran', qty: 1 } as const;
+    expect(sceneOptionLacks(s, needs)).toBe(false);
+    expect(sceneOptionLacks(s, undefined)).toBe(false);
+    (s.community.council as unknown[]).push({ id: 'p', kind: 'cozinha-reforco', status: 'apoiado', ingredients: [{ item: 'oran', qty: 2 }] });
+    expect(sceneOptionLacks(s, needs)).toBe(true);
   });
 
   it('as escolhas mudam o resultado e itens exigidos só são gastos se você tiver', () => {

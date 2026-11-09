@@ -24,7 +24,7 @@ import { cropAt, daylight, friendOf, isPlaced, needsWater } from '../core/villag
 import type { VillageState } from '../core/village/life';
 import { homeDecor, homeLevel, homeOf, homeStyleOf, isAsleep, ROOFS, roofIndex } from '../core/village/town';
 import { buildingGroundY, WORK_AREAS, WORK_SITES } from '../core/village/town-layout';
-import { buildingAt, findFree, isSolidTile, isWalkable, tileAt } from '../core/village/map';
+import { buildingAt, buildingTapTile, findFree, isSolidTile, isWalkable, tileAt } from '../core/village/map';
 import { pathBudget, pathStep } from '../core/village/pathing';
 import { blockedForResident, MoverGrid, StaticBlockGrid } from '../core/village/occupancy';
 import type { ResidentOccupancyWorld } from '../core/village/occupancy';
@@ -235,6 +235,7 @@ export class VillageGame {
   /** Canvas de trabalho do brilho (um só, reaproveitado: o brilho é desenhado na hora, quadro a quadro). */
   private sheenCanvas: HTMLCanvasElement | null = null;
   private vignette: { ctx: CanvasRenderingContext2D; w: number; h: number; fill: CanvasGradient } | null = null;
+  private hd2dLens: { ctx: CanvasRenderingContext2D; w: number; h: number; fill: CanvasGradient } | null = null;
   /** Quando o arco-íris apareceu (depois de uma chuva forte); null = céu normal. */
   private rainbowAt: number | null = null;
   private rainWasHeavy = false;
@@ -1887,8 +1888,8 @@ export class VillageGame {
       const spriteBase = sy(buildingGroundY(b));
       const left = sx(b.x);
       const mid = sx(b.x + b.w / 2);
-      // A fachada é alta e inclinada, mas a ação acontece na porta dela.
-      this.clickHitboxes.push({ x: left, y: spriteBase - Math.max(4 * T, b.h * T * 1.8), w: b.w * T, h: Math.max(4 * T, b.h * T * 1.8), target: { x: b.door.x, y: b.door.y } });
+      // A fachada é alta e inclinada; mirar a porta (chão livre) fazia o treinador parar ao lado dela, virado para o nada.
+      this.clickHitboxes.push({ x: left, y: spriteBase - Math.max(4 * T, b.h * T * 1.8), w: b.w * T, h: Math.max(4 * T, b.h * T * 1.8), target: buildingTapTile(b) });
       const nearDoor = Math.abs(this.player.x - b.door.x) + Math.abs(this.player.y - b.door.y) <= 4;
       if (b.kind === 'fountain') {
         const f = Math.floor(now / 450) % 2;
@@ -2605,13 +2606,20 @@ export class VillageGame {
     if (hd2d) {
       // Vinheta seletiva: dá volume à cena sem ocultar informação ou aplicar
       // um filtro caro no canvas inteiro. O centro acompanha o treinador.
+      // O gradiente fica em torno da origem e só muda com o tamanho da tela; quem acompanha a câmera é o translate.
       const focusY = sy(focusDepth);
-      const lens = ctx.createRadialGradient(W / 2, focusY, Math.min(W, H) * 0.16, W / 2, focusY, Math.max(W, H) * 0.72);
-      lens.addColorStop(0, 'rgba(22,32,54,0)');
-      lens.addColorStop(0.7, 'rgba(22,32,54,0.018)');
-      lens.addColorStop(1, 'rgba(12,18,34,0.13)');
-      ctx.fillStyle = lens;
-      ctx.fillRect(0, 0, W, H);
+      if (this.hd2dLens?.ctx !== ctx || this.hd2dLens.w !== W || this.hd2dLens.h !== H) {
+        const fill = ctx.createRadialGradient(0, 0, Math.min(W, H) * 0.16, 0, 0, Math.max(W, H) * 0.72);
+        fill.addColorStop(0, 'rgba(22,32,54,0)');
+        fill.addColorStop(0.7, 'rgba(22,32,54,0.018)');
+        fill.addColorStop(1, 'rgba(12,18,34,0.13)');
+        this.hd2dLens = { ctx, w: W, h: H, fill };
+      }
+      ctx.save();
+      ctx.translate(W / 2, focusY);
+      ctx.fillStyle = this.hd2dLens.fill;
+      ctx.fillRect(-W / 2, -focusY, W, H);
+      ctx.restore();
     }
     if (layer === 'scene' && !this.diorama && this.interactionMarker) {
       const target = this.interactionMarker;

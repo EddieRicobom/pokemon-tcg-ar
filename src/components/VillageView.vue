@@ -54,7 +54,7 @@ import {
 import { GIFT_TAG_LABEL, giftOptions } from '../core/village/gift-options';
 import { dailyMarks, nextVillageStep } from '../core/village/next-step';
 import type { NextStep } from '../core/village/next-step';
-import { albumEntries, albumProgress, catchUp, makeEnv, pickMoment, recentGossip, recordFriendMilestone, relationMap, relationsOf, resolveScene, savedMoments, sceneChoice, setFavorite, unreadCount } from '../core/village/social';
+import { albumEntries, albumProgress, catchUp, makeEnv, pickMoment, recentGossip, recordFriendMilestone, relationMap, relationsOf, resolveScene, savedMoments, sceneChoice, sceneOptionLacks, setFavorite, unreadCount } from '../core/village/social';
 import {
   canAffordSummon, canEvolve, COIN_SUMMON_COST, COIN_SUMMON_ENABLED, evolve, EVOLVE_COST, grantStarter, grantSurvival, instanceOf, LAST_DEX_ID, pickAnySpecies,
   pickFonteSpecies, summon, SUMMON_COST, summonWithCoins,
@@ -92,7 +92,7 @@ import { dailyRecap, needsDailyRecap } from '../core/village/daily-recap';
 import type { RecapScene } from '../core/village/daily-recap';
 import { villageSummary } from '../core/village/summary';
 import type { SummaryEntry } from '../core/village/summary';
-import { advanceCommunity, communityForecast, decideCommunityProject } from '../core/village/community';
+import { advanceCommunity, communityDayDigest, communityForecast, decideCommunityProject, describeConsumedFood } from '../core/village/community';
 import { FarmSession } from '../core/village/farm';
 import type { FarmTask } from '../core/village/farm';
 import FarmSeedBox from './FarmSeedBox.vue';
@@ -1690,13 +1690,16 @@ function speakToResident(id: string): void {
   const today = refreshDay();
   const name = nameOf(id);
   const result = talk(state, id, name, types.get(id) ?? [], today, villageHour(), Math.random, recentGossip(state, id, Date.now(), { compact: true, nameOf: residentNameForDisplay }), game.weatherKind, game.placeOf(id));
-  if (result.gained > 0) {
+  // Duas fontes de propósito: o bônus fixo da conversa e o XP do Treinador, que vira moedas (limite diário em `XP.villagePerDay`).
+  const coinsBefore = state.coins;
+  if (result.first) {
     game.bubble(id, '❤️');
     trainerEvent('talk', id);
     earnCoins(TALK_COINS);
   }
   if (result.lost > 0) game.bubble(id, '😞', 2600);
-  let text = result.text + friendGainNote(id, result.gained - result.lost);
+  const talkCoins = state.coins - coinsBefore;
+  let text = result.text + friendGainNote(id, result.gained - result.lost) + (talkCoins > 0 ? ` 🪙 +${talkCoins} moedas.` : '');
   if (id === state.cafeWaiterId && level.value >= 3 && professionActive('cafe', mons.value.length)) text = 'Estou atendendo as mesas do Café! Mas tenho um tempinho para conversar. ' + text;
   const help = dailyHelp(state, id, today, Math.random);
   if (help.items.length > 0) text += ` Ah! Achei isto pela Vila para você: ${help.items.map((h) => `${h.qty} ${itemName(h.item)}`).join(' e ')}.`;
@@ -2523,7 +2526,7 @@ function finishScene(scene: Scene, ids: string[]): void {
     text: choice.prompt,
     actions: [
       ...choice.options.map((o, i) => {
-        const lacks = !!o.needs && count(state, o.needs.item) < o.needs.qty;
+        const lacks = sceneOptionLacks(state, o.needs);
         return { label: o.needs ? `${o.label} (${o.needs.qty} ${itemName(o.needs.item)})` : o.label, disabled: lacks, run: () => decide(i) };
       }),
       { label: 'Deixa pra lá', run: () => decide(null) },
@@ -2766,6 +2769,7 @@ function tickFarm(): void {
 /** `refreshDay` é chamada de muitos lugares (mapa, passos, clima): a data só é relida uma vez por segundo. */
 let dayReadAt = -Infinity;
 let communityDay = '';
+let communityNotice = '';
 function refreshDay(): string {
   const at = performance.now();
   if (at - dayReadAt < 1000 && communityDay === day.value) return day.value;
@@ -2786,11 +2790,19 @@ function refreshDay(): string {
     if (result.initialized || result.cycles.length > 0) changed();
     const latestCycle = result.cycles.at(-1);
     if (latestCycle) game.showCommunityActivities(latestCycle.activities, latestCycle.day);
-    const notice = [...result.cycles].reverse().find((cycle) => cycle.notice)?.notice;
-    if (notice) say(`🏡 ${notice}`, 6500);
-    if (result.skippedDays > 0) say(`A simulação comunitária considera até sete dias de ausência; ${result.skippedDays} dia(s) mais antigo(s) ficaram sem cobrança.`, 8000);
+    const notice = [...result.cycles].reverse().find((cycle) => cycle.notice)?.notice ?? '';
+    const skipped = result.skippedDays > 0 ? `Ausências contam até sete dias; ${result.skippedDays} dia(s) mais antigo(s) ficaram sem cobrança.` : '';
+    const text = [communityDayDigest(result.cycles), notice, skipped].filter(Boolean).join(' ');
+    if (text) communityNotice = `🏡 ${text}`;
   }
   return today;
+}
+
+/** A virada do dia costuma acontecer com o resumo ou a abertura na tela: guarda o aviso até o mapa estar à vista. */
+function flushCommunityNotice(): void {
+  if (!communityNotice || worldBlocked() || welcome.value || loading.value || toast.value) return;
+  say(communityNotice, 8000);
+  communityNotice = '';
 }
 
 function confirmFocusedAction(): boolean {
@@ -3491,6 +3503,7 @@ onMounted(async () => {
   if (!recapScenes.value.length && !cutsceneOpen.value && !welcome.value) finishArrival();
   sceneTimer = setInterval(() => {
     syncMusic();
+    flushCommunityNotice();
     tickScenes();
     tickQuestions();
     checkMewBlessing();
@@ -3930,6 +3943,7 @@ onBeforeUnmount(() => {
             <p>Manutenção dos serviços comuns: até {{ communityView.maintenanceDue }} moedas por ciclo diário ({{ communityView.residents }} × 4, mais 10; população zero não paga). Seu saldo atual {{ communityView.maintenanceFunded ? 'cobre' : 'não cobre' }} essa estimativa.</p>
             <p v-if="lastCommunityCycle?.notice" role="status">Último ciclo, {{ lastCommunityCycle.day }}: {{ lastCommunityCycle.notice }}</p>
             <p v-else-if="lastCommunityCycle">Último ciclo, {{ lastCommunityCycle.day }}: {{ lastCommunityCycle.foodServed }} porções nutritivas para a meta de {{ lastCommunityCycle.foodTarget }}; {{ lastCommunityCycle.preferredServings }} porção(ões) corresponderam a preferências conhecidas; {{ lastCommunityCycle.maintenancePaid }}/{{ lastCommunityCycle.maintenanceDue }} moedas de manutenção pagas.</p>
+            <p v-if="lastCommunityCycle?.consumed.length">Da mochila, nesse ciclo: {{ describeConsumedFood(lastCommunityCycle.consumed) }}.</p>
             <ul v-if="lastCommunityCycle?.activities.length" aria-label="Atividades do último ciclo">
               <li v-for="activity in lastCommunityCycle.activities.slice(0, 5)" :key="activity.residentId">{{ activity.icon }} {{ nameOf(activity.residentId) }}: {{ activity.result }}</li>
               <li v-if="lastCommunityCycle.activities.length > 5" class="hint">E mais {{ lastCommunityCycle.activities.length - 5 }} atividade(s) no ciclo.</li>
@@ -4029,6 +4043,7 @@ onBeforeUnmount(() => {
             <label>Organizar <select v-model="inventorySort" aria-label="Organizar itens da mochila"><option value="catalogo">Catálogo</option><option value="nome">Nome (A–Z)</option><option value="quantidade">Maior quantidade</option><option value="categoria">Categoria</option></select></label>
           </div>
           <p v-if="inventory.length && inventoryList.length === 0" class="hint">Nenhum item corresponde aos filtros.</p>
+          <p v-if="communityView.foodTarget > 0 && communityView.foodAvailable > 0" class="hint">🍽️ Os moradores comem da mochila: a cada virada de dia saem cerca de {{ communityView.foodTarget }} porções, primeiro as comidas favoritas deles e depois as mais baratas. O que está no Conselho fica guardado. Detalhes no Resumo da Vila.</p>
           <ul class="item-grid">
             <li class="backpack-launch">
               <span>🎒 <strong>Mochila 3D</strong><small>Gire o celular para explorar os itens e ouvir os sons.</small></span>
@@ -4322,6 +4337,10 @@ onBeforeUnmount(() => {
 .gift-tag { display: block; font-size: 0.7rem; color: #565c75; }
 /* Número e rótulo são itens flex: sem isto o espaço some ("500moedas"). */
 .menu-status > span { column-gap: 0.28em; }
+/* Em pé, os diálogos ficam acima do A/B: colados no rodapé, o último botão encostava no B. */
+@media (orientation: portrait) {
+  .speech.village-dialog { bottom: max(84px, calc(env(safe-area-inset-bottom) + 76px)); }
+}
 @media (max-width: 380px) {
   .village-next { grid-template-columns: auto minmax(0, 1fr); }
   .village-next > button { grid-column: 1 / -1; width: 100%; }
