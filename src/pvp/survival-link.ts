@@ -1,5 +1,5 @@
-import { applyArenaSnapshot, createArena, NO_INPUT, SV_SNAPSHOT_MS, snapshotArena, stepArena } from '../core/survivor-pvp';
-import type { ArenaEvent, ArenaInput, ArenaSnapshot, ArenaState, SvMonSpec } from '../core/survivor-pvp';
+import { applyArenaSnapshot, createArena, markerSnapshot, NO_INPUT, SV_SNAPSHOT_MS, snapshotArena, stepArena } from '../core/survivor-pvp';
+import type { ArenaEvent, ArenaInput, ArenaMarkerSnap, ArenaSnapshot, ArenaState, SvMonSpec } from '../core/survivor-pvp';
 import { inputOf } from './survival-wire';
 import type { WireMessage } from './wire';
 
@@ -73,7 +73,7 @@ export class SurvivalHostLink {
 export interface ArenaView {
   sides: [{ x: number; y: number }, { x: number; y: number }];
   shots: { id: number; side: 0 | 1; x: number; y: number; type: ArenaState['shots'][number]['type']; radius: number }[];
-  markers: { id: number; side: 0 | 1; x: number; y: number; radius: number; type: ArenaState['markers'][number]['type']; leftMs: number }[];
+  markers: ArenaMarkerSnap[];
 }
 
 export class SurvivalGuestLink {
@@ -128,7 +128,7 @@ export class SurvivalGuestLink {
       return {
         sides: [{ x: this.state.sides[0].x, y: this.state.sides[0].y }, { x: this.state.sides[1].x, y: this.state.sides[1].y }],
         shots: this.state.shots.map((s) => ({ id: s.id, side: s.side, x: s.x, y: s.y, type: s.type, radius: s.radius })),
-        markers: this.state.markers.map((m) => ({ id: m.id, side: m.side, x: m.x, y: m.y, radius: m.radius, type: m.type, leftMs: m.leftMs })),
+        markers: this.state.markers.map(markerSnapshot),
       };
     }
     const prev = this.prev ?? cur;

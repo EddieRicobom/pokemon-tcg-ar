@@ -1,25 +1,30 @@
 import { typeEffectiveness } from './battle';
+import { arenaSpecialOf } from './arena-specials';
 import { distanceToSegment } from './survivor-charge';
-import { canDodge, canGuard, canSpecial, canSwapAttack, NO_INPUT, specialShapeOf, SV_ARENA_H, SV_ARENA_W, SV_MON_RADIUS, SV_SPECIAL_NOVA_RADIUS } from './survivor-pvp';
+import { inSurvivorCone } from './survivor-shapes';
+import { canDodge, canGuard, canSpecial, canSwapAttack, NO_INPUT, SV_ARENA_H, SV_ARENA_W, SV_DODGE_MS, SV_MON_RADIUS } from './survivor-pvp';
 import type { ArenaInput, ArenaMon, ArenaSide, ArenaState } from './survivor-pvp';
 
 /**
  * O rival da luta da Arena. Usa os mesmos controles de uma pessoa (andar, trocar de Pokémon, escudo, trocar de ataque) e só
  * lê o que está na tela. `skill` (0 a 1) encurta o tempo de reação: líderes da Liga decidem mais rápido que um treino.
- * Sem sorteio: a mesma luta com as mesmas entradas dá o mesmo resultado.
+ * Sem sorteio: a mesma luta com as mesmas entradas dá o mesmo resultado. O ritmo varia por uma conta sobre o relógio da
+ * luta, e os rivais espertos guardam o Especial para a hora em que a esquiva de quem joga está recarregando.
  */
 
 const THINK_SLOW_MS = 650;
 const THINK_FAST_MS = 200;
-const STRAFE_EVERY_MS = 1700;
+/** Quanto dura cada direção andando de lado: um intervalo fixo vira um ritmo que dá para decorar. */
+const STRAFE_MIN_MS = 900;
+const STRAFE_MAX_MS = 2600;
 /** Distância em que o rival começa a desviar: um rival mais esperto vê o golpe chegando de mais longe. */
 const DODGE_NEAR = 50;
 const DODGE_FAR = 130;
 const GUARD_RANGE = 46;
 /** Depois de trocar por vontade própria, fica um tempo em campo: o rival não vira uma roleta de Pokémon. */
 const SWITCH_MIN_STAY_MS = 14_000;
-/** Alcance do Especial em linha: de mais longe o alvo tem tempo demais para sair. */
-const SPECIAL_BEAM_REACH = 430;
+/** Quanto tempo o rival esperto segura o Especial à espera de uma abertura, antes de lançar assim mesmo. */
+const SPECIAL_HOLD_MS = 5000;
 
 /** A que distância do alvo cada forma de ataque rende. */
 function wantedDistance(mon: ArenaMon, drawingTrail: boolean): number {
@@ -58,6 +63,12 @@ function betterReserve(state: ArenaState, side: ArenaSide, foe: ArenaMon, margin
   return best;
 }
 
+/** Número entre 0 e 1 que só depende das entradas: a mesma luta anda igual, mas sem um padrão fixo. */
+function mix(a: number, b: number): number {
+  const v = Math.sin(a * 127.1 + b * 311.7) * 43758.5453;
+  return v - Math.floor(v);
+}
+
 /** O que o rival sabe fazer. Tudo ligado por padrão; os testes desligam um de cada vez para medir quanto cada um rende. */
 export interface ArenaBotTraits {
   dodge: boolean;
@@ -66,10 +77,14 @@ export interface ArenaBotTraits {
   swapAttack: boolean;
   dash: boolean;
   special: boolean;
+  /** Muda o ritmo: aperta, recua e troca o lado sem seguir um relógio. */
+  variety: boolean;
+  /** Segura o Especial até o alvo ficar sem esquiva, atordoado, lento ou quase caindo. */
+  ambush: boolean;
 }
 
 export function createArenaBot(side: ArenaSide, skill: number, traits: Partial<ArenaBotTraits> = {}): (state: ArenaState, dtMs: number) => ArenaInput {
-  const can: ArenaBotTraits = { dodge: true, switching: true, guard: true, swapAttack: true, dash: true, special: true, ...traits };
+  const can: ArenaBotTraits = { dodge: true, switching: true, guard: true, swapAttack: true, dash: true, special: true, variety: true, ambush: true, ...traits };
   const level = Math.max(0, Math.min(1, skill));
   const thinkMs = THINK_SLOW_MS + (THINK_FAST_MS - THINK_SLOW_MS) * level;
   const dodgeRange = DODGE_NEAR + (DODGE_FAR - DODGE_NEAR) * level;
@@ -82,7 +97,17 @@ export function createArenaBot(side: ArenaSide, skill: number, traits: Partial<A
   // A esquiva pede reflexo: o rival fraco não usa, e o forte espera o golpe estar mais perto para não gastar à toa.
   const dashes = level >= 0.3;
   const dashTrigger = 34 + 46 * level;
+  // O rival fraco é o mais previsível de propósito: é contra ele que se aprende.
+  const varies = can.variety && level >= 0.3;
+  const ambushes = can.ambush && level >= 0.5;
   let lastSwitchMs = -Infinity;
+  let strafeUntil = 0;
+  let strafeDir = 1;
+  let beat = 0;
+  /** Quão perto joga agora: 1 é o normal, menos é apertar, mais é recuar. */
+  let stance = 1;
+  let foeDodgeSeen = false;
+  let specialSince = Infinity;
   const foeSide: ArenaSide = side === 0 ? 1 : 0;
   let wait = 0;
   let dx = 0;
@@ -103,27 +128,57 @@ export function createArenaBot(side: ArenaSide, skill: number, traits: Partial<A
     const toFoeX = foeTeam.x - team.x;
     const toFoeY = foeTeam.y - team.y;
     const dist = Math.hypot(toFoeX, toFoeY) || 1;
-    const gap = dist - wantedDistance(mon, team.trailMs > 0);
     // Anda de lado em volta do alvo, trocando de sentido de tempos em tempos: é o que também enche a Trilha.
-    const strafe = Math.floor(state.timeMs / STRAFE_EVERY_MS) % 2 === 0 ? 1 : -1;
-    const forward = Math.max(-1, Math.min(1, gap / 40));
+    if (state.timeMs >= strafeUntil) {
+      beat++;
+      const seed = side + team.active * 7 + 1;
+      const roll = varies ? mix(beat, seed) : 0.45;
+      strafeUntil = state.timeMs + STRAFE_MIN_MS + (STRAFE_MAX_MS - STRAFE_MIN_MS) * roll;
+      strafeDir = varies ? (mix(beat * 3, seed) < 0.5 ? 1 : -1) : -strafeDir;
+      stance = varies ? 0.7 + mix(beat * 5, seed) * 0.6 : 1;
+    }
+    // Quem esquiva muda o lado do rival esperto: ele não fica correndo para onde o alvo estava.
+    const foeDodging = foeTeam.dodgeMs > 0;
+    if (level >= 0.6 && foeDodging && !foeDodgeSeen) strafeDir = -strafeDir;
+    foeDodgeSeen = foeDodging;
+    const strafe = strafeDir;
+    const gap = dist - wantedDistance(mon, team.trailMs > 0) * stance;
     const useSpecial = can.special && canSpecial(state, side);
-    const nova = specialShapeOf(mon) === 'nova';
-    // Com a nova pronta, chega perto para pegar o alvo dentro do círculo.
-    const closing = useSpecial && nova && dist > SV_SPECIAL_NOVA_RADIUS * 0.7 ? 1 : forward;
+    if (!useSpecial) specialSince = Infinity;
+    else if (specialSince === Infinity) specialSince = state.timeMs;
+    const special = arenaSpecialOf(mon.attackType);
+    const foeHelpless = foeTeam.stunMs > 0;
+    // Com o Especial à mão, ou com o alvo atordoado, vai para perto em vez de ficar rodeando.
+    const forward = foeHelpless && !mon.moveCategory?.includes('projetil') ? 1 : Math.max(-1, Math.min(1, gap / 40));
+    const closing = useSpecial && dist > special.reach * 0.85 ? 1 : forward;
     let moveX = (toFoeX / dist) * closing - (toFoeY / dist) * strafe * 0.7;
     let moveY = (toFoeY / dist) * closing + (toFoeX / dist) * strafe * 0.7;
     let wantDash = false;
 
-    // Sair do círculo marcado vem antes de tudo: é o aviso mais claro que a arena dá.
+    // Sair do que está marcado no chão vem antes de tudo: é o aviso mais claro que a arena dá.
+    let wantGuard = false;
     for (const marker of state.markers) {
       if (marker.side === side) continue;
+      if (marker.kind === 'cone') {
+        if (level < 0.25 || !inSurvivorCone({ x: marker.x, y: marker.y, aimAngle: marker.angle ?? 0, facing: 1 }, team.x, team.y, marker.radius + 8, SV_MON_RADIUS)) continue;
+        // O leque é largo perto de quem bate: a saída é pelo lado.
+        const ax = Math.cos(marker.angle ?? 0);
+        const ay = Math.sin(marker.angle ?? 0);
+        const off = (team.x - marker.x) * -ay + (team.y - marker.y) * ax >= 0 ? 1 : -1;
+        moveX = -ay * off;
+        moveY = ax * off;
+        if (marker.leftMs <= thinkMs + SV_DODGE_MS) wantDash = true;
+        if (marker.special && marker.leftMs <= thinkMs) wantGuard = true;
+        continue;
+      }
       const away = Math.hypot(team.x - marker.x, team.y - marker.y) || 1;
+      if (marker.kind === 'aura' && level < 0.25) continue;
       if (away <= marker.radius + SV_MON_RADIUS + 10) {
         moveX = (team.x - marker.x) / away;
         moveY = (team.y - marker.y) / away;
-        // Andando não dá tempo de sair: a esquiva resolve.
-        if (marker.radius + SV_MON_RADIUS - away > (mon.speed * marker.leftMs) / 1000) wantDash = true;
+        // Andando não dá tempo de sair: a esquiva resolve, e o rival esperto espera o último instante.
+        if (marker.radius + SV_MON_RADIUS - away > (mon.speed * marker.leftMs) / 1000 && marker.leftMs <= Math.max(thinkMs + SV_DODGE_MS, level < 0.5 ? 1500 : 0)) wantDash = true;
+        if (marker.special && marker.leftMs <= thinkMs) wantGuard = true;
       }
     }
 
@@ -139,7 +194,10 @@ export function createArenaBot(side: ArenaSide, skill: number, traits: Partial<A
       const sign = (team.x - beam.x0) * -by + (team.y - beam.y0) * bx >= 0 ? 1 : -1;
       moveX = (-by / len) * sign;
       moveY = (bx / len) * sign;
-      if (reach - off > (mon.speed * beam.leftMs) / 1000) wantDash = true;
+      if (reach - off > (mon.speed * beam.leftMs) / 1000) {
+        wantDash = true;
+        if (beam.special && beam.leftMs <= thinkMs) wantGuard = true;
+      }
     }
 
     let danger = false;
@@ -177,12 +235,16 @@ export function createArenaBot(side: ArenaSide, skill: number, traits: Partial<A
     if (reserve >= 0) lastSwitchMs = state.timeMs;
     const alt = mon.alt;
     const swapAttack = can.swapAttack && swapsAttack && !!alt && canSwapAttack(state, side) && matchup(alt.attackType, foe) > matchup(mon.attackType, foe);
-    const shield = can.guard && closest <= GUARD_RANGE && mon.hp / mon.maxHp < guardBelow && canGuard(state, side);
     const dodge = can.dash && dashes && reserve < 0 && (wantDash || closest <= dashTrigger) && canDodge(state, side);
+    // Quando não dá para sair nem esquivar, o rival esperto segura o golpe grande com o escudo.
+    const blockSpecial = wantGuard && level >= 0.4 && !dodge;
+    const shield = can.guard && canGuard(state, side) && ((closest <= GUARD_RANGE && mon.hp / mon.maxHp < guardBelow) || blockSpecial);
     const foeImmune = foeTeam.shieldMs > 0 || foeTeam.guardMs > 0 || foeTeam.swapMs > 0;
-    const inReach = nova ? dist <= SV_SPECIAL_NOVA_RADIUS * 0.85 : dist <= SPECIAL_BEAM_REACH;
+    // A abertura: o alvo acabou de gastar a esquiva, não consegue andar direito, ou está por um fio.
+    const opening = foeTeam.dodgeCdMs > 0 || foeTeam.stunMs > 0 || foeTeam.slowMs > 0 || foe.hp / foe.maxHp < 0.3;
+    const held = ambushes && !opening && state.timeMs - specialSince < SPECIAL_HOLD_MS;
     // Só o rival esperto segura o Especial enquanto o alvo está protegido.
-    const special = useSpecial && reserve < 0 && inReach && !(level >= 0.5 && foeImmune);
-    return { dx, dy, switchTo: reserve, shield, swapAttack, dodge, special };
+    const launch = useSpecial && reserve < 0 && dist <= special.reach && !held && !(level >= 0.5 && foeImmune);
+    return { dx, dy, switchTo: reserve, shield, swapAttack, dodge, special: launch };
   };
 }

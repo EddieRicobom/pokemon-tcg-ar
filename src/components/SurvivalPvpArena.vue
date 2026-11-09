@@ -9,6 +9,9 @@ import { isFrameDue } from '../core/frame-rate';
 import type { SoundCue } from '../box/sound-recipes';
 import { SoundEngine } from '../box/sound';
 import { ArenaDirector, arenaResultText, speedLineWedges } from '../core/arena-cinema';
+import { arenaSpecialOf } from '../core/arena-specials';
+import { ArenaCoach, COACH_TEXT } from '../core/arena-tutorial';
+import type { ArenaCoachStep } from '../core/arena-tutorial';
 import type { CinemaBeat } from '../core/arena-cinema';
 import { TELEPORT_HIT_RADIUS } from '../core/survivor-charge';
 import { flashAlpha, impactFromFx, moveLight } from '../core/survivor-impacts';
@@ -24,10 +27,10 @@ import type { ScreenPoint } from '../village/survivor-attack-art';
 import { TYPE_COLORS, TYPE_LABELS_PT } from '../core/pokemon-data';
 import type { PokemonType } from '../core/pokemon-data';
 import {
-  aliveCount, arenaCameraTarget, dodgeBlockReason, specialBlockReason, specialShapeOf, SV_DODGE_COOLDOWN_MS, SV_SWAP_RECALL_MS, SV_SWAP_SEND_MS, SV_SWAP_TOTAL_MS, SV_TELEGRAPH_MS, attackSwapBlockReason, guardBlockReason, offscreenPointer, SV_ARENA_H, SV_ARENA_W, SV_ATTACK_SWAP_CD_MS, SV_GUARD_COOLDOWN_MS, SV_MON_RADIUS, SV_SWITCH_COOLDOWN_MS, SV_VIEW_H, SV_VIEW_W, switchBlockReason,
+  aliveCount, arenaCameraTarget, dodgeBlockReason, markerSnapshot, specialBlockReason, SV_DODGE_COOLDOWN_MS, SV_SWAP_RECALL_MS, SV_SWAP_SEND_MS, SV_SWAP_TOTAL_MS, SV_TELEGRAPH_MS, attackSwapBlockReason, guardBlockReason, offscreenPointer, SV_ARENA_H, SV_ARENA_W, SV_ATTACK_SWAP_CD_MS, SV_GUARD_COOLDOWN_MS, SV_MON_RADIUS, SV_SWITCH_COOLDOWN_MS, SV_VIEW_H, SV_VIEW_W, switchBlockReason,
 } from '../core/survivor-pvp';
 import { SURVIVOR_CONE_HALF_ANGLE } from '../core/survivor-shapes';
-import type { ArenaEvent, ArenaSide, ArenaState, ArenaTeamState, ArenaWinner } from '../core/survivor-pvp';
+import type { ArenaEvent, ArenaMarkerSnap, ArenaSide, ArenaState, ArenaTeamState, ArenaWinner } from '../core/survivor-pvp';
 import { SurvivalGuestLink, SurvivalHostLink } from '../pvp/survival-link';
 import type { ArenaView } from '../pvp/survival-link';
 
@@ -152,6 +155,8 @@ interface Hud {
   dodgeSec: number;
   /** Barra do Especial de quem está em campo. */
   special: { pct: number; ready: boolean; color: string; label: string } | null;
+  /** Dica do tutorial da primeira luta: acende o botão que ela cita. */
+  coach: ArenaCoachStep | null;
   /** Tela de abertura: só durante a contagem. */
   vs: { me: VsSide; foe: VsSide } | null;
 }
@@ -175,7 +180,7 @@ const attackFace = (type: PokemonType, category: MoveCategory | undefined, name:
 
 const clock = (ms: number): string => `${Math.floor(ms / 60000)}:${String(Math.floor(ms / 1000) % 60).padStart(2, '0')}`;
 
-const hud = shallowRef<Hud>({ mine: [], foe: [], summary: '', hint: '', count: 0, switchPct: 0, switchSec: 0, guardPct: 0, guardSec: 0, guardOn: false, charge: null, attack: null, dodgePct: 0, dodgeSec: 0, special: null, vs: null });
+const hud = shallowRef<Hud>({ mine: [], foe: [], summary: '', hint: '', count: 0, switchPct: 0, switchSec: 0, guardPct: 0, guardSec: 0, guardOn: false, charge: null, attack: null, dodgePct: 0, dodgeSec: 0, special: null, coach: null, vs: null });
 const units = shallowRef<Unit[]>([]);
 const fx = shallowRef<Fx[]>([]);
 const artCanvas = ref<HTMLCanvasElement | null>(null);
@@ -194,7 +199,7 @@ const lite = computed(() => !fxOn());
 const cinemaShadow = computed(() => effectiveVisual.value.renderProfile === 'cinema' && effectiveVisual.value.shadow);
 const director = new ArenaDirector();
 const stageEl = ref<HTMLElement | null>(null);
-const cutIn = shallowRef<{ id: number; name: string; move: string; dexId: number; shiny: boolean; color: string; mine: boolean } | null>(null);
+const cutIn = shallowRef<{ id: number; name: string; move: string; dexId: number; shiny: boolean; color: string; tint: string; stripe: number; mine: boolean } | null>(null);
 const banner = shallowRef<{ id: number; text: string; tone: 'ko' | 'last' } | null>(null);
 /** Último Pokémon em campo: o seu pesa mais que o do rival. */
 const drama = ref<'mine' | 'foe' | null>(null);
@@ -334,7 +339,7 @@ let shakeTimer: ReturnType<typeof setTimeout> | null = null;
 const faintAt: [number, number] = [-Infinity, -Infinity];
 const faintIndex: [number, number] = [0, 0];
 /** Áreas marcadas que estavam na tela: quando uma some, o golpe caiu e vira um clarão. */
-const markerPrev = new Map<number, { x: number; y: number; radius: number; type: PokemonType }>();
+const markerPrev = new Map<number, { x: number; y: number; radius: number; type: PokemonType; special: boolean }>();
 let lastCount = -1;
 let lastFloor = '';
 let lastDue = 0;
@@ -378,6 +383,26 @@ let toastId = 0;
 let resultTimer: ReturnType<typeof setTimeout> | null = null;
 let hurtTimer: ReturnType<typeof setTimeout> | null = null;
 const recentTips = new Map<string, number>();
+/** Tutorial só na primeira luta: depois de visto, fica guardado neste aparelho. Sem armazenamento, aparece e não atrapalha. */
+const COACH_SEEN_KEY = 'tcg-arena-tutorial-visto';
+function coachSeen(): boolean {
+  try {
+    return localStorage.getItem(COACH_SEEN_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+function saveCoachSeen(): void {
+  try {
+    localStorage.setItem(COACH_SEEN_KEY, '1');
+  } catch {
+    // Sem armazenamento a dica volta na próxima luta: é o que dá para fazer.
+  }
+}
+const coach = new ArenaCoach(coachSeen());
+let coachSaved = false;
+let dodgedNow = false;
+let specialNow = false;
 
 const markBroken = (dexId: number): void => {
   if (!broken.value.includes(dexId)) broken.value = [...broken.value, dexId];
@@ -561,18 +586,24 @@ function handleEvents(events: ArenaEvent[]): void {
     } else if (e.k === 'dodge') {
       const mon = mons[state.sides[e.side].active];
       if (fxOn()) dashMarks = [...dashMarks.slice(-3), { x0: e.x0, y0: e.y0, x1: e.x1, y1: e.y1, color: mon ? TYPE_COLORS[mon.attackType] : '#ffffff', born: clockNow() }];
-      if (e.side === mySide) vibrate({ kind: 'bumper' }, visual.sound);
+      if (e.side === mySide) {
+        vibrate({ kind: 'bumper' }, visual.sound);
+        dodgedNow = true;
+      }
     } else if (e.k === 'evade') {
       const p = toView(posOf(e.side).x, posOf(e.side).y);
       addFx('dmg', e.side !== mySide, '#bfefff', { left: `${(p.x / SV_VIEW_W) * 100}%`, top: `${((p.y - 34) / SV_VIEW_H) * 100}%` }, 700, 'Esquivou!');
       playCue({ kind: 'guard' });
     } else if (e.k === 'special') {
       playSound(e.side === mySide ? 'survivor-level' : 'survivor-critical');
-      if (e.side === mySide) vibrate({ kind: 'bumper' }, visual.sound);
-      if (!fxOn()) {
-        const mon = mons[e.index];
-        toast(`${mon?.name ?? 'Pokémon'} usou o Especial!`, e.side === mySide ? 'good' : 'bad', 1500, `sp:${e.side}`);
+      if (e.side === mySide) {
+        vibrate({ kind: 'bumper' }, visual.sound);
+        specialNow = true;
       }
+      const mon = mons[e.index];
+      if (fxOn() && mon) addArtFx('pulse', posOf(e.side).x, posOf(e.side).y, 52, mon.attackType, arenaSpecialOf(mon.attackType).windupMs, {}, 14);
+      // Sem os efeitos não há cut-in: o nome do golpe vem aqui.
+      if (!fxOn() && mon) toast(`${mon.name} usou ${arenaSpecialOf(mon.attackType).name}!`, e.side === mySide ? 'good' : 'bad', 1500, `sp:${e.side}`);
     } else {
       showFx(e);
     }
@@ -606,11 +637,12 @@ function showBeam(e: Extract<ArenaEvent, { k: 'beam' }>): void {
   const mine = e.side === mySide;
   const now = clockNow();
   if (e.leftMs > 0) {
-    beamMarks = [...beamMarks.filter((b) => b.mine !== mine || b.fired), { mine, x0: e.x0, y0: e.y0, x1: e.x1, y1: e.y1, width: e.width, type, born: now, lifeMs: e.leftMs, fired: false, monIndex: team.active }];
+    // Golpe de várias linhas (a Cruz Elétrica): as linhas do mesmo golpe ficam juntas na tela.
+    beamMarks = [...beamMarks.filter((b) => e.multi === true || b.mine !== mine || b.fired), { mine, x0: e.x0, y0: e.y0, x1: e.x1, y1: e.y1, width: e.width, type, born: now, lifeMs: e.leftMs, fired: false, monIndex: team.active }];
     if (!mine) toast('Feixe marcado: saia da linha!', 'bad', 1600, `beam:${e.side}`);
   } else {
     attackSound(e.side, now);
-    beamMarks = [...beamMarks.filter((b) => b.mine !== mine || b.fired), { mine, x0: e.x0, y0: e.y0, x1: e.x1, y1: e.y1, width: e.width, type, born: now, lifeMs: 380, fired: true, monIndex: team.active }];
+    beamMarks = [...beamMarks.filter((b) => e.multi === true || b.mine !== mine || b.fired), { mine, x0: e.x0, y0: e.y0, x1: e.x1, y1: e.y1, width: e.width, type, born: now, lifeMs: 380, fired: true, monIndex: team.active }];
   }
 }
 
@@ -619,7 +651,8 @@ function showFx(e: Extract<ArenaEvent, { k: 'cone' | 'pulse' | 'blink' }>): void
   const team = state.sides[e.side];
   const mon = team.mons[team.active];
   const type: PokemonType = mon?.attackType ?? 'normal';
-  const at = posOf(e.side);
+  // O golpe preparado sai do ponto marcado, mesmo que quem preparou já tenha andado.
+  const at = e.k !== 'blink' && e.x !== undefined && e.y !== undefined ? { x: e.x, y: e.y } : posOf(e.side);
   if (e.k === 'blink' && e.leftMs) {
     blinkWarn = [...blinkWarn.filter((b) => b.side !== e.side), { side: e.side, x0: e.x0, y0: e.y0, x1: e.x1, y1: e.y1, type, born: clockNow(), lifeMs: e.leftMs }];
     return;
@@ -645,7 +678,7 @@ function buildScene(now: number): void {
     ? {
       sides: [{ x: state.sides[0].x, y: state.sides[0].y }, { x: state.sides[1].x, y: state.sides[1].y }],
       shots: state.shots.map((s) => ({ id: s.id, side: s.side, x: s.x, y: s.y, type: s.type, radius: s.radius })),
-      markers: state.markers.map((m) => ({ id: m.id, side: m.side, x: m.x, y: m.y, radius: m.radius, type: m.type, leftMs: m.leftMs })),
+      markers: state.markers.map(markerSnapshot),
     }
     : (guestLink as SurvivalGuestLink).view(now);
   lastView = view;
@@ -766,6 +799,49 @@ function drawBeam(ctx: CanvasRenderingContext2D, b: BeamMark, map: (x: number, y
   ctx.restore();
 }
 
+/**
+ * Preparo do cone e da aura: a zona exata do golpe, com o preenchimento crescendo até a hora do dano. É informação de jogo,
+ * então aparece mesmo sem os efeitos; só caminhos simples e nada de sombra borrada, porque se repete a cada golpe.
+ */
+function drawMeleeMark(ctx: CanvasRenderingContext2D, m: ArenaMarkerSnap, map: (x: number, y: number, z?: number) => ScreenPoint, k: number): void {
+  const total = m.totalMs ?? SV_TELEGRAPH_MS;
+  const progress = Math.min(1, Math.max(0, 1 - m.leftMs / total));
+  const reach = m.radius + SV_MON_RADIUS;
+  const color = TYPE_COLORS[m.type];
+  const trace = (r: number): void => {
+    ctx.beginPath();
+    if (m.kind === 'cone') {
+      const half = SURVIVOR_CONE_HALF_ANGLE + Math.asin(Math.min(1, SV_MON_RADIUS / Math.max(SV_MON_RADIUS, m.radius)));
+      const apex = map(m.x, m.y, 2);
+      ctx.moveTo(apex.x, apex.y);
+      for (let i = 0; i <= 10; i++) {
+        const a = (m.angle ?? 0) - half + (i / 10) * half * 2;
+        const p = map(m.x + Math.cos(a) * r, m.y + Math.sin(a) * r, 2);
+        ctx.lineTo(p.x, p.y);
+      }
+      ctx.closePath();
+    } else {
+      const c = map(m.x, m.y);
+      ctx.arc(c.x, c.y, r * k, 0, Math.PI * 2);
+    }
+  };
+  ctx.save();
+  ctx.fillStyle = color;
+  ctx.globalAlpha = 0.14;
+  trace(reach);
+  ctx.fill();
+  ctx.globalAlpha = 0.2 + 0.32 * progress;
+  trace(Math.max(1, reach * progress));
+  ctx.fill();
+  ctx.globalAlpha = 0.9;
+  ctx.setLineDash([6, 5]);
+  ctx.lineWidth = (m.special ? 2.4 : 1.5) * Math.max(1, k * 0.8);
+  ctx.strokeStyle = m.side === mySide ? '#ffffff' : '#ff6b63';
+  trace(reach);
+  ctx.stroke();
+  ctx.restore();
+}
+
 /** Linhas de velocidade convergindo no foco do plano: um caminho só, sem sombra borrada. Trocam de desenho poucas vezes por segundo. */
 const wedgeCache = new Map<string, ReturnType<typeof speedLineWedges>>();
 function drawSpeedLines(ctx: CanvasRenderingContext2D, w: number, h: number, k: number, now: number, detailed: boolean): void {
@@ -832,17 +908,22 @@ function drawArt(now: number, view: ArenaView): void {
   const liveMarkers = new Set<number>();
   for (const m of view.markers) {
     liveMarkers.add(m.id);
-    markerPrev.set(m.id, { x: m.x, y: m.y, radius: m.radius, type: m.type });
+    // O cone e a aura já têm a arte própria quando o golpe sai; a marca não vira mais uma explosão.
+    if (m.kind) {
+      drawMeleeMark(ctx, m, map, k);
+      continue;
+    }
+    markerPrev.set(m.id, { x: m.x, y: m.y, radius: m.radius, type: m.type, special: m.special === true });
     // O dano acerta quem está no raio mais o corpo do Pokémon: o círculo mostra exatamente essa zona.
     const reach = m.radius + SV_MON_RADIUS;
-    const closing = Math.min(1, Math.max(0, 1 - m.leftMs / SV_TELEGRAPH_MS));
+    const closing = Math.min(1, Math.max(0, 1 - m.leftMs / (m.totalMs ?? SV_TELEGRAPH_MS)));
     drawElementAuraField(ctx, { x: m.x, y: m.y, attackRadius: reach / 0.8 }, m.type, map, reduceMotion ? 0 : now, detailed);
     drawElementFx(ctx, { kind: 'pulse', x: m.x, y: m.y, r: reach, color: TYPE_COLORS[m.type], ageMs: closing * 700, lifeMs: 700, moveType: m.type }, map, now, detailed);
     const c = map(m.x, m.y);
     ctx.save();
     ctx.globalAlpha = 0.8;
     ctx.setLineDash([6, 5]);
-    ctx.lineWidth = 1.5;
+    ctx.lineWidth = m.special ? 2.6 : 1.5;
     ctx.strokeStyle = m.side === mySide ? '#ffffff' : '#ff6b63';
     ctx.beginPath();
     ctx.arc(c.x, c.y, reach * k, 0, Math.PI * 2);
@@ -852,7 +933,9 @@ function drawArt(now: number, view: ArenaView): void {
   for (const [id, gone] of markerPrev) {
     if (liveMarkers.has(id)) continue;
     markerPrev.delete(id);
-    if (fxOn()) addArtFx('blast', gone.x, gone.y, gone.radius + SV_MON_RADIUS, gone.type, 460);
+    if (!fxOn()) continue;
+    addArtFx('blast', gone.x, gone.y, gone.radius + SV_MON_RADIUS, gone.type, gone.special ? 620 : 460);
+    if (gone.special) addArtFx('pulse', gone.x, gone.y, (gone.radius + SV_MON_RADIUS) * 1.3, gone.type, 560);
   }
   for (const side of [mySide, foeSide] as const) {
     const team = state.sides[side];
@@ -864,7 +947,8 @@ function drawArt(now: number, view: ArenaView): void {
       const shape = { ...at, shots: Math.max(1, mon.shots ?? 1), attackRadius: mon.attackRadius ?? SV_MON_RADIUS * 2, orbitAngle: team.orbitAngle };
       drawOrbitPath(ctx, shape, mon.attackType, map);
       for (let i = 0; i < shape.shots; i++) drawElementOrbiter(ctx, shape, mon.attackType, map, i, now, detailed);
-    } else if (mon.moveCategory === 'cone') {
+    } else if (mon.moveCategory === 'cone' && !view.markers.some((m) => m.side === side && m.kind === 'cone' && !m.special)) {
+      // Enquanto o golpe está marcado, só a marca fixa aparece: um guia girando esconderia para onde ele vai sair.
       const foeAt = view.sides[side === 0 ? 1 : 0];
       drawConeGuide(ctx, { ...at, aimAngle: Math.atan2(foeAt.y - at.y, foeAt.x - at.x), facing: 1 }, mon.attackRange ?? 200, mon.attackType, map, 0.6);
     } else if (mon.moveCategory === 'trilha' && team.trail.length > 1) {
@@ -1072,7 +1156,8 @@ function playBeats(beats: CinemaBeat[]): void {
       const mon = mons[beat.index];
       if (!mon || !fxOn()) continue;
       const id = ++beatId;
-      cutIn.value = { id, name: mon.name, move: mon.moveName ?? 'Especial', dexId: mon.dexId, shiny: mon.shiny, color: TYPE_COLORS[mon.attackType], mine: beat.side === mySide };
+      const def = arenaSpecialOf(mon.attackType);
+      cutIn.value = { id, name: mon.name, move: def.name, dexId: mon.dexId, shiny: mon.shiny, color: TYPE_COLORS[mon.attackType], tint: def.tint, stripe: def.stripe, mine: beat.side === mySide };
       later(() => {
         if (cutIn.value?.id === id) cutIn.value = null;
       }, 920);
@@ -1107,6 +1192,11 @@ function buildHud(): void {
   else if (current?.moveCategory === 'trilha') hint = mine.trailMs > 0 ? 'Trilha ativa: passe por cima do rival.' : 'Ande para encher a Trilha (a barra mostra a carga).';
   else if (current?.moveCategory === 'foco') hint = mine.focusCharge > 0 && !beamMarks.some((b) => b.mine && !b.fired) ? 'Foco carregando: a linha é marcada antes do feixe.' : '';
   else if (state.timeMs < 9000) hint = 'Desvie dos golpes: o seu Pokémon ataca sozinho. Troque quando precisar.';
+  const danger = state.markers.some((m) => m.side === foeSide) || beamMarks.some((b) => !b.mine && !b.fired) || blinkWarn.some((b) => b.side === foeSide);
+  const coachStep = state.countdownMs > 0 ? null : coach.update({ timeMs: state.timeMs, energy: current?.energy ?? 0, danger, dodged: dodgedNow, usedSpecial: specialNow, over: state.winner !== null });
+  dodgedNow = specialNow = false;
+  if (coachStep) hint = COACH_TEXT[coachStep];
+  if (coach.done && state.timeMs > 0) rememberCoach();
   const count = Math.ceil(state.countdownMs / 1000);
   if (count !== lastCount) {
     if (lastCount >= 0 && state.winner === null) playCue(count > 0 ? { kind: 'ui', cue: 'minigame-pick' } : { kind: 'go' });
@@ -1118,12 +1208,13 @@ function buildHud(): void {
   const energy = current?.energy ?? 0;
   if (energy >= 1 && !specialToasted.has(mine.active)) {
     specialToasted.add(mine.active);
-    toast('Especial pronto!', 'good', 1400, 'special-ready');
+    toast(current ? `Especial pronto: ${arenaSpecialOf(current.attackType).name}!` : 'Especial pronto!', 'good', 1400, 'special-ready');
     playCue({ kind: 'ui', cue: 'survivor-pickup' });
   } else if (energy < 1) specialToasted.delete(mine.active);
   hud.value = {
     dodgePct: mine.dodgeCdMs > 0 ? Math.round((100 * mine.dodgeCdMs) / SV_DODGE_COOLDOWN_MS) : 0, dodgeSec: Math.ceil(mine.dodgeCdMs / 1000),
-    special: current ? { pct: Math.floor(energy * 100), ready: energy >= 1, color: TYPE_COLORS[current.attackType], label: specialShapeOf(current) === 'nova' ? 'Explosão' : 'Feixe' } : null,
+    special: current ? { pct: Math.floor(energy * 100), ready: energy >= 1, color: TYPE_COLORS[current.attackType], label: arenaSpecialOf(current.attackType).name } : null,
+    coach: coachStep,
     vs: state.countdownMs > 0 && current && foeNow ? { me: vsSide('Você', current, aliveCount(mine)), foe: vsSide(props.friendName, foeNow, aliveCount(foe)) } : null,
     mine: rowsOf(mine), foe: rowsOf(foe),
     summary: `Você ${aliveCount(mine)}/${mine.mons.length} de pé · ${props.friendName} ${aliveCount(foe)}/${foe.mons.length}${state.countdownMs > 0 ? '' : ` · ${clock(state.timeMs)}`}`,
@@ -1142,7 +1233,14 @@ function buildHud(): void {
   };
 }
 
+function rememberCoach(): void {
+  if (coachSaved) return;
+  coachSaved = true;
+  saveCoachSeen();
+}
+
 function finish(): void {
+  rememberCoach();
   if (result.value || resultTimer) return;
   if (state.winner !== null) playCue(state.winner === mySide ? { kind: 'victory', personality: 'equilibrado' } : { kind: 'pin-lose' });
   if (state.winner !== null) vibrate({ kind: state.winner === mySide ? 'win' : 'lose' }, visual.sound);
@@ -1334,6 +1432,8 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   cancelAnimationFrame(raf);
+  // Saiu no meio da primeira luta depois de começar: ela já conta.
+  if (state.timeMs > 0) rememberCoach();
   window.removeEventListener('keydown', onKey);
   window.removeEventListener('keyup', onKey);
   window.removeEventListener('blur', onBlur);
@@ -1425,14 +1525,14 @@ onBeforeUnmount(() => {
           <img v-if="!broken.includes(hud.vs.me.dexId)" :src="pokemonSpriteUrl(hud.vs.me.dexId, hud.vs.me.shiny)" alt="" @error="markBroken(hud.vs.me.dexId)" />
         </div>
       </div>
-      <div v-if="cutIn" :key="cutIn.id" class="svp-cutin" :class="{ mine: cutIn.mine }" :style="{ '--c': cutIn.color }" aria-hidden="true">
+      <div v-if="cutIn" :key="cutIn.id" class="svp-cutin" :class="{ mine: cutIn.mine }" :style="{ '--c': cutIn.color, '--t': cutIn.tint, '--s': `${cutIn.stripe}deg` }" aria-hidden="true">
         <img v-if="!broken.includes(cutIn.dexId)" :src="pokemonSpriteUrl(cutIn.dexId, cutIn.shiny)" alt="" @error="markBroken(cutIn.dexId)" />
         <span><small>{{ cutIn.name }}</small><b>{{ cutIn.move }}</b></span>
       </div>
       <p v-if="banner" :key="banner.id" class="svp-banner" :class="banner.tone" role="status">{{ banner.text }}</p>
       <div v-if="hud.charge" class="svp-charge" role="progressbar" :aria-valuenow="hud.charge.pct" aria-valuemin="0" aria-valuemax="100" :aria-label="hud.charge.label"><small>{{ hud.charge.label }} {{ hud.charge.pct }}%</small><i class="svp-bar"><b :style="{ width: `${hud.charge.pct}%` }"></b></i></div>
       <p v-if="hud.count > 0" :key="hud.count" class="svp-count" aria-hidden="true">{{ hud.count }}</p>
-      <p v-if="hud.hint" class="svp-hint" role="status">{{ hud.hint }}</p>
+      <p v-if="hud.hint" class="svp-hint" :class="{ coach: hud.coach }" role="status">{{ hud.hint }}</p>
       <p v-if="stale" class="svp-hint warn" role="status">Sem sinal do anfitrião há alguns segundos… a luta volta quando a conexão voltar.</p>
       <ul class="svp-toasts" aria-live="polite">
         <li v-for="t in toasts" :key="t.id" :class="t.tone">{{ t.text }}</li>
@@ -1458,7 +1558,7 @@ onBeforeUnmount(() => {
       <button
         type="button"
         class="svp-guard svp-dodge"
-        :class="{ wait: hud.dodgePct > 0 }"
+        :class="{ wait: hud.dodgePct > 0, coach: hud.coach === 'dodge' }"
         :aria-label="hud.dodgePct > 0 ? `Esquiva recarregando, ${hud.dodgeSec} segundos` : 'Esquiva: toque para arrancar e atravessar os golpes'"
         aria-keyshortcuts="F Shift"
         @pointerdown.stop.prevent="pressAction($event, requestDodge)"
@@ -1473,7 +1573,7 @@ onBeforeUnmount(() => {
         v-if="hud.special"
         type="button"
         class="svp-guard svp-special"
-        :class="{ ready: hud.special.ready }"
+        :class="{ ready: hud.special.ready, coach: hud.coach === 'special' }"
         :style="{ '--attack-color': hud.special.color }"
         :aria-label="hud.special.ready ? `Especial pronto: ${hud.special.label}. Toque para lançar` : `Especial carregando, ${hud.special.pct}%`"
         aria-keyshortcuts="R"
@@ -1849,7 +1949,10 @@ onBeforeUnmount(() => {
   gap: 3cqw;
   padding: 0 10%;
   transform: skewY(-3deg);
-  background: linear-gradient(90deg, color-mix(in srgb, var(--c) 92%, #000), color-mix(in srgb, var(--c) 45%, transparent));
+  /* As listras têm a cor e o ângulo do elemento: cada Especial entra com a própria cara, sem custo por quadro. */
+  background:
+    repeating-linear-gradient(var(--s, 90deg), transparent 0 2.6cqw, color-mix(in srgb, var(--t, #fff) 30%, transparent) 2.6cqw 3.6cqw),
+    linear-gradient(90deg, color-mix(in srgb, var(--c) 92%, #000), color-mix(in srgb, var(--c) 45%, transparent));
   border-block: 2px solid rgba(255, 255, 255, 0.85);
   color: #fff;
   text-shadow: 0 2px 0 rgba(0, 0, 0, 0.55);
@@ -1876,7 +1979,7 @@ onBeforeUnmount(() => {
 }
 
 .svp-cutin b {
-  font-size: 7.6cqw;
+  font-size: 6.4cqw;
   font-style: italic;
   font-weight: 900;
 }
@@ -1996,6 +2099,17 @@ onBeforeUnmount(() => {
   to { translate: 0 -8px; }
 }
 
+.svp-guard.coach {
+  outline: 3px solid #ffd166;
+  outline-offset: 1px;
+  animation: svp-coach 0.6s ease-in-out infinite alternate;
+}
+
+@keyframes svp-coach {
+  to { outline-color: #ffffff; }
+}
+
+.svp.lite .svp-guard.coach,
 .svp.lite .svp-vs,
 .svp.lite .svp-vs-side,
 .svp.lite .svp-special.ready,
@@ -2410,6 +2524,13 @@ onBeforeUnmount(() => {
   color: #fff;
   font-weight: 800;
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+}
+
+.svp-hint.coach {
+  max-height: none;
+  background: rgba(20, 20, 32, 0.82);
+  border: 1px solid #ffd166;
+  font-weight: 700;
 }
 
 .svp-hint.warn {
