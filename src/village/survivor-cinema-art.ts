@@ -182,6 +182,39 @@ export function drawSpeedLines(c: CanvasRenderingContext2D, w: number, h: number
   c.restore();
 }
 
+/** Quadro de impacto: inverte a tela de uma vez, sem gradiente nem sombra. Quem chama garante que dura só alguns quadros. */
+export function drawImpactFrame(c: CanvasRenderingContext2D, w: number, h: number): void {
+  c.save();
+  c.globalCompositeOperation = 'difference';
+  c.fillStyle = '#ffffff';
+  c.fillRect(0, 0, w, h);
+  c.restore();
+}
+
+/** Contador de abates seguidos, à direita. Só texto: com `motion`, ele dá um soco a cada novo abate. */
+export function drawKillStreak(c: CanvasRenderingContext2D, w: number, h: number, count: number, tier: number, pop: number, fade: number, motion: boolean): void {
+  const colors = ['#fff4de', '#ffe066', '#ffab4a', '#ff6b70'];
+  const size = 30 * (motion ? 1 + pop * 0.28 : 1);
+  const x = w - 14;
+  const y = h * 0.2;
+  c.save();
+  c.globalAlpha = Math.max(0, Math.min(1, fade));
+  c.textAlign = 'right';
+  c.textBaseline = 'middle';
+  c.lineJoin = 'round';
+  c.strokeStyle = '#161b2b';
+  c.fillStyle = colors[tier] ?? '#fff4de';
+  c.lineWidth = 5;
+  c.font = `900 ${size}px system-ui, sans-serif`;
+  c.strokeText(`${count}`, x, y);
+  c.fillText(`${count}`, x, y);
+  c.lineWidth = 3;
+  c.font = '800 11px system-ui, sans-serif';
+  c.strokeText('ABATES SEGUIDOS', x, y + 24);
+  c.fillText('ABATES SEGUIDOS', x, y + 24);
+  c.restore();
+}
+
 export function drawScreenFlash(c: CanvasRenderingContext2D, w: number, h: number, alpha: number, color: string): void {
   if (alpha <= 0) return;
   c.save();
