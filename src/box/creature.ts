@@ -1,6 +1,6 @@
 import {
-  DataTexture, DoubleSide, Group, LinearFilter, Mesh, MeshBasicMaterial, NearestFilter, PlaneGeometry, RGBAFormat, SRGBColorSpace, Sphere, Sprite, SpriteMaterial,
-  UnsignedByteType, Vector3,
+  DataTexture, DoubleSide, Group, LinearFilter, Mesh, MeshBasicMaterial, NearestFilter, PlaneGeometry, RGBAFormat, ShaderMaterial, SRGBColorSpace, Sphere, Sprite, SpriteMaterial,
+  UnsignedByteType, Vector2, Vector3,
 } from 'three';
 import type { Frustum } from 'three';
 import { ShinyAura } from '../ar/shiny-aura';
@@ -186,6 +186,7 @@ export class BoxCreature {
   width: number;
   height: number;
   private texture: DataTexture;
+  private silhouetteShadow: Mesh<PlaneGeometry, ShaderMaterial> | null = null;
   private smoothing: SmoothingMode = DEFAULT_SMOOTHING;
   /** Quadros já suavizados (a conta é cara e o GIF repete os mesmos quadros o tempo todo). */
   private readonly frameCache = new Map<number, PreparedFrame>();
@@ -276,6 +277,7 @@ export class BoxCreature {
     const old = this.texture;
     this.texture = this.makeTexture(this.prepare(0, first));
     this.mesh.material.map = this.texture;
+    this.updateShadowTexture();
     this.mesh.material.needsUpdate = true;
     old.dispose();
     this.height = this.formHeight(source);
@@ -425,12 +427,45 @@ export class BoxCreature {
     this.rebuildFrames();
   }
 
+  /** Projeta o alfa do mesmo quadro do GIF no chão; o shader amostra a borda para suavizá-la. */
+  setCinematicShadow(on: boolean): void {
+    if (on && !this.silhouetteShadow) {
+      const geometry = new PlaneGeometry(1, 1);
+      geometry.translate(0, 0.5, 0);
+      const material = new ShaderMaterial({
+        transparent: true, depthWrite: false, side: DoubleSide,
+        uniforms: { sprite: { value: this.texture }, texel: { value: new Vector2(1 / this.texture.image.width, 1 / this.texture.image.height) }, opacity: { value: 0.23 } },
+        vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+        fragmentShader: `uniform sampler2D sprite; uniform vec2 texel; uniform float opacity; varying vec2 vUv;
+          float a(vec2 p) { if (p.x < 0.0 || p.y < 0.0 || p.x > 1.0 || p.y > 1.0) return 0.0; return texture2D(sprite, vec2(p.x, 1.0-p.y)).a; }
+          void main() { vec2 d = texel * 1.5; float alpha = a(vUv) * 0.28;
+            alpha += (a(vUv+vec2(d.x,0.0))+a(vUv-vec2(d.x,0.0))+a(vUv+vec2(0.0,d.y))+a(vUv-vec2(0.0,d.y))) * 0.12;
+            alpha += (a(vUv+d)+a(vUv-d)+a(vUv+vec2(d.x,-d.y))+a(vUv+vec2(-d.x,d.y))) * 0.06;
+            gl_FragColor = vec4(0.0, 0.0, 0.0, alpha * opacity); }`,
+      });
+      this.silhouetteShadow = new Mesh(geometry, material);
+      this.silhouetteShadow.name = 'cinematic-silhouette-shadow';
+      this.silhouetteShadow.rotation.order = 'YXZ';
+      this.silhouetteShadow.rotation.x = -Math.PI / 2;
+      this.silhouetteShadow.position.y = 0.008;
+      this.group.add(this.silhouetteShadow);
+    }
+    if (this.silhouetteShadow) this.silhouetteShadow.visible = on;
+  }
+
+  private updateShadowTexture(): void {
+    if (!this.silhouetteShadow) return;
+    this.silhouetteShadow.material.uniforms.sprite!.value = this.texture;
+    (this.silhouetteShadow.material.uniforms.texel!.value as Vector2).set(1 / this.texture.image.width, 1 / this.texture.image.height);
+  }
+
   private rebuildFrames(): void {
     this.frameCache.clear();
     this.frameCacheBytes = 0;
     const old = this.texture;
     this.texture = this.makeTexture(this.prepare(Math.max(0, this.shownFrame), this.lastRgba));
     this.mesh.material.map = this.texture;
+    this.updateShadowTexture();
     this.mesh.material.needsUpdate = true;
     old.dispose();
   }
@@ -547,6 +582,7 @@ export class BoxCreature {
     const toCameraZ = camera.z - this.group.position.z;
     this.mesh.rotation.order = 'YXZ';
     this.mesh.rotation.y = Math.atan2(toCameraX, toCameraZ);
+    if (this.silhouetteShadow?.visible) this.silhouetteShadow.rotation.y = this.mesh.rotation.y;
     // Visto de cima, um Pokémon em pé fica achatado: inclina o sprite para a câmera (só parte do ângulo, para ainda parecer em pé).
     const elevation = Math.atan2(camera.y - this.group.position.y, Math.hypot(toCameraX, toCameraZ));
     // Com a câmera em +Z, um ângulo X positivo leva o topo do plano em direção à câmera.
@@ -610,6 +646,10 @@ export class BoxCreature {
     const shadowScale = (1 - Math.min(0.3, Math.max(0, hop) * 2)) * appear;
     this.shadowX = this.width * 0.8 * shadowScale;
     this.shadowZ = this.width * 0.45 * shadowScale;
+    if (this.silhouetteShadow?.visible) {
+      this.silhouetteShadow.visible = this.onScreen && appear > 0.001;
+      this.silhouetteShadow.scale.set(this.width * this.flip * fx.scale * appear, this.height * 0.5 * fx.scale * appear, 1);
+    }
 
     if (this.gif && this.onScreen) {
       if (this.startedAt === 0) this.startedAt = nowMs;
@@ -638,6 +678,8 @@ export class BoxCreature {
     this.setAccessory(null);
     this.reflection?.material.dispose();
     this.reflection?.removeFromParent();
+    this.silhouetteShadow?.geometry.dispose();
+    this.silhouetteShadow?.material.dispose();
     this.texture.dispose();
     this.mesh.geometry.dispose();
     this.mesh.material.dispose();

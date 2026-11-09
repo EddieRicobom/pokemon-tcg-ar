@@ -191,6 +191,7 @@ const reduceMotion = typeof matchMedia === 'function' && matchMedia('(prefers-re
 const fxOn = (): boolean => effectiveVisual.value.impactFx && !reduceMotion;
 /** Sem os efeitos: a abertura, o cut-in e a pose ficam parados (ou nem entram), como pede o Modo Rotom e o sistema. */
 const lite = computed(() => !fxOn());
+const cinemaShadow = computed(() => effectiveVisual.value.renderProfile === 'cinema' && effectiveVisual.value.shadow);
 const director = new ArenaDirector();
 const stageEl = ref<HTMLElement | null>(null);
 const cutIn = shallowRef<{ id: number; name: string; move: string; dexId: number; shiny: boolean; color: string; mine: boolean } | null>(null);
@@ -1378,7 +1379,8 @@ onBeforeUnmount(() => {
       <div ref="stageEl" class="svp-stage">
       <div class="svp-floor" :style="floorStyle" aria-hidden="true"></div>
       <div v-for="u in units" :key="u.key" class="svp-unit" :class="{ mine: u.mine, shield: u.shield, guard: u.guard, hit: u.hit, swap: !!u.swap, down: u.down, low: u.low, 'face-right': u.faceRight, dodge: u.dodge, ready: u.ready }" :style="unitStyle(u)">
-        <span class="svp-shadow" aria-hidden="true"></span>
+        <img v-if="cinemaShadow && !broken.includes(u.dexId)" class="svp-shadow svp-shadow-sprite" :src="pokemonSpriteUrl(u.dexId, u.shiny)" alt="" draggable="false" aria-hidden="true" />
+        <span v-else class="svp-shadow svp-shadow-fallback" aria-hidden="true"></span>
         <span class="svp-bubble" aria-hidden="true"></span>
         <span class="svp-ring"></span>
         <span v-if="u.status" class="svp-status" aria-hidden="true">{{ u.status }}</span>
@@ -2094,7 +2096,7 @@ onBeforeUnmount(() => {
   pointer-events: none;
 }
 
-.svp-shadow {
+.svp-shadow-fallback {
   position: absolute;
   left: 0;
   top: 0;
@@ -2104,6 +2106,25 @@ onBeforeUnmount(() => {
   border-radius: 50%;
   background: radial-gradient(ellipse, rgba(0, 0, 0, 0.45), transparent 70%);
   pointer-events: none;
+}
+
+/* A cópia do GIF mantém a silhueta animada, achatada sobre o chão. */
+.svp-shadow-sprite {
+  position: absolute;
+  left: 0;
+  top: 0;
+  height: 17.5cqw;
+  max-width: 24cqw;
+  object-fit: contain;
+  transform: translate(-50%, -100%) scaleY(0.22);
+  transform-origin: center bottom;
+  filter: brightness(0) blur(3px);
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+.svp-unit.face-right .svp-shadow-sprite {
+  transform: translate(-50%, -100%) scale(-1, 0.22);
 }
 
 .svp-unit.mine .svp-ring {
@@ -2186,6 +2207,10 @@ onBeforeUnmount(() => {
 .svp-unit.swap .svp-shadow,
 .svp-bars.swap {
   opacity: var(--sw, 1);
+}
+
+.svp-unit.swap .svp-shadow-sprite {
+  opacity: calc(0.4 * var(--sw, 1));
 }
 
 .svp-arena.shake {

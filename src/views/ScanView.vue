@@ -404,13 +404,16 @@ function readLayout(): SpriteLayout {
   }
   return { ...DEFAULT_LAYOUT };
 }
-const layout = reactive<SpriteLayout>({ ...readLayout(), smoothing: effectiveVisual.value.smoothing, showShadow: effectiveVisual.value.shadow });
+const layout = reactive<SpriteLayout>({ ...readLayout(), smoothing: effectiveVisual.value.smoothing, showShadow: effectiveVisual.value.shadow, cinematicShadow: effectiveVisual.value.renderProfile === 'cinema' });
 // A suavização dos pixels vem da escolha compartilhada (também usada em Várias e na Caixa).
 watch(() => effectiveVisual.value.smoothing, (smoothing) => {
   layout.smoothing = smoothing;
 });
 watch(() => effectiveVisual.value.shadow, (shadow) => {
   layout.showShadow = shadow;
+});
+watch(() => effectiveVisual.value.renderProfile, (profile) => {
+  layout.cinematicShadow = profile === 'cinema';
 });
 
 let stream: MediaStream | null = null;
@@ -846,7 +849,7 @@ function setPanelMode(mode: PanelMode): void {
 }
 
 function resetLayout(): void {
-  Object.assign(layout, DEFAULT_LAYOUT, { smoothing: effectiveVisual.value.smoothing, showShadow: effectiveVisual.value.shadow });
+  Object.assign(layout, DEFAULT_LAYOUT, { smoothing: effectiveVisual.value.smoothing, showShadow: effectiveVisual.value.shadow, cinematicShadow: effectiveVisual.value.renderProfile === 'cinema' });
   saveLayout();
 }
 

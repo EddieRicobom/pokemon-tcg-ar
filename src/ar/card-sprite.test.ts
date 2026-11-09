@@ -521,6 +521,32 @@ describe('CardSprite: inclinação e sombra no chão', () => {
     expect(sprite.shadow.visible).toBe(true);
   });
 
+  it('sombra cinematográfica acompanha a textura, seus ciclos e as preferências', () => {
+    const sprite = new CardSprite();
+    sprite.setLayout({ ...DEFAULT_LAYOUT, cinematicShadow: true });
+    sprite.setStatic(makePlaceholder(8));
+    const first = sprite.mesh.material.map!;
+    expect(sprite.silhouetteShadow.visible).toBe(true);
+    expect(sprite.shadow.visible).toBe(false);
+    expect(sprite.silhouetteShadow.material.uniforms.sprite!.value).toBe(first);
+    sprite.setStatic(makePlaceholder(16));
+    expect(sprite.silhouetteShadow.material.uniforms.sprite!.value).toBe(sprite.mesh.material.map);
+    expect(sprite.mesh.material.map).not.toBe(first);
+    sprite.setLayout({ ...DEFAULT_LAYOUT, cinematicShadow: true, showShadow: false });
+    expect(sprite.silhouetteShadow.visible).toBe(false);
+    expect(sprite.shadow.visible).toBe(false);
+    sprite.setLayout(DEFAULT_LAYOUT);
+    expect(sprite.shadow.visible).toBe(true);
+    expect(sprite.silhouetteShadow.visible).toBe(false);
+    sprite.clear();
+    expect(sprite.silhouetteShadow.material.uniforms.sprite!.value).toBeNull();
+    sprite.setPlaceholder();
+    sprite.setLayout({ ...DEFAULT_LAYOUT, cinematicShadow: true });
+    expect(sprite.shadow.visible).toBe(true);
+    expect(sprite.silhouetteShadow.visible).toBe(false);
+    sprite.dispose();
+  });
+
   it('clear() esconde a sombra junto com o sprite', () => {
     const sprite = new CardSprite();
     sprite.setStatic(makePlaceholder(8));

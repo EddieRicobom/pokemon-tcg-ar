@@ -107,9 +107,12 @@ export function frameIndex(sprite: Sprite, timeMs: number): number {
   return sprite.frames.length - 1;
 }
 
-export function firstSpriteFrame(asset: SpriteAsset | null | undefined): HTMLCanvasElement | null {
+export function survivorSpritePose(asset: SpriteAsset | null, direction: SurvivorSpriteDirection): Sprite | null {
   if (!asset) return null;
-  const sprite = 'frames' in asset ? asset : (asset.down ?? asset.right ?? asset.left ?? asset.up ?? null);
-  return sprite?.frames[0] ?? null;
+  return 'frames' in asset ? asset : asset[direction] ?? asset.down ?? asset.right ?? asset.left ?? asset.up ?? null;
+}
+
+export function firstSpriteFrame(asset: SpriteAsset | null | undefined): HTMLCanvasElement | null {
+  return survivorSpritePose(asset ?? null, 'down')?.frames[0] ?? null;
 }
 

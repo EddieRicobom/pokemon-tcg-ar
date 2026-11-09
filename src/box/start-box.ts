@@ -165,6 +165,7 @@ export async function startBox(options: StartBoxOptions): Promise<RunningBox> {
     updateSky(now);
     orientation.latencyMs = sensorSettings.latencyMs;
     scene.setCameraQuaternion(orientation.read(performance.now()));
+    scene.setCinematicShadows(effectiveVisual.value.renderProfile === 'cinema' && effectiveVisual.value.shadow && !effectiveVisual.value.rotomMode);
     scene.update(now);
     renderer.render(scene.scene, scene.camera);
   };

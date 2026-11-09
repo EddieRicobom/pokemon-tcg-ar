@@ -1,6 +1,6 @@
 import {
   DataTexture, DoubleSide, Group, LinearFilter, Matrix4, Mesh, MeshBasicMaterial, NearestFilter, PlaneGeometry, Quaternion, RGBAFormat,
-  SRGBColorSpace, UnsignedByteType, Vector3,
+  SRGBColorSpace, ShaderMaterial, UnsignedByteType, Vector2, Vector3,
 } from 'three';
 import { groundGlowAlpha, groundShadowAlpha, groundShadowSize } from './ground-shadow';
 import { frameIndexAt } from '../core/gif';
@@ -92,6 +92,7 @@ export class CardSprite {
   readonly mesh: Mesh<PlaneGeometry, MeshBasicMaterial>;
   /** Sombra suave no chão da carta, sob o Pokémon (desligável por `SpriteLayout.showShadow`). */
   readonly shadow: Mesh<PlaneGeometry, MeshBasicMaterial>;
+  readonly silhouetteShadow: Mesh<PlaneGeometry, ShaderMaterial>;
   /** Brilho fino que pulsa devagar em volta da sombra. */
   readonly glow: Mesh<PlaneGeometry, MeshBasicMaterial>;
   mode: SpriteMode = 'empty';
@@ -152,11 +153,24 @@ export class CardSprite {
     this.mesh.matrixAutoUpdate = false;
     this.mesh.visible = false;
     this.shadow = makeGroundQuad(groundShadowAlpha, [0, 0, 0], GROUND_LIFT);
+    this.silhouetteShadow = new Mesh(new PlaneGeometry(1, 1), new ShaderMaterial({
+      transparent: true, depthWrite: false, side: DoubleSide,
+      uniforms: { sprite: { value: null }, texel: { value: new Vector2(1, 1) }, opacity: { value: 0 } },
+      vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+      fragmentShader: `uniform sampler2D sprite; uniform vec2 texel; uniform float opacity; varying vec2 vUv;
+        float a(vec2 p) { if (p.x < 0.0 || p.y < 0.0 || p.x > 1.0 || p.y > 1.0) return 0.0; return texture2D(sprite, vec2(p.x, 1.0-p.y)).a; }
+        void main() { vec2 d = texel * 1.5; float alpha = a(vUv) * 0.28;
+          alpha += (a(vUv+vec2(d.x,0.0))+a(vUv-vec2(d.x,0.0))+a(vUv+vec2(0.0,d.y))+a(vUv-vec2(0.0,d.y))) * 0.12;
+          alpha += (a(vUv+d)+a(vUv-d)+a(vUv+vec2(d.x,-d.y))+a(vUv+vec2(-d.x,d.y))) * 0.06;
+          gl_FragColor = vec4(0.0, 0.0, 0.0, alpha * opacity); }`,
+    }));
+    this.silhouetteShadow.visible = false;
+    this.silhouetteShadow.renderOrder = 1;
     this.glow = makeGroundQuad(groundGlowAlpha, [190, 225, 255], GROUND_LIFT * 2);
     // As transparências vêm depois do sprite opaco; a sombra fica atrás do brilho.
     this.shadow.renderOrder = 1;
     this.glow.renderOrder = 2;
-    this.group.add(this.shadow, this.glow, this.mesh);
+    this.group.add(this.shadow, this.silhouetteShadow, this.glow, this.mesh);
   }
 
   /** Liga ou desliga o brilho do shiny em volta do Pokémon. */
@@ -327,16 +341,20 @@ export class CardSprite {
   /** Sombra e brilho no chão, sob a projeção do sprite (a posição x,y do centro do sprite na carta). */
   private applyGround(spriteMat: ArrayLike<number>, extraYaw: number): void {
     const on = this.layout.showShadow !== false && this.mesh.visible;
-    this.shadow.visible = on;
+    const silhouette = on && this.layout.cinematicShadow === true && this.mode !== 'placeholder' && this.texture !== null;
+    this.shadow.visible = on && !silhouette;
+    this.silhouetteShadow.visible = silhouette;
     this.glow.visible = on;
     if (!on) return;
     const size = groundShadowSize(clampLayout(this.sized()), this.aspect);
     const yaw = ((this.layout.yawDeg + extraYaw) * Math.PI) / 180;
-    for (const quad of [this.shadow, this.glow]) {
-      quad.position.set(spriteMat[12]!, spriteMat[13]!, quad === this.shadow ? GROUND_LIFT : GROUND_LIFT * 2);
+    for (const quad of [this.shadow, this.silhouetteShadow, this.glow]) {
+      quad.position.set(spriteMat[12]!, spriteMat[13]!, quad === this.glow ? GROUND_LIFT * 2 : GROUND_LIFT);
       quad.rotation.set(0, 0, yaw);
     }
     this.shadow.scale.set(size.width, size.depth, 1);
+    this.silhouetteShadow.scale.set(size.width, size.depth, 1);
+    this.silhouetteShadow.material.uniforms.opacity!.value = size.opacity;
     this.glow.scale.set(size.width * 1.12, size.depth * 1.12, 1);
     this.shadow.material.opacity = size.opacity;
     this.glowBase = size.opacity * 0.4;
@@ -359,6 +377,8 @@ export class CardSprite {
   private show(texture: DataTexture, width: number, height: number, mode: SpriteMode): void {
     this.releaseTexture();
     this.texture = texture;
+    this.silhouetteShadow.material.uniforms.sprite!.value = texture;
+    (this.silhouetteShadow.material.uniforms.texel!.value as Vector2).set(1 / width, 1 / height);
     this.mesh.material.map = texture;
     this.mesh.material.needsUpdate = true;
     this.aspect = width / height;
@@ -410,6 +430,7 @@ export class CardSprite {
     this.mode = 'empty';
     this.mesh.visible = false;
     this.shadow.visible = false;
+    this.silhouetteShadow.visible = false;
     this.glow.visible = false;
   }
 
@@ -524,6 +545,7 @@ export class CardSprite {
   }
 
   private releaseTexture(): void {
+    this.silhouetteShadow.material.uniforms.sprite!.value = null;
     this.texture?.dispose();
     this.texture = null;
     this.mesh.material.map = null;
@@ -541,11 +563,13 @@ export class CardSprite {
     this.releaseTexture();
     this.mesh.geometry.dispose();
     this.mesh.material.dispose();
+    this.silhouetteShadow.geometry.dispose();
+    this.silhouetteShadow.material.dispose();
     for (const quad of [this.shadow, this.glow]) {
       quad.material.map?.dispose();
       quad.geometry.dispose();
       quad.material.dispose();
     }
-    this.group.remove(this.mesh, this.shadow, this.glow);
+    this.group.remove(this.mesh, this.shadow, this.silhouetteShadow, this.glow);
   }
 }

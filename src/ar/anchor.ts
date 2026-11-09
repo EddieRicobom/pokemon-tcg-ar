@@ -47,6 +47,8 @@ export interface SpriteLayout {
   tiltDeg?: number;
   /** Mostra a sombra suave (e o brilho) no chão sob o Pokémon. Omitido = ligado. */
   showShadow?: boolean;
+  /** Projeta a silhueta do sprite na carta no perfil cinematográfico. */
+  cinematicShadow?: boolean;
   /**
    * Gira o sprite em torno da normal da carta para ele ficar de frente para a câmera, sem sair do "em pé"
    * (continua a 90° da carta). Sem isso, com a câmera de frente para a carta, o plano vira só um fio.
@@ -98,6 +100,7 @@ export function clampLayout(layout: SpriteLayout): SpriteLayout {
     anchor: layout.anchor === 'center' || layout.anchor === 'rest' ? layout.anchor : 'base',
     tiltDeg: layout.tiltDeg === undefined ? 0 : clamp(layout.tiltDeg, LAYOUT_LIMITS.tiltDeg.min, LAYOUT_LIMITS.tiltDeg.max),
     showShadow: layout.showShadow !== false,
+    cinematicShadow: layout.cinematicShadow === true,
     faceCamera: layout.faceCamera !== false,
     // `smooth` (liga/desliga) é o formato antigo, ainda presente em layouts salvos.
     smoothing: normalizeSmoothing(layout.smoothing, (layout as { smooth?: boolean }).smooth),

@@ -126,7 +126,7 @@ async function open(): Promise<void> {
       return;
     }
     running = started;
-    running.setLayout(clampLayout({ ...DEFAULT_LAYOUT, smoothing: effectiveVisual.value.smoothing, showShadow: effectiveVisual.value.shadow }));
+    running.setLayout(clampLayout({ ...DEFAULT_LAYOUT, smoothing: effectiveVisual.value.smoothing, showShadow: effectiveVisual.value.shadow, cinematicShadow: effectiveVisual.value.renderProfile === 'cinema' }));
     phase.value = 'running';
     progress.value = '';
   } catch (e) {
@@ -148,8 +148,8 @@ function close(): void {
   state.value = { phase: 'idle', visible: [] };
 }
 
-watch(() => [effectiveVisual.value.smoothing, effectiveVisual.value.shadow] as const, ([smoothing, shadow]) => {
-  running?.setLayout(clampLayout({ ...DEFAULT_LAYOUT, smoothing, showShadow: shadow }));
+watch(() => [effectiveVisual.value.smoothing, effectiveVisual.value.shadow, effectiveVisual.value.renderProfile] as const, ([smoothing, shadow, profile]) => {
+  running?.setLayout(clampLayout({ ...DEFAULT_LAYOUT, smoothing, showShadow: shadow, cinematicShadow: profile === 'cinema' }));
 });
 
 onBeforeUnmount(() => {
