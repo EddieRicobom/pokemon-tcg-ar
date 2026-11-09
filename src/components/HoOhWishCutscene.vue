@@ -56,7 +56,7 @@ function advance(): void {
 .hooh-sun { position: absolute; top: 12%; left: 50%; width: min(43vw, 300px); aspect-ratio: 1; transform: translateX(-50%); border-radius: 50%; background: radial-gradient(circle, #fff7c5 0 10%, #ffe798 28%, #ffb765 52%, rgb(241 111 93 / 10%) 72%, transparent 74%); filter: drop-shadow(0 0 36px rgb(255 188 110 / 55%)); }
 .hooh-rainbow { position: absolute; z-index: 1; top: 18%; left: 50%; width: min(105vw, 780px); aspect-ratio: 2.3; transform: translateX(-50%); border: clamp(10px, 2.8vw, 22px) solid transparent; border-top-color: #ffd36e; border-radius: 50% 50% 0 0; filter: drop-shadow(0 0 12px #ffdc77) drop-shadow(0 0 26px #e982ff); opacity: .72; }
 .hooh-flight { position: absolute; z-index: 4; inset: 0; display: grid; place-items: center; }
-.hooh-flight img { width: min(86vw, 700px); height: min(65vh, 470px); object-fit: contain; image-rendering: pixelated; filter: drop-shadow(0 12px 22px rgb(255 178 84 / 52%)) drop-shadow(0 0 20px rgb(255 237 145 / 55%)); animation: hooh-glide 8s ease-in-out infinite alternate; }
+.hooh-flight img { width: min(86vw, 700px); height: min(65vh, 470px); object-fit: contain; image-rendering: var(--game-image-rendering, pixelated); filter: drop-shadow(0 12px 22px rgb(255 178 84 / 52%)) drop-shadow(0 0 20px rgb(255 237 145 / 55%)); animation: hooh-glide 8s ease-in-out infinite alternate; }
 .hooh-fallback { color: #ffd576; font-size: min(48vw, 280px); filter: drop-shadow(0 8px 26px #f8a644); }
 .hooh-city { position: absolute; right: -5%; bottom: 0; left: -5%; display: flex; height: 25%; align-items: end; justify-content: space-around; }
 .hooh-city.far { z-index: 2; bottom: 9%; height: 23%; opacity: .7; }

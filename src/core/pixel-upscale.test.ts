@@ -75,7 +75,7 @@ describe('upscaleSprite', () => {
   it('amplia 4× e devolve as dimensões novas sem alterar o original', () => {
     const img = image([[px(255, 0, 0), px(0, 0, 255)]]);
     const copy = Array.from(img.data);
-    const up = upscaleSprite(img.data, 2, 1);
+    const up = upscaleSprite(img.data, 2, 1, 4, 'bordas');
     expect(up).toMatchObject({ width: 8, height: 4, factor: 4 });
     expect(up.data.length).toBe(8 * 4 * 4);
     expect(Array.from(img.data)).toEqual(copy);
@@ -84,7 +84,7 @@ describe('upscaleSprite', () => {
   });
   it('sprite grande só é copiado (fator 1)', () => {
     const data = new Uint8ClampedArray(300 * 300 * 4).fill(200);
-    const up = upscaleSprite(data, 300, 300);
+    const up = upscaleSprite(data, 300, 300, 4, 'bordas');
     expect(up).toMatchObject({ width: 300, height: 300, factor: 1 });
     expect(up.data).not.toBe(data);
   });
@@ -103,7 +103,7 @@ describe('modos de suavização', () => {
     expect(normalizeSmoothing('macio')).toBe('macio');
     expect(normalizeSmoothing('xyz')).toBe(DEFAULT_SMOOTHING);
     expect(normalizeSmoothing(undefined, false)).toBe('nitido');
-    expect(normalizeSmoothing(undefined, true)).toBe(DEFAULT_SMOOTHING);
+    expect(normalizeSmoothing(undefined, true)).toBe('bordas');
     expect(normalizeSmoothing('suave', false)).toBe('suave');
     expect(SMOOTHING_MODES.filter(isLinearSmoothing)).toEqual(['bordas', 'suave', 'macio']);
   });

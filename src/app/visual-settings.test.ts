@@ -4,8 +4,18 @@ import { effectiveVisualSettings, normalizeVisual } from './visual-settings';
 describe('configurações visuais', () => {
   it('aceita só modos de suavização conhecidos', () => {
     expect(normalizeVisual({ smoothing: 'macio' })).toMatchObject({ smoothing: 'macio', lighting: true, impactFx: true, terrain: true, social: true, weather: 'ciclo', scenery: true, sound: true, shadow: true, metallic: true, caseFx: true, villageFx: true, villageHd2d: false, evolutionFx: true, archetypeFx: true, frameRate: 'auto', rotomMode: false });
-    expect(normalizeVisual({ smoothing: 'xyz' as never })).toMatchObject({ smoothing: 'bordas', frameRate: 'auto', rotomMode: false });
-    expect(normalizeVisual(null)).toMatchObject({ smoothing: 'bordas', frameRate: 'auto', rotomMode: false });
+    expect(normalizeVisual({ smoothing: 'xyz' as never })).toMatchObject({ smoothing: 'nitido', frameRate: 'auto', rotomMode: false });
+    expect(normalizeVisual(null)).toMatchObject({ renderProfile: 'pixel', smoothing: 'nitido', gbaDisplay: false, frameRate: 'auto', rotomMode: false });
+  });
+
+  it('guarda o perfil, a suavização e a grade LCD como preferências independentes', () => {
+    const saved = normalizeVisual({ renderProfile: 'cinema', smoothing: 'nitido', gbaDisplay: true });
+    expect(effectiveVisualSettings(saved)).toMatchObject({ renderProfile: 'cinema', smoothing: 'suave', gbaDisplay: true });
+    expect(effectiveVisualSettings({ ...saved, smoothing: 'macio' }).smoothing).toBe('macio');
+    expect(effectiveVisualSettings({ ...saved, renderProfile: 'pixel' })).toMatchObject({ renderProfile: 'pixel', smoothing: 'nitido', gbaDisplay: true });
+    expect(effectiveVisualSettings({ ...saved, rotomMode: true })).toMatchObject({ renderProfile: 'pixel', smoothing: 'nitido', gbaDisplay: false });
+    expect(saved).toMatchObject({ renderProfile: 'cinema', smoothing: 'nitido', gbaDisplay: true });
+    expect(normalizeVisual({ gbaDisplay: 'false' as never }).gbaDisplay).toBe(false);
   });
 
   it('os reflexos da maleta vêm ligados e só desligam com false explícito', () => {
@@ -46,7 +56,7 @@ describe('configurações visuais', () => {
 
 describe('Modo Rotom', () => {
   it('aplica economia sem sobrescrever preferências e as restaura ao desligar', () => {
-    const chosen = normalizeVisual({ rotomMode: true, frameRate: '30', impactFx: false, metallic: true, sound: false });
+    const chosen = normalizeVisual({ rotomMode: true, frameRate: '30', smoothing: 'bordas', impactFx: false, metallic: true, sound: false });
     const active = effectiveVisualSettings(chosen);
     expect(active).toMatchObject({ rotomMode: true, frameRate: '20', smoothing: 'nitido', impactFx: false, lighting: false, terrain: false, social: false, weather: 'off', scenery: false, shadow: false, metallic: false, caseFx: false, villageFx: false, evolutionFx: false, archetypeFx: false, sound: false });
     expect(effectiveVisualSettings({ ...chosen, rotomMode: false })).toMatchObject({ frameRate: '30', smoothing: 'bordas', impactFx: false, terrain: true, social: true, scenery: true, metallic: true, caseFx: true, villageFx: true, sound: false, lighting: true, weather: 'ciclo' });

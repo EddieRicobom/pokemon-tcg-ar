@@ -219,6 +219,7 @@ export class VillageGame {
   windFx: () => boolean = () => true;
   /** Profundidade de campo por objeto, no estilo 2D-HD; o Modo Rotom a suspende. */
   hd2d: () => boolean = () => false;
+  smoothSprites: () => boolean = () => false;
   maxFps: () => number = () => 0;
   private readonly reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)');
   weatherMode: () => WeatherMode = () => 'ciclo';
@@ -1492,7 +1493,7 @@ export class VillageGame {
     const W = canvas.width;
     const H = canvas.height;
     const scale = this.scale;
-    ctx.imageSmoothingEnabled = false;
+    ctx.imageSmoothingEnabled = !this.diorama && this.smoothSprites();
     const pp = drawPos(this.player);
     // A Vila 2D-HD continua sendo um canvas: o chão é comprimido no eixo y,
     // enquanto os objetos apoiados nele permanecem em pé. Isso cria a leitura

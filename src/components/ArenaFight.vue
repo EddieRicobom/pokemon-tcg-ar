@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, shallowRef } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, shallowRef } from 'vue';
 import PvpLobby from './PvpLobby.vue';
 import SurvivalPvpArena from './SurvivalPvpArena.vue';
 import { pokemonSpriteUrl } from '../ar/sprite-url';
@@ -323,9 +323,19 @@ function leaveMidway(): void {
   leaveTimer = setTimeout(() => (leaveArmed.value = false), 3000);
 }
 
+function onGamepadBack(event: Event): void {
+  const detail = (event as CustomEvent<{ handled: boolean }>).detail;
+  if (detail.handled) return;
+  detail.handled = true;
+  leaveMidway();
+}
+
 if (phase.value === 'prep') beginPrep();
 
+onMounted(() => window.addEventListener('tcg-gamepad-back', onGamepadBack));
+
 onBeforeUnmount(() => {
+  window.removeEventListener('tcg-gamepad-back', onGamepadBack);
   if (leaveTimer) clearTimeout(leaveTimer);
   peer?.close();
 });
@@ -336,7 +346,7 @@ onBeforeUnmount(() => {
     <header class="afight-top">
       <strong>{{ setup.kind === 'liga' ? `Liga · ${rivalName}` : setup.kind === 'corrida' ? ENDLESS_ARENA_LABELS[setup.mode].title : setup.kind === 'pvp' ? 'Contra um amigo' : 'Luta 6×6' }}</strong>
       <span v-if="run && phase === 'arena'">{{ run.wins }} vitórias · {{ run.score }} pts</span>
-      <button type="button" class="afight-close" @click="leaveMidway">{{ leaveLabel }}</button>
+      <button type="button" class="afight-close" @click="leaveMidway">{{ leaveLabel }} <small class="gamepad-hint" aria-hidden="true">B</small></button>
     </header>
 
     <p v-if="error" class="hint" role="alert">{{ error }}</p>
@@ -364,7 +374,7 @@ onBeforeUnmount(() => {
       </ul>
       <p v-if="estimated" class="afight-warn" role="note">Sem os stats desta espécie: números médios.</p>
       <div :key="handKey" class="afight-cards">
-        <button v-for="{ card, rarity, icon, changes } in cards" :key="card.id" type="button" class="afight-card" :class="card.rarity ?? 'normal'" @click="pickCard(card.id)">
+        <button v-for="({ card, rarity, icon, changes }, index) in cards" :key="card.id" type="button" class="afight-card" :class="card.rarity ?? 'normal'" :data-gamepad-default="index === 0 ? '' : null" @click="pickCard(card.id)">
           <span class="afight-card-gem" aria-hidden="true">{{ icon }}</span>
           <span class="afight-card-body">
             <span class="afight-card-rarity">{{ rarity.icon }} {{ rarity.label }}</span>
@@ -514,6 +524,7 @@ onBeforeUnmount(() => {
 .afight-mon img {
   flex: none;
   object-fit: contain;
+  image-rendering: var(--game-image-rendering, pixelated);
 }
 
 .afight-mon small {
@@ -703,6 +714,7 @@ onBeforeUnmount(() => {
 
 .afight-ready img {
   object-fit: contain;
+  image-rendering: var(--game-image-rendering, pixelated);
 }
 
 .afight-ready small {

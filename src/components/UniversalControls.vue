@@ -3,6 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { routeHref, useRoute } from '../app/route';
 import type { RouteName } from '../app/route';
 import { gamepadButtonPressed, gamepadDirections, type GamepadDirection } from '../app/gamepad';
+import { adjustFocusedControl } from '../app/gamepad-controls';
 
 const route = useRoute();
 const menuOpen = ref(false);
@@ -18,7 +19,7 @@ let lastHash = window.location.hash;
 let skipHistoryPush = false;
 let returnFocus: HTMLElement | null = null;
 let lastAction: HTMLElement | null = null;
-const selector = 'a[href], button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex="0"]';
+const selector = 'a[href], button:not(:disabled), input:not(:disabled):not([type="hidden"]), select:not(:disabled), textarea:not(:disabled), summary, [tabindex="0"]';
 type Direction = GamepadDirection;
 const directions: Direction[] = ['up', 'right', 'down', 'left'];
 const heldGamepadDirections = new Set<Direction>();
@@ -30,6 +31,7 @@ function visibleActions(root: ParentNode = document): HTMLElement[] {
   return [...root.querySelectorAll<HTMLElement>(selector)].filter((element) =>
     (!element.closest('.universal-controls') || !!element.closest('.universal-menu-panel'))
       && element.getClientRects().length > 0
+      && !element.closest('[inert], [aria-hidden="true"]')
       && getComputedStyle(element).visibility !== 'hidden',
   );
 }
@@ -38,6 +40,7 @@ function focusWithArrowIndicator(target: HTMLElement | undefined): void {
   if (!target) return;
   document.querySelector<HTMLElement>('.arrow-focus')?.classList.remove('arrow-focus');
   target.focus({ preventScroll: true });
+  target.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
   target.classList.add('arrow-focus');
 }
 
@@ -83,18 +86,15 @@ watch(menuOpen, (open) => {
 function moveFocus(direction: 'up' | 'right' | 'down' | 'left'): void {
   const menu = document.querySelector<HTMLElement>('.universal-menu-panel');
   const dialogs = visibleDialogs();
-  const activeDialog = document.activeElement instanceof Element
-    ? document.activeElement.closest<HTMLElement>('[role="dialog"], .stage-sheet, .village-sheet')
-    : null;
   const root: ParentNode = menuOpen.value && menu
     ? menu
-    : activeDialog ?? dialogs.at(-1) ?? document.querySelector('main.app') ?? document;
+    : dialogs.at(-1) ?? document.querySelector('main.app') ?? document;
   const actions = visibleActions(root);
   if (!actions.length) return;
   const current = actions.find((element) => element === document.activeElement)
-    ?? (lastAction?.isConnected && root instanceof HTMLElement && root.contains(lastAction) ? lastAction : undefined);
+    ?? (lastAction && actions.includes(lastAction) ? lastAction : undefined);
   if (!current) {
-    focusWithArrowIndicator(actions[0]);
+    focusWithArrowIndicator(actions.find((element) => element.hasAttribute('data-gamepad-default')) ?? actions[0]);
     return;
   }
   const from = current.getBoundingClientRect();
@@ -108,40 +108,45 @@ function moveFocus(direction: 'up' | 'right' | 'down' | 'left'): void {
     const secondary = direction === 'left' || direction === 'right' ? Math.abs(dy) : Math.abs(dx);
     return { element, primary, score: primary + secondary * 1.6 };
   }).filter((item) => item.primary > 1).sort((a, b) => a.score - b.score)[0]?.element;
-  focusWithArrowIndicator(next ?? actions[(actions.indexOf(current) + 1) % actions.length]);
+  if (next) focusWithArrowIndicator(next);
 }
 
 function dispatchGamepadEvent(name: string, direction?: 'up' | 'right' | 'down' | 'left'): boolean {
-  if (route.value.name !== 'vila' && (menuOpen.value || visibleDialogs().length)) return false;
+  if (menuOpen.value) return false;
   const detail: { handled: boolean; direction?: 'up' | 'right' | 'down' | 'left' } = { handled: false };
   if (direction) detail.direction = direction;
   window.dispatchEvent(new CustomEvent(name, { detail }));
   return detail.handled;
 }
 
-function confirm(): void {
+function confirm(dispatch = true): void {
   if (menuOpen.value) {
-    const link = document.querySelector<HTMLElement>('.universal-menu-panel a:focus');
-    if (link) { link.click(); return; }
+    const active = document.activeElement;
+    if (active instanceof HTMLElement && active.closest('.universal-menu-panel')) { active.click(); return; }
+    focusWithArrowIndicator(document.querySelector<HTMLElement>('.universal-menu-panel a[href]') ?? undefined);
+    return;
   }
-  if (dispatchGamepadEvent('tcg-gamepad-action')) return;
-  const active = document.activeElement instanceof HTMLElement && !document.activeElement.closest('.universal-controls')
+  if (dispatch && dispatchGamepadEvent('tcg-gamepad-action')) return;
+  const root = visibleDialogs().at(-1) ?? document.querySelector('main.app') ?? document;
+  const active = document.activeElement instanceof HTMLElement && root.contains(document.activeElement) && !document.activeElement.closest('.universal-controls')
     ? document.activeElement
-    : lastAction;
-  if (active?.isConnected && !active.matches('input, textarea, select')) active.click();
-  else if (!active) visibleActions(document.querySelector('main.app') ?? document)[0]?.focus({ preventScroll: true });
+    : undefined;
+  if (active?.isConnected) active.click();
+  else {
+    const actions = visibleActions(root);
+    focusWithArrowIndicator(actions.find((element) => element.hasAttribute('data-gamepad-default')) ?? actions[0]);
+  }
 }
 
 function goBack(): void {
   if (menuOpen.value) { menuOpen.value = false; return; }
-  const dialog = [...document.querySelectorAll<HTMLElement>('[role="dialog"], .stage-sheet, .village-sheet')]
-    .find((element) => element.getClientRects().length > 0 && getComputedStyle(element).visibility !== 'hidden');
+  const dialog = visibleDialogs().at(-1);
   if (dialog) {
     const close = dialog.querySelector<HTMLElement>('button[aria-label*="Fechar" i], button[aria-label*="Voltar" i], button[title*="Fechar" i], .menu-close, .bc-close, .village-close');
     if (close) { close.click(); return; }
     const escape = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
     dialog.dispatchEvent(escape);
-    if (escape.defaultPrevented) return;
+    return;
   }
   const actions = visibleActions(document.querySelector('main.app') ?? document);
   const closeAction = actions.find((element) => element instanceof HTMLButtonElement && /^(fechar|cancelar|voltar|retornar|voltar à\b|voltar para\b)/i.test(element.textContent?.trim() ?? ''));
@@ -155,7 +160,9 @@ function goBack(): void {
 }
 
 function onKey(event: KeyboardEvent): void {
-  if (event.type !== 'keydown' || route.value.name === 'vila') return;
+  if (event.type !== 'keydown' || event.defaultPrevented || route.value.name === 'vila') return;
+  if (!menuOpen.value && document.querySelector('.svp-arena') && !document.querySelector('.svp-result')) return;
+  if (!menuOpen.value && document.querySelector('.survivor-stage') && /^(ArrowUp|ArrowRight|ArrowDown|ArrowLeft|Escape|Enter| |z)$/i.test(event.key)) return;
   const target = event.target;
   const typing = target instanceof Element && target.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"])');
   if (typing) return;
@@ -188,24 +195,30 @@ function onMenuKey(event: KeyboardEvent): void {
 }
 
 function sendDirection(direction: Direction, pressed: boolean): void {
-  if (route.value.name !== 'vila' && (menuOpen.value || visibleDialogs().length)) {
-    if (pressed) moveFocus(direction);
+  // A liberação precisa chegar ao jogo mesmo se um diálogo abriu durante o movimento.
+  if (!pressed) {
+    window.dispatchEvent(new CustomEvent('tcg-gamepad-direction', { detail: { handled: false, direction, pressed } }));
+    return;
+  }
+  if (menuOpen.value) {
+    if (!adjustFocusedControl(direction)) moveFocus(direction);
     return;
   }
   const detail: { handled: boolean; direction: Direction; pressed: boolean } = { handled: false, direction, pressed };
   window.dispatchEvent(new CustomEvent('tcg-gamepad-direction', { detail }));
-  if (pressed && !detail.handled) moveFocus(direction);
+  if (!detail.handled && !adjustFocusedControl(direction)) moveFocus(direction);
 }
 
 function sendControllerAction(name: 'tcg-gamepad-action' | 'tcg-gamepad-back' | 'tcg-gamepad-menu'): void {
-  if (name === 'tcg-gamepad-action' && route.value.name !== 'vila' && (menuOpen.value || visibleDialogs().length)) {
-    confirm();
+  if (menuOpen.value) {
+    if (name === 'tcg-gamepad-action') confirm(false);
+    else menuOpen.value = false;
     return;
   }
   const detail = { handled: false };
   window.dispatchEvent(new CustomEvent(name, { detail }));
   if (detail.handled) return;
-  if (name === 'tcg-gamepad-action') confirm();
+  if (name === 'tcg-gamepad-action') confirm(false);
   else if (name === 'tcg-gamepad-back') goBack();
   else if (route.value.name !== 'vila') menuOpen.value = !menuOpen.value;
 }
@@ -216,14 +229,24 @@ function connectedGamepads(): Gamepad[] {
 
 function resetGamepadState(): void {
   for (const direction of heldGamepadDirections) sendDirection(direction, false);
+  for (const key of heldGamepadButtons) {
+    const button = Number(key.split(':')[1]);
+    if (button >= 2 && button <= 7) sendGamepadButton(button, false);
+  }
   heldGamepadDirections.clear();
   nextGamepadRepeat.clear();
   heldGamepadButtons.clear();
 }
 
+function sendGamepadButton(button: number, pressed: boolean): void {
+  if (pressed && menuOpen.value) return;
+  window.dispatchEvent(new CustomEvent('tcg-gamepad-button', { detail: { button, pressed, handled: false } }));
+}
+
 function pollGamepad(): void {
   const pads = connectedGamepads();
   if (!pads.length) {
+    document.documentElement.classList.remove('gamepad-connected');
     resetGamepadState();
     gamepadFrame = 0;
     return;
@@ -251,12 +274,23 @@ function pollGamepad(): void {
   ];
   const connectedIndexes = new Set(pads.map((pad) => pad.index));
   for (const key of heldGamepadButtons) {
-    if (!connectedIndexes.has(Number(key.split(':', 1)[0]))) heldGamepadButtons.delete(key);
+    if (!connectedIndexes.has(Number(key.split(':', 1)[0]))) {
+      const button = Number(key.split(':')[1]);
+      if (button >= 2 && button <= 7) sendGamepadButton(button, false);
+      heldGamepadButtons.delete(key);
+    }
   }
   for (const pad of pads) for (const [button, action] of actions) {
     const key = `${pad.index}:${button}`;
     const down = gamepadButtonPressed(pad, button);
     if (down && !heldGamepadButtons.has(key)) sendControllerAction(action);
+    if (down) heldGamepadButtons.add(key);
+    else heldGamepadButtons.delete(key);
+  }
+  for (const pad of pads) for (const button of [2, 3, 4, 5, 6, 7]) {
+    const key = `${pad.index}:${button}`;
+    const down = gamepadButtonPressed(pad, button);
+    if (down !== heldGamepadButtons.has(key)) sendGamepadButton(button, down);
     if (down) heldGamepadButtons.add(key);
     else heldGamepadButtons.delete(key);
   }
@@ -267,8 +301,12 @@ function startGamepadPolling(): void {
   if (!gamepadFrame) gamepadFrame = requestAnimationFrame(pollGamepad);
 }
 
-function onGamepadConnected(): void { startGamepadPolling(); }
+function onGamepadConnected(): void {
+  document.documentElement.classList.toggle('gamepad-connected', connectedGamepads().length > 0);
+  if (connectedGamepads().length) startGamepadPolling();
+}
 function onGamepadDisconnected(): void {
+  document.documentElement.classList.toggle('gamepad-connected', connectedGamepads().length > 0);
   if (!connectedGamepads().length) {
     cancelAnimationFrame(gamepadFrame);
     gamepadFrame = 0;
@@ -289,7 +327,7 @@ onMounted(() => {
   window.addEventListener('gamepaddisconnected', onGamepadDisconnected);
   document.addEventListener('visibilitychange', onVisibilityChange);
   window.addEventListener('focus', onGamepadConnected);
-  if (connectedGamepads().length) startGamepadPolling();
+  onGamepadConnected();
 });
 onBeforeUnmount(() => {
   document.removeEventListener('focusin', onFocus);
@@ -301,11 +339,13 @@ onBeforeUnmount(() => {
   window.removeEventListener('focus', onGamepadConnected);
   cancelAnimationFrame(gamepadFrame);
   gamepadFrame = 0;
+  resetGamepadState();
+  document.documentElement.classList.remove('gamepad-connected');
 });
 </script>
 
 <template>
-  <div v-if="visible" class="universal-controls" role="group" aria-label="Controles do aplicativo">
+  <div v-if="visible" class="universal-controls" :class="{ 'universal-controls-open': menuOpen }" role="group" aria-label="Controles do aplicativo">
     <div class="universal-dpad" role="group" aria-label="Navegar pelos controles">
       <button class="pad-up" type="button" aria-label="Navegar para cima" @pointerdown.prevent @click="dispatchGamepadEvent('tcg-gamepad-direction', 'up') || moveFocus('up')">▲</button>
       <button class="pad-left" type="button" aria-label="Navegar para a esquerda" @pointerdown.prevent @click="dispatchGamepadEvent('tcg-gamepad-direction', 'left') || moveFocus('left')">◀</button>
@@ -315,7 +355,7 @@ onBeforeUnmount(() => {
     </div>
     <div class="universal-actions" role="group" aria-label="Ações universais">
       <button class="universal-b" type="button" aria-label="Voltar" @click="goBack">B<small>Voltar</small></button>
-      <button class="universal-a" type="button" aria-label="Confirmar" @click="confirm">A<small>Confirmar</small></button>
+      <button class="universal-a" type="button" aria-label="Confirmar" @click="confirm()">A<small>Confirmar</small></button>
       <button class="universal-menu-button" type="button" :aria-expanded="menuOpen" aria-label="Menu" @click="menuOpen = !menuOpen">☰<small>Menu</small></button>
     </div>
     <nav v-if="menuOpen" class="universal-menu-panel" aria-label="Menu do aplicativo" @keydown.esc.stop.prevent="menuOpen = false" @keydown="onMenuKey">

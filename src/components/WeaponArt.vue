@@ -335,7 +335,7 @@ const uid = `w${Math.random().toString(36).slice(2, 8)}`;
   align-items: center;
   justify-content: center;
 }
-.weapon-orb img { width: 150%; height: 150%; object-fit: contain; image-rendering: pixelated; }
+.weapon-orb img { width: 150%; height: 150%; object-fit: contain; image-rendering: var(--game-image-rendering, pixelated); }
 .weapon-generic-label { position: absolute; left: 0; right: 0; bottom: -2px; font-size: 9px; line-height: 1.1; text-align: center; color: #fff; text-shadow: 0 1px 2px #000; pointer-events: none; }
 .weapon-orb-missing { color: #fff; font-weight: 700; font-size: 0.7em; }
 </style>

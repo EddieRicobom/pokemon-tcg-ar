@@ -13,7 +13,7 @@
 export type SmoothingMode = 'nitido' | 'bordas' | 'suave' | 'macio';
 
 export const SMOOTHING_MODES: SmoothingMode[] = ['nitido', 'bordas', 'suave', 'macio'];
-export const DEFAULT_SMOOTHING: SmoothingMode = 'bordas';
+export const DEFAULT_SMOOTHING: SmoothingMode = 'nitido';
 
 export const SMOOTHING_LABELS_PT: Record<SmoothingMode, string> = {
   nitido: 'Nítido',
@@ -23,8 +23,8 @@ export const SMOOTHING_LABELS_PT: Record<SmoothingMode, string> = {
 };
 
 export const SMOOTHING_HINTS_PT: Record<SmoothingMode, string> = {
-  nitido: 'Pixels originais do GIF, sem ampliar nem suavizar (visual de pixel art).',
-  bordas: 'Amplia o GIF e arredonda só as diagonais do desenho (Scale2x). É o padrão.',
+  nitido: 'Padrão: mantém os pixels originais do GIF, sem suavização.',
+  bordas: 'Amplia o GIF e arredonda só as diagonais do desenho (Scale2x).',
   suave: 'Bordas suaves, mais um desfoque leve que alisa degraus e arredonda a silhueta.',
   macio: 'O mais liso: desfoque mais forte e silhueta bem arredondada. Perde um pouco de detalhe fino.',
 };
@@ -32,7 +32,7 @@ export const SMOOTHING_HINTS_PT: Record<SmoothingMode, string> = {
 /** Aceita o valor novo ou, para configurações antigas, o antigo liga/desliga (`smooth`). */
 export function normalizeSmoothing(value: unknown, legacySmooth?: boolean): SmoothingMode {
   if (SMOOTHING_MODES.includes(value as SmoothingMode)) return value as SmoothingMode;
-  return legacySmooth === false ? 'nitido' : DEFAULT_SMOOTHING;
+  return legacySmooth === true ? 'bordas' : DEFAULT_SMOOTHING;
 }
 
 /** Só o "Nítido" usa o filtro de vizinho mais próximo na GPU. */

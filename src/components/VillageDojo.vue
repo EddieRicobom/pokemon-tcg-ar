@@ -164,7 +164,7 @@ function trainingLevels(id: (typeof TRAINING_IDS)[number]): number[] {
 .dojo-pieces { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px; margin: 0; padding: 0; list-style: none; }
 .dojo-pieces li { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 8px; background: rgba(0, 0, 0, .05); font-size: .85rem; }
 .dojo-pieces li.empty { opacity: .55; }
-.dojo-pieces img { image-rendering: pixelated; flex: none; }
+.dojo-pieces img { image-rendering: var(--game-image-rendering, pixelated); flex: none; }
 .dojo-pieces b { margin-left: auto; }
 .dojo-levels, .dojo-list { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
 .dojo-levels li { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 10px; background: rgba(0, 0, 0, .04); }
