@@ -1,6 +1,6 @@
 import { VILLAGE_DIORAMA_BANDS, VILLAGE_DIORAMA_FLOOR_INTERVAL_MS, VILLAGE_DIORAMA_SCENE_FPS, VILLAGE_DIORAMA_TEXTURE_SCALE, villageDioramaBand, villageDioramaBandBounds, villageDioramaFps } from '../core/village/ar-diorama';
-import { drawWaterFx, drawFountainFx, drawGlow, drawRainbow, drawSunRays, drawSoftShadow, drawSparkle } from './ambient-art';
-import { GREETING_COOLDOWN_MS, RAINBOW_MS, rainbowAlpha, residentGreeting } from '../core/village/ambience';
+import { drawFlock, drawLampMoths, drawWaterFx, drawFountainFx, drawGlow, drawRainbow, drawSunRays, drawSoftShadow, drawSparkle } from './ambient-art';
+import { flockBirds, GREETING_COOLDOWN_MS, RAINBOW_MS, rainbowAlpha, residentGreeting } from '../core/village/ambience';
 import { GAME_BUILDINGS } from './game-buildings-art';
 import { BenchVisits, benchesFor } from '../core/village/benches';
 import { CafeService } from '../core/village/cafe';
@@ -2509,6 +2509,11 @@ export class VillageGame {
       ctx.globalAlpha = 1;
     }
 
+    // Pássaros de dia, só com tempo aberto (desligam com os efeitos da Vila e com «Reduzir movimento»).
+    if (layer !== 'props' && ambientFx && !this.diorama && wx.rain < 0.2 && wx.snow < 0.2) {
+      drawFlock(ctx, flockBirds(now), W, H, scale, 1 - Math.min(1, light.dark / 0.3));
+    }
+
     // Arco-íris depois da chuva (some sozinho; desliga com os efeitos da Vila).
     if (layer !== 'props' && ambientFx && this.rainbowAt !== null) {
       const alpha = rainbowAlpha(now - this.rainbowAt) * (1 - wx.rain) * (1 - light.dark / 0.55);
@@ -2568,7 +2573,10 @@ export class VillageGame {
         for (const g of homeGlows) glow(g.x + g.w / 2, g.y + g.h / 2, g.lantern ? 1.5 * T : Math.max(g.w, g.h) * 0.9 + 0.55 * T, '255,196,110', (g.lantern ? 0.32 : 0.2) * dusk);
         glow(sx(shop.x + 1.5), sy(shop.y + shop.h + 1 - 1.2), 2.4 * T, '255,190,120', light.dark * 0.4);
       }
-      for (const l of streetLamps) glow(sx(l.x + 0.5), sy(l.y - 0.3), 2.6 * T, '255,214,120', light.dark * (halos ? 0.6 : 0.35));
+      for (const l of streetLamps) {
+        glow(sx(l.x + 0.5), sy(l.y - 0.3), 2.6 * T, '255,214,120', light.dark * (halos ? 0.6 : 0.35));
+        if (ambientFx && !this.diorama) drawLampMoths(ctx, sx(l.x + 0.5), sy(l.y - 0.4), now, scale, light.dark, l.x * 7 + l.y);
+      }
       if (halos) for (const g of shrineGlows) glow(g.x + g.w / 2, g.y + g.h / 2, 1.6 * T, '235,160,255', 0.22 * dusk * (0.8 + 0.2 * Math.sin(now / 900)));
       // Vagalumes.
       if (night) {
