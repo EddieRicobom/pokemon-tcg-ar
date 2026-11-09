@@ -3,7 +3,7 @@ import { createArenaBot } from './arena-bot';
 import type { ArenaBotTraits } from './arena-bot';
 import { DIGITAL_ARENA_FINALISTS } from './endless-arena';
 import { ARENA_LEVEL_UPS, ARENA_TEAM_SIZE, arenaCardChanges, arenaCoreStats, arenaIdleUpgrades, arenaRivalTeam, arenaSpecOf, autoFinishArenaPrep, bestArenaCard, createArenaPrep, pickArenaCard } from './arena-prep';
-import { aliveCount, applyArenaSnapshot, createArena, NO_INPUT, snapshotArena, stepArena } from './survivor-pvp';
+import { aliveCount, applyArenaSnapshot, createArena, NO_INPUT, snapshotArena, stepArena, SV_MELEE_WINDUP_MS } from './survivor-pvp';
 import { parseSurvivalMessage } from '../pvp/survival-wire';
 import type { ArenaState, SvAttackForm, SvMonSpec } from './survivor-pvp';
 import type { MoveCategory } from './survivor-moves';
@@ -260,6 +260,23 @@ describe('luta contra um amigo', () => {
     expect(msg?.t === 'sv-team' ? msg.team.map((m) => m.alt?.attackType) : null).toEqual(team.map((m) => m.alt?.attackType));
   });
 
+  it('o preparo de cone e aura e a marca do Especial passam pelo fio', () => {
+    const state = createArena([dummy('a', { ...form('cone'), attackRange: 200 })], [dummy('b')]);
+    state.countdownMs = 0;
+    while (state.markers.length === 0) stepArena(state, [NO_INPUT, NO_INPUT], 20);
+    state.markers.push({ id: 900, side: 1, x: 100, y: 100, radius: 88, damage: 1, type: 'fire', leftMs: 700, totalMs: 750, special: true });
+    const parsed = parseSurvivalMessage({ t: 'sv-snap', snap: JSON.parse(JSON.stringify(snapshotArena(state, 1))), events: [] });
+    expect(parsed?.t === 'sv-snap' ? parsed.snap.markers[0] : null).toMatchObject({ kind: 'cone', totalMs: SV_MELEE_WINDUP_MS, radius: 200 });
+    expect(parsed?.t === 'sv-snap' ? parsed.snap.markers[1] : null).toMatchObject({ special: true, totalMs: 750 });
+  });
+
+  it('muitos golpes no ar não derrubam o instantâneo inteiro', () => {
+    const state = createArena([dummy('a')], [dummy('b')]);
+    state.shots = Array.from({ length: 400 }, (_, id) => ({ id, side: 0 as const, x: 100, y: 100, vx: 1, vy: 1, damage: 1, type: 'normal' as const, ageMs: 0, radius: 6, pierce: 0 }));
+    state.markers = Array.from({ length: 80 }, (_, id) => ({ id, side: 0 as const, x: 100, y: 100, radius: 40, damage: 1, type: 'normal' as const, leftMs: 500 }));
+    expect(parseSurvivalMessage({ t: 'sv-snap', snap: JSON.parse(JSON.stringify(snapshotArena(state, 1))), events: [] })?.t).toBe('sv-snap');
+  });
+
   it('a troca de ataque do anfitrião chega ao convidado pelo instantâneo', () => {
     const team = arenaRivalTeam([6, 25, 94, 130, 143, 445], 1, 9);
     const host = createArena(team, team);
@@ -278,7 +295,7 @@ describe('luta contra um amigo', () => {
 /** Lutas entre rivais com a mesma equipe, cada um jogando uma vez de cada lado: só a cabeça do rival muda. */
 function mirror(skillA: number, traitsA: Partial<ArenaBotTraits>, skillB: number, traitsB: Partial<ArenaBotTraits>, N = 6) {
   const pool = [...DIGITAL_ARENA_FINALISTS];
-  let wins = 0; let total = 0;
+  let wins = 0; let total = 0; let sudden = 0; let maxed = 0;
   for (let g = 0; g < N; g++) {
     const team = arenaRivalTeam(Array.from({ length: 6 }, (_, i) => pool[(g * 13 + i * 7) % pool.length]!), 1, g + 1);
     // Mesma equipe dos dois lados e cada lado joga uma vez embaixo: só a cabeça do rival muda.
@@ -289,9 +306,11 @@ function mirror(skillA: number, traitsA: Partial<ArenaBotTraits>, skillB: number
       for (let t = 0; s.winner === null && t < 900_000; t += 33) stepArena(s, flipSides ? [b(s, 33), a(s, 33)] : [a(s, 33), b(s, 33)], 33);
       if (s.winner === (flipSides ? 1 : 0)) wins++;
       total += s.timeMs;
+      if (s.timeMs > s.suddenDeathMs) sudden++;
+      if (s.timeMs >= s.maxMs) maxed++;
     }
   }
-  return { wins, games: N * 2, avgMs: total / (N * 2) };
+  return { wins, games: N * 2, avgMs: total / (N * 2), suddenRate: sudden / (N * 2), maxedRate: maxed / (N * 2) };
 }
 
 
@@ -306,9 +325,9 @@ describe('equilíbrio do rival', () => {
   }, 120_000);
 
   it('esquivar rende vitórias', () => {
-    const { wins, games } = mirror(0.7, { dash: false }, 0.7, {});
+    const { wins, games } = mirror(0.7, { dash: false }, 0.7, {}, 24);
     expect(wins).toBeLessThanOrEqual(games / 2);
-  }, 60_000);
+  }, 120_000);
 
   it('o Especial rende vitórias e não encurta demais a luta', () => {
     const { wins, games, avgMs } = mirror(0.7, { special: false }, 0.7, {}, 24);
@@ -317,7 +336,45 @@ describe('equilíbrio do rival', () => {
   }, 180_000);
 
   it('trocar de Pokémon pelo tipo rende vitórias', () => {
-    const { wins, games } = mirror(0.6, { switching: false }, 0.6, {});
+    const { wins, games } = mirror(0.6, { switching: false }, 0.6, {}, 24);
     expect(wins).toBeLessThan(games / 2);
-  }, 60_000);
+  }, 120_000);
+
+  it('a duração fica de pé com a vida da Arena: sem relâmpago, sem maratona, e a morte súbita não decide a maioria', () => {
+    const { avgMs, suddenRate, maxedRate } = mirror(0.5, {}, 0.5, {}, 24);
+    expect(avgMs).toBeGreaterThan(120_000);
+    expect(avgMs).toBeLessThan(260_000);
+    expect(suddenRate).toBeLessThan(0.5);
+    expect(maxedRate).toBe(0);
+  }, 120_000);
+
+  it('o rival imprevisível não perde força por variar', () => {
+    const { wins, games } = mirror(1, {}, 1, { variety: false, ambush: false }, 24);
+    expect(wins).toBeGreaterThanOrEqual(games * 0.4);
+  }, 120_000);
+
+  it('o rival hábil muda o ritmo; o de treino fica previsível para quem está aprendendo', () => {
+    const lados = (skill: number): number => {
+      const team = arenaRivalTeam([6, 25, 94, 130, 143, 445], 1, 2);
+      const state = createArena(team, team);
+      state.countdownMs = 0;
+      const bot = createArenaBot(1, skill, { dodge: false, dash: false, switching: false, guard: false, special: false, swapAttack: false });
+      const intervalos = new Set<number>();
+      let sinal = 0;
+      let mudou = 0;
+      for (let t = 0; t < 40_000 && state.winner === null; t += 33) {
+        const input = bot(state, 33);
+        stepArena(state, [NO_INPUT, input], 33);
+        const cross = Math.sign(input.dx * (state.sides[0].y - state.sides[1].y) - input.dy * (state.sides[0].x - state.sides[1].x));
+        if (cross !== 0 && cross !== sinal) {
+          if (sinal !== 0) intervalos.add(Math.round((t - mudou) / 100));
+          sinal = cross;
+          mudou = t;
+        }
+      }
+      return intervalos.size;
+    };
+    expect(lados(1)).toBeGreaterThan(lados(0.2));
+    expect(lados(1)).toBeGreaterThanOrEqual(4);
+  }, 30_000);
 });
