@@ -181,7 +181,7 @@ export function drawRainbow(ctx: CanvasRenderingContext2D, width: number, height
 /** Bando de pássaros em V, com a sombra correndo pelo chão bem abaixo deles. */
 export function drawFlock(ctx: CanvasRenderingContext2D, birds: readonly { x: number; y: number; flap: number }[], width: number, height: number, scale: number, alpha: number): void {
   if (alpha <= 0.01 || birds.length === 0) return;
-  const size = 3 * scale;
+  const size = 4 * scale;
   ctx.save();
   ctx.lineCap = 'round';
   ctx.lineWidth = Math.max(1, scale * 0.7);
