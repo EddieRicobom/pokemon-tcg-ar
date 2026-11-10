@@ -590,6 +590,22 @@ export function createSurvivorLandscape(width: number, height: number): Survivor
     ctx.fillStyle = texture ?? hex(palette.base);
     ctx.fillRect(bounds.x, bounds.y, bounds.w, bounds.h);
 
+    // Manchas largas e discretas quebram a repetição do ladrilho sem borrar a pixel art.
+    // São pintadas uma vez no chunk, na grade do mundo, e a rota continua com a própria borda do atlas.
+    for (let r = minR; r <= maxR; r++) for (let c = minC; c <= maxC; c++) {
+      if (!ownsCell(c, r) || cells[r * cols + c] !== FLOOR_CELL.base) continue;
+      const patch = floorNoise(index, c, r, 7, 81);
+      if (patch > 0.59) {
+        ctx.fillStyle = hex(palette.light);
+        ctx.globalAlpha = 0.13;
+      } else if (patch < 0.34) {
+        ctx.fillStyle = hex(palette.shade);
+        ctx.globalAlpha = 0.1;
+      } else continue;
+      ctx.fillRect(c * T, r * T, T, T);
+    }
+    ctx.globalAlpha = 1;
+
     // 2. Detalhes miúdos: canteiros pequenos do mesmo tipo (como nas rotas) e plantinhas soltas por toda parte.
     for (let gr = firstStepped(0, 6, minR - 3); gr <= maxR; gr += 6) for (let gc = firstStepped(0, 6, minC - 3); gc <= maxC; gc += 6) {
       if (floorHash(index, gr, gc, 21) > 0.4) continue;
@@ -610,6 +626,19 @@ export function createSurvivorLandscape(width: number, height: number): Survivor
       const h = floorHash(index, c, r, 3);
       if (h > 0.08) continue;
       placeDecor(tiles.decor[Math.floor(floorHash(index, c, r, 4) * tiles.decor.length)]!, c, r, Math.floor(h * 1000));
+    }
+
+    // Uma orla irregular de plantinhas acompanha a trilha, sem invadir o caminho jogável.
+    // O sorteio é estável por célula e a densidade baixa preserva a leitura dos Pokémon.
+    const pathHalf = trailHalfWidth(SURVIVOR_REGION_ROUTES[index]!.width);
+    for (let r = minR; r <= maxR; r++) for (let c = minC; c <= maxC; c++) {
+      const i = r * cols + c;
+      const distance = plan.routeDistance[i]!;
+      if (!ownsCell(c, r) || cells[i] !== FLOOR_CELL.base || distance < pathHalf + 10 || distance > pathHalf + 54) continue;
+      const variant = floorHash(index, c, r, 82);
+      if (variant > 0.17) continue;
+      const kind = tiles.decor[Math.floor(floorHash(index, c, r, 83) * tiles.decor.length)]!;
+      placeDecor(kind, c, r, Math.floor(variant * 1000));
     }
 
     // 3. Rota em autotile: borda, cantos de fora e de dentro presos à grade, como nas rotas dos jogos.
