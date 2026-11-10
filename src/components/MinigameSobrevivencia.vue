@@ -4086,11 +4086,6 @@ onBeforeUnmount(() => {
             <span v-if="(state.player.healBlockMs ?? 0) > 0" class="chip survivor-heal-block" role="status">🚫 CURA BLOQUEADA · {{ Math.ceil((state.player.healBlockMs ?? 0) / 1000) }}s</span>
             <span v-if="bonkRun" class="chip survivor-bonk-chip" title="Câmera em terceira pessoa, terreno físico e salto">💥 BONK</span>
             <span v-if="state.player.mega?.active" class="chip survivor-mega-chip" role="status" title="Stats base da forma Mega (PokéAPI) até o fim da corrida.">💎 {{ state.player.mega.label }}</span>
-            <span v-if="state.typeAffinity" class="chip survivor-move-chip affinity" :style="{ '--move': moveFor([state.typeAffinity.type], null).color }" :title="`Afinidade rara: ${MOVE_EFFECT_LABELS_PT[state.typeAffinity.effect]}`">✨ {{ TYPE_LABELS_PT[state.typeAffinity.type] }} · afinidade</span>
-            <span class="chip survivor-move-chip affinity" :class="{ active: state.hypotheticalSecondaryActive }" :style="{ '--move': moveFor([state.hypotheticalSecondaryType], null).color }" :title="state.hypotheticalSecondaryActive ? hypotheticalTypeRuleFor(state.player.move.type, state.hypotheticalSecondaryType).description : 'Segundo tipo hipotético: ativa aos 9 min.'">{{ state.hypotheticalSecondaryActive ? '✦' : '○' }} {{ TYPE_LABELS_PT[state.hypotheticalSecondaryType] }} · {{ !state.hypotheticalSecondaryActive ? 'chega aos 9 min' : isTypeExaltation(state.player.move.type, state.hypotheticalSecondaryType) ? 'exaltação' : '2º tipo' }}</span>
-            <span v-if="state.artifacts.length || state.player.artifactSpeedMs > 0 || state.player.artifactPowerMs > 0 || state.player.artifactShieldMs > 0 || state.player.artifactMagnetMs > 0 || state.player.artifactFocusMs > 0" class="chip survivor-artifact-chip" role="status">
-              {{ state.player.artifactSpeedMs > 0 ? '⚡ Velocidade' : state.player.artifactPowerMs > 0 ? '✦ Poder' : state.player.artifactShieldMs > 0 ? '♥ Cura' : state.player.artifactMagnetMs > 0 ? '🧲 Ímã' : state.player.artifactFocusMs > 0 ? '◈ Foco' : `✦ ${state.artifacts.length} artefato${state.artifacts.length === 1 ? '' : 's'}` }}
-            </span>
             <span v-if="(state.keys ?? 0) > 0 || (state.chests?.length ?? 0) > 0" class="chip survivor-key-chip" role="status" title="Chaves caem dos elites; encoste num baú com chave para escolher um item segurado.">🗝 {{ state.keys ?? 0 }}<template v-if="state.chests?.length"> · 🧰 {{ state.chests.length }} no mapa</template></span>
             <span v-if="heldSummary(state.player.held)" class="chip survivor-held-chip" role="status" :title="heldTitle(state.player.held)" :aria-label="`Itens segurados: ${heldTitle(state.player.held)}`">🎒
               <span v-for="item in heldOwned(state.player.held)" :key="item.id" class="survivor-held-entry" :class="{ transformer: HELD_ITEM_BY_ID[item.id].transformer }" :title="HELD_ITEM_BY_ID[item.id].transformer ? `${HELD_ITEM_BY_ID[item.id].name}: transforma o golpe` : HELD_ITEM_BY_ID[item.id].name">
@@ -4101,7 +4096,7 @@ onBeforeUnmount(() => {
             <span v-else-if="state.shadowEncounter.phase === 'battle'" class="chip survivor-shadow-chip" title="Lendário sombrio em combate">🔥 {{ state.shadowEncounter.name }}</span>
             <span v-if="state.shadowTrustStones > 0" class="chip survivor-shadow-chip" :title="`${state.shadowTrustStones} Pedra(s) da Confiança assegurada(s); entram no inventário ao concluir a corrida`">💠 {{ state.shadowTrustStones }} Pedra{{ state.shadowTrustStones === 1 ? '' : 's' }} assegurada{{ state.shadowTrustStones === 1 ? '' : 's' }}</span>
             <span v-if="thiefHud" class="chip survivor-thief-chip" title="Meowth ladrão: pegue antes que fuja para ganhar moedas">{{ thiefHud }}</span>
-            <span v-if="state.adaptive" class="chip" :title="`Desafio adaptável: inimigos comuns com ${Math.round(state.adaptive.value * 100)}% da força de sempre`">🎚 {{ Math.round(state.adaptive.value * 100) }}%</span>
+            <span v-if="state.adaptive" class="chip survivor-adaptive-chip" :title="`Desafio adaptável: inimigos comuns com ${Math.round(state.adaptive.value * 100)}% da força de sempre`">🎚 {{ Math.round(state.adaptive.value * 100) }}%</span>
             <span v-if="fieldEventHud" class="chip survivor-field-chip" :class="{ hunt: state.fieldEvent?.kind === 'hunt' }" :title="state.fieldEvent?.phase === 'hunt' ? 'A caçada já começou; derrote os dois inimigos elite marcados.' : 'Encontro opcional de campo: siga a seta antes que a baliza desapareça.'">{{ fieldEventHud }}</span>
             <span v-if="pvpRun" class="chip survivor-pvp-chip" role="status" title="PvP: esta run rende um Pokémon para a sua equipe 3x3">⚔ Run {{ pvpRun.index + 1 }}/{{ pvpRun.total }} · ⏳ {{ formatTime(Math.max(0, pvpRun.limitMs - state.elapsedMs)) }}</span>
             <span class="chip survivor-run-stats" :title="`${state.kills} inimigos derrotados${state.fast ? ' · Ritmo acelerado' : ''}`">{{ state.fast ? '⚡ ' : '' }}⏱ {{ formatTime(state.elapsedMs) }} · ☠ {{ state.kills }}</span>
@@ -4118,6 +4113,11 @@ onBeforeUnmount(() => {
             </div>
             <div class="survivor-info-section">
               <strong>Golpe e defesas</strong>
+              <span v-if="state.typeAffinity" class="chip survivor-move-chip affinity" :style="{ '--move': moveFor([state.typeAffinity.type], null).color }" :title="`Afinidade rara: ${MOVE_EFFECT_LABELS_PT[state.typeAffinity.effect]}`">✨ {{ TYPE_LABELS_PT[state.typeAffinity.type] }} · afinidade</span>
+              <span class="chip survivor-move-chip affinity" :class="{ active: state.hypotheticalSecondaryActive }" :style="{ '--move': moveFor([state.hypotheticalSecondaryType], null).color }" :title="state.hypotheticalSecondaryActive ? hypotheticalTypeRuleFor(state.player.move.type, state.hypotheticalSecondaryType).description : 'Segundo tipo hipotético: ativa aos 9 min.'">{{ state.hypotheticalSecondaryActive ? '✦' : '○' }} {{ TYPE_LABELS_PT[state.hypotheticalSecondaryType] }} · {{ !state.hypotheticalSecondaryActive ? 'chega aos 9 min' : isTypeExaltation(state.player.move.type, state.hypotheticalSecondaryType) ? 'exaltação' : '2º tipo' }}</span>
+              <span v-if="state.artifacts.length || state.player.artifactSpeedMs > 0 || state.player.artifactPowerMs > 0 || state.player.artifactShieldMs > 0 || state.player.artifactMagnetMs > 0 || state.player.artifactFocusMs > 0" class="chip survivor-artifact-chip" role="status">
+                {{ state.player.artifactSpeedMs > 0 ? '⚡ Velocidade' : state.player.artifactPowerMs > 0 ? '✦ Poder' : state.player.artifactShieldMs > 0 ? '♥ Cura' : state.player.artifactMagnetMs > 0 ? '🧲 Ímã' : state.player.artifactFocusMs > 0 ? '◈ Foco' : `✦ ${state.artifacts.length} artefato${state.artifacts.length === 1 ? '' : 's'}` }}
+              </span>
               <span class="chip survivor-move-chip" :style="{ '--move': state.player.move.color }" :title="MOVE_EFFECT_LABELS_PT[state.player.move.effect]">{{ moveLine(state.player.move) }}</span>
               <span class="chip" title="Contato e explosões usam Defesa; projéteis usam Defesa Especial. Cartas defensivas somam pontos aos atributos reais.">{{ survivorDefenseReduction(state.player, 'contato') === null ? 'Defesas indisponíveis' : `🛡 ${Math.round((survivorDefenseReduction(state.player, 'contato') ?? 0) * 100)}% físico · ✨ ${Math.round((survivorDefenseReduction(state.player, 'projétil') ?? 0) * 100)}% especial` }}</span>
             </div>
@@ -4701,24 +4701,25 @@ onBeforeUnmount(() => {
 .sv-supreme {
   position: absolute;
   left: 50%;
-  bottom: calc(var(--sv-sp-b, 16px) + env(safe-area-inset-bottom));
+  bottom: calc(var(--sv-sp-b, 16px) + var(--sv-sp, 90px) + 8px + env(safe-area-inset-bottom));
   transform: translateX(-50%);
   z-index: 4;
-  width: clamp(124px, 38vw, 190px);
-  height: 40px;
+  width: min(36vw, 170px);
+  height: 32px;
   padding: 0 10px;
   overflow: hidden;
   border: 2px solid #555b58;
-  border-radius: 999px;
-  background: #1a2130;
-  color: #fff;
+  border-radius: 4px;
+  background: #f5f3dc;
+  color: #252d30;
+  box-shadow: 2px 2px 0 #303839;
   touch-action: manipulation;
   user-select: none;
   -webkit-user-select: none;
   -webkit-tap-highlight-color: transparent;
 }
 .sv-supreme:disabled { cursor: default; }
-.sv-supreme strong { position: relative; display: block; font-size: 11px; line-height: 1.1; letter-spacing: .03em; white-space: nowrap; text-overflow: ellipsis; overflow: hidden; text-shadow: 0 1px 2px #000; }
+.sv-supreme strong { position: relative; display: block; font-size: 11px; line-height: 1.1; letter-spacing: .03em; white-space: nowrap; text-overflow: ellipsis; overflow: hidden; text-shadow: 1px 1px #fff; }
 .survivor-supreme-hint { position: relative; }
 .survivor-jump-button .gamepad-hint,
 .survivor-charge-button .gamepad-hint,
@@ -4727,10 +4728,10 @@ onBeforeUnmount(() => {
   inset: 0 -2px auto auto;
   pointer-events: none;
 }
-.sv-supreme-fill { position: absolute; inset: 0 auto 0 0; width: var(--supreme); background: var(--special-color); opacity: .75; }
+.sv-supreme-fill { position: absolute; inset: 0 auto 0 0; width: var(--supreme); background: var(--special-color); opacity: .35; }
 .sv-supreme.is-ready { border-color: #fff; cursor: pointer; box-shadow: 0 0 0 3px var(--special-color); animation: sv-supreme-pulse .7s ease-in-out infinite alternate; }
 .sv-supreme.is-ready.calm { animation: none; }
-.sv-supreme.is-ready .sv-supreme-fill { opacity: 1; }
+.sv-supreme.is-ready .sv-supreme-fill { opacity: .55; }
 .sv-supreme:focus-visible { outline: 3px solid #fff; outline-offset: 3px; }
 @keyframes sv-supreme-pulse { to { transform: translateX(-50%) scale(1.06); } }
 @media (prefers-reduced-motion: reduce) { .sv-supreme.is-ready { animation: none; } }
