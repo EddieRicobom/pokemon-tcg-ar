@@ -5,7 +5,7 @@ import { attackProfile, moveFor, moveWith } from './survivor-moves';
 import { chooseSurvivorSpecial } from './survivor-specials';
 import { POKEMON_TYPES } from './pokemon-data';
 import type { BaseStats, PokemonType } from './pokemon-data';
-import { creditSupremeKill, gainSupreme, SUPREME_BANK_CAP, SUPREME_DAMAGE_BOUNDS, SUPREME_GRACE_MS, SUPREME_MIN_FILL_MS, SUPREME_RADIUS, SUPREME_WINDUP_MS, supremeDamageTo, SURVIVOR_SUPREMES } from './survivor-supreme';
+import { creditSupremeKill, gainSupreme, SUPREME_BANK_CAP, SUPREME_DAMAGE_BOUNDS, SUPREME_GRACE_MS, SUPREME_MIN_FILL_MS, SUPREME_RADIUS, SUPREME_WINDUP_MS, supremeDamageTo, supremeWaveMarks, SURVIVOR_SUPREMES } from './survivor-supreme';
 
 const STATS: BaseStats = { hp: 75, attack: 75, defense: 75, spAttack: 75, spDefense: 75, speed: 75 };
 const idle = { dx: 0, dy: 0 };
@@ -109,6 +109,47 @@ describe('Golpe Supremo da Torre', () => {
     }
   });
 
+  it('comum sempre cai, mesmo com ataque baixo; só a proteção de suporte o segura', () => {
+    for (const def of Object.values(SURVIVOR_SUPREMES)) expect(supremeDamageTo(foe(1, 0, 0, { hp: 40, maxHp: 40 }), def, 1)).toBeGreaterThanOrEqual(40);
+    const s = run('water');
+    s.player.attackDamage = 1;
+    const weak = foe(1, s.player.x + 70, s.player.y, { hp: 40, maxHp: 40 });
+    const shielded = foe(2, s.player.x - 70, s.player.y, { hp: 40, maxHp: 40, protectedMs: 5000 });
+    s.enemies = [weak, shielded];
+    fire(s);
+    expect(s.enemies.includes(weak)).toBe(false);
+    expect(shielded.hp).toBeCloseTo(10);
+  });
+
+  it('o Juízo Espectral executa elite solto ferido, mas não elite inteiro, treinador nem chefe', () => {
+    const s = run('ghost');
+    const x = s.player.x + 80;
+    const wounded = foe(1, x, s.player.y, { grade: 'elite', hp: 400 });
+    const healthy = foe(2, x, s.player.y + 20, { grade: 'elite' });
+    const trainer = foe(3, x, s.player.y - 20, { grade: 'elite', hp: 400, trainerId: 1 });
+    const boss = foe(4, x, s.player.y + 40, { boss: true, hp: 100 });
+    s.enemies = [wounded, healthy, trainer, boss];
+    fire(s);
+    expect(s.enemies.includes(wounded)).toBe(false);
+    expect(healthy.hp).toBeGreaterThan(300);
+    expect(trainer.hp).toBeGreaterThan(0);
+    expect(boss.hp).toBeGreaterThan(0);
+  });
+
+  it('a onda desenhada fica dentro do raio do golpe e a chuva cai do alto', () => {
+    for (const pattern of ['radial', 'spokes', 'rain'] as const) for (const t of [0, 0.3, 0.7, 1]) {
+      const marks = supremeWaveMarks(pattern, t, 300, 14);
+      expect(marks).toHaveLength(14);
+      for (const m of marks) {
+        expect(Math.hypot(m.dx, m.dy)).toBeLessThanOrEqual(300.001);
+        expect(m.lift).toBeGreaterThanOrEqual(0);
+        expect(m.lift).toBeLessThanOrEqual(170);
+      }
+    }
+    expect(Math.hypot(supremeWaveMarks('spokes', 0.6, 300, 4)[0]!.dx, supremeWaveMarks('spokes', 0.6, 300, 4)[0]!.dy)).toBeCloseTo(300);
+    expect(supremeWaveMarks('rain', 0.1, 300, 1)[0]!.lift).toBeGreaterThan(supremeWaveMarks('rain', 0.4, 300, 1)[0]!.lift);
+  });
+
   it('não acerta o Meowth ladrão: pegá-lo continua sendo perseguição', () => {
     const s = run('dragon');
     const thief = foe(1, s.player.x + 60, s.player.y, { thief: true });
@@ -119,10 +160,10 @@ describe('Golpe Supremo da Torre', () => {
 
   it('cada efeito faz o que diz', () => {
     const near = (s: SurvivorState, extra: Partial<SurvivorEnemy> = {}) => { const e = foe(1, s.player.x + 80, s.player.y, extra); s.enemies = [e]; return e; };
-    const ice = run('ice'); const frozen = near(ice); fire(ice);
+    const ice = run('ice'); const frozen = near(ice, { grade: 'elite' }); fire(ice);
     expect(frozen.stunMs).toBeGreaterThan(0);
 
-    const fireRun = run('fire'); const burning = near(fireRun); fire(fireRun);
+    const fireRun = run('fire'); const burning = near(fireRun, { grade: 'elite' }); fire(fireRun);
     expect(burning.burnMs).toBeGreaterThan(0);
 
     const psychic = run('psychic'); near(psychic);
@@ -130,7 +171,7 @@ describe('Golpe Supremo da Torre', () => {
     fire(psychic);
     expect(psychic.hostileProjectiles).toHaveLength(0);
 
-    const flying = run('flying'); near(flying);
+    const flying = run('flying'); near(flying, { grade: 'elite' });
     flying.orbs = [{ id: 3, x: flying.player.x + 500, y: flying.player.y, value: 2 }];
     fire(flying);
     expect(flying.orbs).toHaveLength(0);
@@ -152,9 +193,9 @@ describe('Golpe Supremo da Torre', () => {
     expect(held.hp).toBeGreaterThan(800);
   });
 
-  it('água empurra chefe bem menos que comum e ninguém sai da arena', () => {
+  it('água empurra chefe bem menos que elite e ninguém sai da arena', () => {
     const s = run('water');
-    const common = foe(1, s.player.x + 60, s.player.y);
+    const common = foe(1, s.player.x + 60, s.player.y, { grade: 'elite' });
     const boss = foe(2, s.player.x - 60, s.player.y, { boss: true });
     const [commonX, bossX] = [common.x, boss.x];
     s.enemies = [common, boss];

@@ -28,6 +28,8 @@ export interface CinemaBeat {
   flashColor?: string;
   lines?: number;
   linesMs?: number;
+  /** Quadro de impacto: a tela inverte por este tempo, como o quadro em negativo do golpe final num anime. */
+  inkMs?: number;
 }
 
 /** Teto da câmera lenta: o toque nunca fica mais que um instante em ritmo reduzido. */
@@ -38,8 +40,8 @@ export const CINEMA_SLOW_GUARD_MS = 1500;
 
 export const CINEMA_BEATS = {
   supremeCharge: { slowMs: 420, slowScale: 0.3, zoom: 0.1, zoomMs: 560, lines: 0.8, linesMs: 460 },
-  supremeRelease: { slowMs: 120, slowScale: 0.55, zoom: 0.16, zoomMs: 430, shake: 9, shakeMs: 380, flash: 0.62, flashMs: 240, flashColor: '#ffffff', lines: 1, linesMs: 320 },
-  bossDown: { slowMs: 520, slowScale: 0.35, zoom: 0.12, zoomMs: 620, shake: 5, shakeMs: 300, flash: 0.32, flashMs: 200, flashColor: '#fff3c9' },
+  supremeRelease: { slowMs: 120, slowScale: 0.55, zoom: 0.16, zoomMs: 430, shake: 9, shakeMs: 380, flash: 0.62, flashMs: 240, flashColor: '#ffffff', lines: 1, linesMs: 320, inkMs: 70 },
+  bossDown: { slowMs: 520, slowScale: 0.35, zoom: 0.12, zoomMs: 620, shake: 5, shakeMs: 300, flash: 0.32, flashMs: 200, flashColor: '#fff3c9', inkMs: 50 },
   bossEntrance: { zoom: 0.05, zoomMs: 520, shake: 3, shakeMs: 260, lines: 0.35, linesMs: 300 },
   chargeFull: { zoom: 0.06, zoomMs: 240, shake: 3, shakeMs: 200, lines: 0.55, linesMs: 210 },
   evolve: { zoom: 0.14, zoomMs: 1100, flash: 0.5, flashMs: 420, flashColor: '#e8fbff', lines: 0.6, linesMs: 900 },
@@ -57,7 +59,7 @@ export interface CinemaBanner {
   portrait: boolean;
 }
 
-export interface CinemaFrame { zoom: number; shakeX: number; shakeY: number; flash: number; flashColor: string; lines: number }
+export interface CinemaFrame { zoom: number; shakeX: number; shakeY: number; flash: number; flashColor: string; lines: number; ink: boolean }
 
 export interface CinemaCamera {
   slowMs: number;
@@ -67,12 +69,13 @@ export interface CinemaCamera {
   shake: number; shakeMs: number; shakeTotal: number;
   flash: number; flashMs: number; flashTotal: number; flashColor: string;
   lines: number; linesMs: number; linesTotal: number;
+  inkMs: number;
   banner: CinemaBanner | null;
   frame: CinemaFrame;
 }
 
 export function createCinemaCamera(): CinemaCamera {
-  return { slowMs: 0, slowScale: 1, guardMs: 0, zoom: 0, zoomMs: 0, zoomTotal: 1, shake: 0, shakeMs: 0, shakeTotal: 1, flash: 0, flashMs: 0, flashTotal: 1, flashColor: '#ffffff', lines: 0, linesMs: 0, linesTotal: 1, banner: null, frame: { zoom: 0, shakeX: 0, shakeY: 0, flash: 0, flashColor: '#ffffff', lines: 0 } };
+  return { slowMs: 0, slowScale: 1, guardMs: 0, zoom: 0, zoomMs: 0, zoomTotal: 1, shake: 0, shakeMs: 0, shakeTotal: 1, flash: 0, flashMs: 0, flashTotal: 1, flashColor: '#ffffff', lines: 0, linesMs: 0, linesTotal: 1, inkMs: 0, banner: null, frame: { zoom: 0, shakeX: 0, shakeY: 0, flash: 0, flashColor: '#ffffff', lines: 0, ink: false } };
 }
 
 export function triggerCinema(cam: CinemaCamera, beat: CinemaBeat): void {
@@ -84,6 +87,7 @@ export function triggerCinema(cam: CinemaCamera, beat: CinemaBeat): void {
   if (beat.shake && beat.shake >= cam.shake * (cam.shakeMs / cam.shakeTotal)) { cam.shake = beat.shake; cam.shakeMs = cam.shakeTotal = beat.shakeMs ?? 240; }
   if (beat.flash && beat.flash >= cam.flash * (cam.flashMs / cam.flashTotal)) { cam.flash = beat.flash; cam.flashMs = cam.flashTotal = beat.flashMs ?? 200; cam.flashColor = beat.flashColor ?? '#ffffff'; }
   if (beat.lines && beat.lines >= cam.lines * (cam.linesMs / cam.linesTotal)) { cam.lines = beat.lines; cam.linesMs = cam.linesTotal = beat.linesMs ?? 300; }
+  if (beat.inkMs) cam.inkMs = Math.max(cam.inkMs, beat.inkMs);
 }
 
 export function showCinemaBanner(cam: CinemaCamera, banner: Omit<CinemaBanner, 'leftMs' | 'totalMs'>, ms: number): void {
@@ -103,6 +107,7 @@ export function stepCinema(cam: CinemaCamera, dtMs: number): void {
   cam.shakeMs = Math.max(0, cam.shakeMs - dtMs);
   cam.flashMs = Math.max(0, cam.flashMs - dtMs);
   cam.linesMs = Math.max(0, cam.linesMs - dtMs);
+  cam.inkMs = Math.max(0, cam.inkMs - dtMs);
   if (cam.banner) {
     cam.banner.leftMs -= dtMs;
     if (cam.banner.leftMs <= 0) cam.banner = null;
@@ -126,6 +131,7 @@ export function cinemaFrame(cam: CinemaCamera, timeMs: number): CinemaFrame {
   f.flash = cam.flashMs > 0 ? cam.flash * (cam.flashMs / cam.flashTotal) : 0;
   f.flashColor = cam.flashColor;
   f.lines = cam.linesMs > 0 ? cam.lines * Math.min(1, (cam.linesMs / cam.linesTotal) * 1.4) : 0;
+  f.ink = cam.inkMs > 0;
   return f;
 }
 

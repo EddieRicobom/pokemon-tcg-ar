@@ -1,6 +1,7 @@
 import type { PokemonType } from '../core/pokemon-data';
 import type { SurvivorState } from '../core/survivor';
-import { SUPREME_RADIUS, SUPREME_WINDUP_MS, SURVIVOR_SUPREMES } from '../core/survivor-supreme';
+import { SUPREME_RADIUS, SUPREME_WINDUP_MS, SURVIVOR_SUPREMES, supremeWaveMarks } from '../core/survivor-supreme';
+import type { WorldToScreen } from './survivor-attack-art';
 
 /** Silhuetas distintas por tipo, sem texturas ou partículas persistentes. */
 export function drawElementMark(ctx: CanvasRenderingContext2D, type: PokemonType, x: number, y: number, size: number, time = 0): void {
@@ -33,26 +34,66 @@ export function drawElementMark(ctx: CanvasRenderingContext2D, type: PokemonType
   ctx.stroke(); ctx.restore();
 }
 
-/** Golpe Supremo no mundo: energia convergindo na carga e onda com a silhueta do tipo na soltura. Sem sombra nem gradiente. */
-export function drawSurvivorSupreme(ctx: CanvasRenderingContext2D, state: SurvivorState, timeMs: number, detailed: boolean): void {
+/** Círculo no chão como linha projetada: a perspectiva do BONK deforma o anel e pontos atrás da câmera só abrem um vão. */
+function strokeProjectedRing(ctx: CanvasRenderingContext2D, project: WorldToScreen, x: number, y: number, radius: number, z: number, segments: number): void {
+  ctx.beginPath();
+  let drawing = false;
+  for (let i = 0; i <= segments; i++) {
+    const a = (i / segments) * Math.PI * 2;
+    const point = project(x + Math.cos(a) * radius, y + Math.sin(a) * radius, z);
+    if (!point) { drawing = false; continue; }
+    if (drawing) ctx.lineTo(point.x, point.y);
+    else ctx.moveTo(point.x, point.y);
+    drawing = true;
+  }
+  ctx.stroke();
+}
+
+const flatProjection: WorldToScreen = (x, y, z = 0) => ({ x, y: y - z, s: 1 });
+
+/**
+ * Golpe Supremo no mundo: aura com o medidor cheio, energia convergindo na carga e onda com a silhueta do tipo na soltura.
+ * Sem sombra nem gradiente. Com `project`, a mesma cena sai na perspectiva do BONK. Sem `detailed` (Modo Rotom, movimento
+ * reduzido) não há aura e as marcas não giram; a carga e a onda continuam, porque dizem quando e até onde o golpe chega.
+ */
+export function drawSurvivorSupreme(ctx: CanvasRenderingContext2D, state: SurvivorState, timeMs: number, detailed: boolean, project: WorldToScreen = flatProjection): void {
   const supreme = state.supreme;
   const p = state.player;
   const color = p.move.color;
   const def = SURVIVOR_SUPREMES[supreme.type];
+  const center = project(p.x, p.y, 12);
+  if (detailed && supreme.meter >= 1 && supreme.windupMs <= 0 && center) {
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.globalAlpha = 0.5 + 0.25 * Math.sin(timeMs / 130);
+    ctx.lineWidth = 2.5 * center.s;
+    const spin = timeMs / 300;
+    for (let i = 0; i < 2; i++) {
+      const direction = i === 0 ? 1 : -1;
+      const r = (30 + i * 7) * center.s;
+      ctx.beginPath();
+      ctx.ellipse(center.x, center.y, r, r * (project === flatProjection ? 1 : 0.5), 0, spin * direction, spin * direction + 2.1);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.ellipse(center.x, center.y, r, r * (project === flatProjection ? 1 : 0.5), 0, spin * direction + Math.PI, spin * direction + Math.PI + 2.1);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
   if (supreme.windupMs > 0) {
     const t = 1 - supreme.windupMs / SUPREME_WINDUP_MS;
     ctx.save();
     ctx.strokeStyle = color;
     ctx.globalAlpha = 0.45 + t * 0.5;
-    ctx.lineWidth = 2 + t * 3;
-    ctx.beginPath();
-    ctx.arc(p.x, p.y - 12, 92 * (1 - t) + 14, 0, Math.PI * 2);
-    ctx.stroke();
+    ctx.lineWidth = (2 + t * 3) * (center?.s ?? 1);
+    strokeProjectedRing(ctx, project, p.x, p.y, 92 * (1 - t) + 14, 12, 28);
     const count = detailed ? 10 : 4;
+    const turn = detailed ? timeMs / 240 : 0;
+    const r = 104 * (1 - t) + 8;
     for (let i = 0; i < count; i++) {
-      const a = (i / count) * Math.PI * 2 + timeMs / 240;
-      const r = 104 * (1 - t) + 8;
-      drawElementMark(ctx, supreme.type, p.x + Math.cos(a) * r, p.y - 12 + Math.sin(a) * r, 8, timeMs / 900);
+      const a = (i / count) * Math.PI * 2 + turn;
+      const point = project(p.x + Math.cos(a) * r, p.y + Math.sin(a) * r, 12);
+      if (point) drawElementMark(ctx, supreme.type, point.x, point.y, 8 * point.s, detailed ? timeMs / 900 : 0);
     }
     ctx.restore();
   }
@@ -60,29 +101,26 @@ export function drawSurvivorSupreme(ctx: CanvasRenderingContext2D, state: Surviv
   const t = 1 - supreme.fxMs / 900;
   const radius = SUPREME_RADIUS * (def.radius ?? 1);
   const fade = Math.max(0, 1 - t);
+  const groundZ = project === flatProjection ? 10 : 2;
+  const spinTime = detailed ? timeMs : 0;
   ctx.save();
   ctx.strokeStyle = color;
   ctx.globalAlpha = 0.85 * fade;
   ctx.lineWidth = 10 * fade + 2;
-  ctx.beginPath();
-  ctx.arc(supreme.x, supreme.y - 10, radius * Math.min(1, t * 1.6), 0, Math.PI * 2);
-  ctx.stroke();
-  const marks = detailed ? 14 : 5;
-  const reach = radius * Math.min(1, t * 1.7);
-  for (let i = 0; i < marks; i++) {
-    const a = (i / marks) * Math.PI * 2 + (def.pattern === 'radial' ? t * 1.2 : 0);
-    if (def.pattern === 'rain') {
-      const row = (i % 4) / 4;
-      drawElementMark(ctx, supreme.type, supreme.x + Math.cos(a) * radius * 0.82 * (0.35 + row * 0.6), supreme.y - 160 + (t * 240 + i * 11) % 300, 11, timeMs / 800);
-    } else if (def.pattern === 'spokes') {
-      ctx.beginPath();
-      ctx.moveTo(supreme.x + Math.cos(a) * reach * 0.25, supreme.y - 10 + Math.sin(a) * reach * 0.25);
-      ctx.lineTo(supreme.x + Math.cos(a) * reach, supreme.y - 10 + Math.sin(a) * reach);
-      ctx.stroke();
-      drawElementMark(ctx, supreme.type, supreme.x + Math.cos(a) * reach, supreme.y - 10 + Math.sin(a) * reach, 12, timeMs / 700);
-    } else {
-      drawElementMark(ctx, supreme.type, supreme.x + Math.cos(a) * reach * 0.86, supreme.y - 10 + Math.sin(a) * reach * 0.86, 13, timeMs / 700);
+  strokeProjectedRing(ctx, project, supreme.x, supreme.y, radius * Math.min(1, t * 1.6), groundZ, detailed ? 48 : 24);
+  for (const mark of supremeWaveMarks(def.pattern, t, radius, detailed ? 14 : 5)) {
+    const tip = project(supreme.x + mark.dx, supreme.y + mark.dy, mark.lift + groundZ);
+    if (!tip) continue;
+    if (def.pattern === 'spokes') {
+      const inner = project(supreme.x + mark.innerDx, supreme.y + mark.innerDy, groundZ);
+      if (inner) {
+        ctx.beginPath();
+        ctx.moveTo(inner.x, inner.y);
+        ctx.lineTo(tip.x, tip.y);
+        ctx.stroke();
+      }
     }
+    drawElementMark(ctx, supreme.type, tip.x, tip.y, (def.pattern === 'rain' ? 11 : def.pattern === 'spokes' ? 12 : 13) * tip.s, spinTime / 750);
   }
   ctx.restore();
 }

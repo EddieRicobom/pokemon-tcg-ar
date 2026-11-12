@@ -8,7 +8,8 @@ import { CINEMA_BEATS, cinemaFrame, cinemaLook, cinemaPower, cinemaTimeScale, cr
 import type { CinemaBeat, CinemaFrame } from '../core/survivor-cinema';
 import { SURVIVOR_SUPREMES } from '../core/survivor-supreme';
 import { flashAlpha, impactFromFx, moveLight, shadowFrom } from '../core/survivor-impacts';
-import { drawCastShadows, drawCinemaBanner, drawLights, drawNight, drawPokemonShadow, drawScreenFlash, drawSpeedLines } from '../village/survivor-cinema-art';
+import { drawCastShadows, drawCinemaBanner, drawImpactFrame, drawKillStreak, drawLights, drawNight, drawPokemonShadow, drawScreenFlash, drawSpeedLines } from '../village/survivor-cinema-art';
+import { addStreakKills, createKillStreak, resetKillStreak, STREAK_SHOW_AT, stepKillStreak, streakFade, streakPop, streakTier, streakVisible } from '../core/survivor-streak';
 import { ImpactSparks } from '../village/survivor-impact-art';
 import { ARTIFACT_ICONS, artifactIconUrl, drawArtifactIcon } from '../village/artifact-icons-art';
 import type { CinemaLight } from '../village/survivor-cinema-art';
@@ -759,6 +760,7 @@ function cancelChargePointer(event: PointerEvent): void {
 /** Tudo que mexe a câmera ou desacelera respeita "Impactos", Modo Rotom e movimento reduzido. */
 const cinemaMotion = computed(() => effectiveVisual.value.impactFx && !reducedMotion && !effectiveVisual.value.rotomMode);
 const cinemaCam = createCinemaCamera();
+const killStreak = createKillStreak();
 function cinemaBeat(beat: CinemaBeat): void {
   if (cinemaMotion.value) triggerCinema(cinemaCam, beat);
 }
@@ -2165,6 +2167,7 @@ function drawBonkScene(s: SurvivorState, physics: BonkPhysics): void {
     }
     c.restore();
   }
+  drawSurvivorSupreme(c, s, animMs, detailed, toScreen);
   if (playerGround && s.special.activeMs > 0) {
     const ring = bonkGroundEllipse(playerGround, Math.max(20, s.player.attackRadius * 0.8));
     c.save();
@@ -2791,7 +2794,12 @@ function draw(): void {
 function drawCinemaOverlay(s: SurvivorState, w: number, h: number, cine: CinemaFrame): void {
   if (!ctx) return;
   if (cine.lines > 0) drawSpeedLines(ctx, w, h, cine.lines, s.player.move.color, animMs, detailedSpecialEffects.value ? 30 : 14);
+  // O negativo vai antes do clarão: quem desliga os impactos visuais nunca chega aqui, porque o momento nem dispara.
+  if (cine.ink) drawImpactFrame(ctx, w, h);
   drawScreenFlash(ctx, w, h, cine.flash, cine.flashColor);
+  if (effectiveVisual.value.impactFx && !effectiveVisual.value.rotomMode && streakVisible(killStreak)) {
+    drawKillStreak(ctx, w, h, killStreak.count, streakTier(killStreak.count), streakPop(killStreak), streakFade(killStreak), !reducedMotion);
+  }
   const banner = cinemaCam.banner;
   if (!banner) return;
   const portrait = banner.portrait && playerSprite && !effectiveVisual.value.rotomMode
@@ -3192,6 +3200,7 @@ function loop(ts: number): void {
   }
   animMs += dt;
   stepCinema(cinemaCam, dt);
+  stepKillStreak(killStreak, dt);
   if (hitStopMs > 0) {
     hitStopMs = Math.max(0, hitStopMs - dt);
     draw();
@@ -3289,7 +3298,10 @@ function loop(ts: number): void {
       heldKeys.clear(); joyUp(); playSound('survivor-level');
     }
     if (s.projectiles.length > projectilesBefore) playSound('survivor-shot');
-    if (s.kills > killsBefore) playSound('survivor-hit');
+    if (s.kills > killsBefore) {
+      playSound('survivor-hit');
+      addStreakKills(killStreak, s.kills - killsBefore);
+    }
     if (s.player.xp > xpBefore) playSound('survivor-pickup');
     if (s.player.hp < hpBefore) {
       playSound('survivor-hurt');
@@ -3310,7 +3322,7 @@ function loop(ts: number): void {
       }
       else if (ev.type === 'supremeReady') {
         playSound('survivor-level');
-        say(`⚡ ${ev.name} pronto! Toque no botão SUPREMO ou pressione F.`, 2600);
+        say(`⚡ ${ev.name} pronto! ${document.documentElement.classList.contains('gamepad-connected') ? 'Aperte Y no controle.' : 'Toque no botão SUPREMO ou pressione F.'}`, 2600);
       }
       else if (ev.type === 'supremeCharge') {
         playSound('survivor-boss');
@@ -3665,6 +3677,7 @@ async function beginRun(dexId: number, name: string, picked?: PokemonType, infin
   if (outroTimer) clearTimeout(outroTimer);
   outroTimer = null;
   resetCinema(cinemaCam);
+  resetKillStreak(killStreak);
   supremeQueued = false;
   impactSparks.clear();
   seenImpactFx = new WeakSet<object>();
@@ -4474,7 +4487,7 @@ onBeforeUnmount(() => {
           v-show="!state.over" type="button" class="sv-supreme" :class="{ 'is-ready': state.supreme.meter >= 1 && !supremeBlocked, calm: !detailedSpecialEffects }"
           :style="{ '--special-color': state.player.move.color, '--supreme': `${state.supreme.meter * 100}%` }"
           :disabled="supremeBlocked || state.supreme.meter < 1"
-          :aria-label="`Golpe Supremo ${supremeDef?.name}: ${state.supreme.meter >= 1 ? 'pronto; tecla F' : `${Math.floor(state.supreme.meter * 100)}% carregado`}`"
+          :aria-label="`Golpe Supremo ${supremeDef?.name}: ${state.supreme.meter >= 1 ? 'pronto; tecla F ou Y no controle' : `${Math.floor(state.supreme.meter * 100)}% carregado`}`"
           @pointerdown.stop.prevent="queueSupreme">
           <span class="sv-supreme-fill" aria-hidden="true"></span>
           <strong>{{ state.supreme.meter >= 1 ? `⚡ ${supremeDef?.name}` : `SUPREMO ${Math.floor(state.supreme.meter * 100)}%` }}</strong>
@@ -4637,6 +4650,7 @@ onBeforeUnmount(() => {
             <p v-if="summary.thievesCaught" class="survivor-cleared" role="status">🐾 {{ summary.thievesCaught === 1 ? 'Um ladrão pego' : `${summary.thievesCaught} ladrões pegos` }} nesta corrida.</p>
             <p v-if="summary.adaptive" class="note">Desafio adaptável no fim: {{ Math.round(summary.adaptive * 100) }}% da força de sempre.</p>
             <p v-if="state && state.supreme.uses > 0" class="note">⚡ Golpes Supremos usados: {{ state.supreme.uses }}.</p>
+            <p v-if="killStreak.best >= STREAK_SHOW_AT" class="note">🔥 Maior sequência: {{ killStreak.best }} abates.</p>
             <p v-if="summary.finalHit" class="note" role="status">
               Golpe final: {{ summary.finalHit.shadowBoss ? 'lendário sombrio' : summary.finalHit.boss || summary.finalHit.grade === 'chefao' ? 'chefão' : summary.finalHit.grade === 'elite' ? 'inimigo de treinador' : 'inimigo' }}{{ summary.finalHit.dexId ? ` (${speciesName(summary.finalHit.dexId) || `Pokémon nº ${summary.finalHit.dexId}`})` : '' }} · {{ summary.finalHit.kind }} · {{ summary.finalHit.damage }} de dano (vida antes: {{ Math.ceil(summary.finalHit.hpBefore) }}).
             </p>

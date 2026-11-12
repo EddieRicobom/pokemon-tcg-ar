@@ -6,7 +6,8 @@
 //   npx vitest run -c vitest.eval.config.ts scripts/survivor-forms.eval.ts --silent=false
 //
 // Parâmetros por ambiente: FORMS_DT (passo, ms), FORMS_SECONDS (cenários curtos), FORMS_RUNS (corridas por forma),
-// FORMS_RUN_MIN (teto da corrida, min), FORMS_TYPES=0 para pular a matriz de tipos.
+// FORMS_RUN_MIN (teto da corrida, min), FORMS_TYPES=0 para pular a matriz de tipos, FORMS_ONLY=orbit,foco para medir só
+// algumas formas (com as mesmas sementes, dá para paralelizar um processo por forma) e FORMS_SUPREME=1 para usar o Golpe Supremo.
 //
 // O que cada cenário mede (ver `docs/SURVIVOR_BALANCE_PRINCIPLES.md`):
 //  - alvo único: dano útil por segundo contra um alvo parado (sem sobra de dano em quem já morreu);
@@ -35,7 +36,9 @@ const WITH_TYPES = process.env.FORMS_TYPES !== '0';
 /** Vida dos inimigos da multidão: alta o bastante para as formas fortes não esbarrarem na falta de alvos. */
 const CROWD_HP = 300;
 
-const FORMS: readonly MoveCategory[] = ['projetil', 'aura', 'area', 'cone', 'orbit', 'foco', 'rapido', 'teleporte'];
+const ALL_FORMS: readonly MoveCategory[] = ['projetil', 'aura', 'area', 'cone', 'orbit', 'foco', 'rapido', 'teleporte'];
+const ONLY = (process.env.FORMS_ONLY ?? '').split(',').map((form) => form.trim()).filter(Boolean);
+const FORMS: readonly MoveCategory[] = ONLY.length ? ALL_FORMS.filter((form) => ONLY.includes(form)) : ALL_FORMS;
 /** Stats médios: nenhuma forma ganha de graça por Velocidade ou Defesa. */
 const STANDARD: BaseStats = { hp: 75, attack: 75, defense: 75, spAttack: 75, spDefense: 75, speed: 75 };
 

@@ -31,9 +31,13 @@ export const SUPREME_GAIN = {
   damageTakenPerBar: 0.2,
 } as const;
 
-/** Faixas do dano do Supremo por classe, em fração da vida máxima do alvo. */
+/**
+ * Faixas do dano do Supremo por classe, em fração da vida máxima do alvo. Comum tem piso de 100%: o golpe que a corrida
+ * inteira espera não pode deixar selvagem de pé (com ataque baixo, o piso antigo de 55% tirava 22 de 40 de vida).
+ * Só a proteção de um Pokémon de suporte (75% do dano) segura um comum: é um estado visível, com contra-jogo.
+ */
 export const SUPREME_DAMAGE_BOUNDS = {
-  comum: { min: 0.55, max: Number.POSITIVE_INFINITY },
+  comum: { min: 1, max: Number.POSITIVE_INFINITY },
   elite: { min: 0.12, max: 0.32 },
   chefao: { min: 0.05, max: 0.14 },
 } as const;
@@ -59,7 +63,7 @@ export interface SurvivorSupremeDef {
   invulnMs?: number;
   clearsShots?: boolean;
   gathersOrbs?: boolean;
-  /** Comuns que ficarem abaixo desta fração de vida caem na hora. */
+  /** Elites soltos que ficarem nesta fração de vida ou menos caem na hora; chefes e times de treinador ficam de fora. */
   executeBelow?: number;
   /** Parte do medidor devolvida depois do golpe. */
   refund?: number;
@@ -81,12 +85,40 @@ export const SURVIVOR_SUPREMES: Record<PokemonType, SurvivorSupremeDef> = {
   psychic: { name: 'Mente Soberana', damage: 5, slowMs: 2000, clearsShots: true, pattern: 'radial' },
   bug: { name: 'Enxame Sem Fim', damage: 6.6, slowMs: 900, pattern: 'radial' },
   rock: { name: 'Cordilheira Viva', damage: 5.5, invulnMs: 2200, pattern: 'spokes' },
-  ghost: { name: 'Juízo Espectral', damage: 4.5, executeBelow: 0.5, pattern: 'radial' },
+  ghost: { name: 'Juízo Espectral', damage: 4.5, executeBelow: 0.3, pattern: 'radial' },
   dragon: { name: 'Cólera Ancestral', damage: 8, pattern: 'spokes' },
   dark: { name: 'Eclipse Voraz', damage: 5, healPerHit: 0.015, pattern: 'radial' },
   steel: { name: 'Muralha de Aço', damage: 4.5, invulnMs: 3200, pattern: 'spokes' },
   fairy: { name: 'Bênção Estelar', damage: 4.5, healFraction: 0.15, invulnMs: 1500, pattern: 'rain' },
 };
+
+/** Uma marca da onda do Supremo: deslocamento no chão a partir da soltura, altura e o começo do risco nos raios. */
+export interface SupremeWaveMark {
+  dx: number;
+  dy: number;
+  lift: number;
+  innerDx: number;
+  innerDy: number;
+}
+
+/**
+ * Onde cada marca da onda fica em `t` (0 na soltura, 1 no fim). As mesmas posições servem à vista de cima e à perspectiva
+ * do BONK: o desenho só projeta. Na chuva, a altura cai e a marca recomeça lá em cima, cada uma com sua defasagem.
+ */
+export function supremeWaveMarks(pattern: SurvivorSupremeDef['pattern'], t: number, radius: number, count: number): SupremeWaveMark[] {
+  const reach = radius * Math.min(1, t * 1.7);
+  return Array.from({ length: count }, (_, i) => {
+    const a = (i / count) * Math.PI * 2 + (pattern === 'radial' ? t * 1.2 : 0);
+    const cos = Math.cos(a);
+    const sin = Math.sin(a);
+    if (pattern === 'rain') {
+      const spread = radius * 0.82 * (0.35 + ((i % 4) / 4) * 0.6);
+      return { dx: cos * spread, dy: sin * spread, lift: 170 * (1 - ((t * 1.7 + i * 0.137) % 1)), innerDx: 0, innerDy: 0 };
+    }
+    const distance = reach * (pattern === 'spokes' ? 1 : 0.86);
+    return { dx: cos * distance, dy: sin * distance, lift: 0, innerDx: cos * reach * 0.25, innerDy: sin * reach * 0.25 };
+  });
+}
 
 export interface SurvivorSupremeState {
   type: PokemonType;
@@ -156,7 +188,7 @@ function releaseSupreme(state: SurvivorState, hooks: SupremeHooks, events: Survi
     e.hp -= damage;
     e.hitFlashMs = 140;
     hits++;
-    if (def.executeBelow && e.grade === 'comum' && !e.boss && e.trainerId === undefined && e.hp <= e.maxHp * def.executeBelow) e.hp = 0;
+    if (def.executeBelow && classBounds(e) === SUPREME_DAMAGE_BOUNDS.elite && e.trainerId === undefined && e.hp <= e.maxHp * def.executeBelow) e.hp = 0;
     if (e.hp <= 0) { e.supremeHit = true; continue; }
     if (def.stunMs) hooks.stun(e, def.stunMs);
     if (def.slowMs) e.slowMs = Math.max(e.slowMs ?? 0, def.slowMs);

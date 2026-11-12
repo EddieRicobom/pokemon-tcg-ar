@@ -3272,6 +3272,8 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
       e.hp -= (e.burnDps ?? 0) * (Math.min(dtMs, e.burnMs) / 1000);
       e.burnMs = Math.max(0, e.burnMs - dtMs);
       if (e.burnMs === 0) e.burnDps = 0;
+      // Quem a queimadura derrubou agora não anda, não encosta e não atira neste mesmo passo.
+      if (e.hp <= 0) continue;
     }
     if (e.slowMs && e.slowMs > 0) e.slowMs = Math.max(0, e.slowMs - dtMs);
     if (e.frostImmuneMs && e.frostImmuneMs > 0) e.frostImmuneMs = Math.max(0, e.frostImmuneMs - dtMs);
@@ -3436,7 +3438,7 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
           // Salta uma vez para o inimigo mais próximo deste (que ainda não foi atingido), com 70% do dano.
           proj.canChain = false;
           const next = state.enemies
-            .filter((o) => o !== e && !proj.hit.includes(o.id) && Math.hypot(o.x - e.x, o.y - e.y) <= 140)
+            .filter((o) => o !== e && o.hp > 0 && !proj.hit.includes(o.id) && Math.hypot(o.x - e.x, o.y - e.y) <= 140)
             .sort((a, b) => Math.hypot(a.x - e.x, a.y - e.y) - Math.hypot(b.x - e.x, b.y - e.y))[0];
           if (next) {
             const ang = Math.atan2(next.y - e.y, next.x - e.x);

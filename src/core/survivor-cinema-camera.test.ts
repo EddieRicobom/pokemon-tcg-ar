@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { CINEMA_BEATS, CINEMA_MAX_SLOW_MS, CINEMA_MIN_TIME_SCALE, CINEMA_SLOW_GUARD_MS, cinemaFrame, cinemaTimeScale, createCinemaCamera, resetCinema, showCinemaBanner, stepCinema, triggerCinema } from './survivor-cinema';
+import type { CinemaBeat } from './survivor-cinema';
 
 describe('câmera de cinema da Torre', () => {
   it('nenhum momento desacelera além do teto nem tira o toque por muito tempo', () => {
@@ -18,6 +19,15 @@ describe('câmera de cinema da Torre', () => {
     for (let i = 0; i < 200; i++) stepCinema(cam, 16);
     expect(cinemaTimeScale(cam)).toBe(1);
     expect(cinemaFrame(cam, 200)).toMatchObject({ zoom: 0, shakeX: 0, shakeY: 0, flash: 0, lines: 0 });
+  });
+
+  it('o quadro de impacto dura só um instante e nenhum momento passa de 100 ms', () => {
+    for (const beat of Object.values(CINEMA_BEATS)) expect((beat as CinemaBeat).inkMs ?? 0).toBeLessThanOrEqual(100);
+    const cam = createCinemaCamera();
+    triggerCinema(cam, CINEMA_BEATS.supremeRelease);
+    expect(cinemaFrame(cam, 0).ink).toBe(true);
+    stepCinema(cam, 80);
+    expect(cinemaFrame(cam, 0).ink).toBe(false);
   });
 
   it('chefes caindo em fila não emendam câmera lenta', () => {

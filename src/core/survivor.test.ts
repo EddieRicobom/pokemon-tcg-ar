@@ -1616,3 +1616,36 @@ describe('recompensas do Ritmo acelerado', () => {
     expect(stepSurvivor(normal, { dx: 0, dy: 0 }, 16).some((ev) => ev.type === 'milestone')).toBe(false);
   });
 });
+
+describe('quem já caiu no mesmo passo não age nem atrai golpes', () => {
+  const quiet = () => {
+    const s = createSurvivorState(5, { kindCount: 1 });
+    s.spawnAccumMs = -1e9;
+    s.nextBossAtMs = Number.POSITIVE_INFINITY;
+    s.nextTrainerAtMs = Number.POSITIVE_INFINITY;
+    s.player.attackTimerMs = Number.POSITIVE_INFINITY;
+    return s;
+  };
+  const foe = (id: number, x: number, y: number, hp: number) => ({ id, kind: 0, boss: false, grade: 'comum' as const, x, y, hp, maxHp: 100, speed: 0, damage: 20, radius: 13, hitFlashMs: 0 });
+
+  it('inimigo derrubado pela queimadura não encosta no jogador', () => {
+    const s = quiet();
+    const hp = s.player.hp;
+    s.enemies = [{ ...foe(1, s.player.x + 2, s.player.y, 1), burnMs: 1000, burnDps: 1000 }];
+    stepSurvivor(s, { dx: 0, dy: 0 }, 16);
+    expect(s.player.hp).toBe(hp);
+    expect(s.enemies).toHaveLength(0);
+  });
+
+  it('o salto do golpe em cadeia procura um alvo vivo', () => {
+    const s = quiet();
+    const x = s.player.x + 300;
+    const y = s.player.y;
+    s.enemies = [foe(1, x, y, 1000), foe(2, x + 40, y, 0), foe(3, x, y + 90, 1000)];
+    s.projectiles = [{ id: 50, x, y, vx: 100, vy: 0, damage: 1, pierce: 0, lifeMs: 1000, hit: [], canChain: true }];
+    stepSurvivor(s, { dx: 0, dy: 0 }, 16);
+    const chained = s.projectiles.find((proj) => proj.id !== 50);
+    expect(chained?.vy).toBeGreaterThan(0);
+    expect(Math.abs(chained?.vx ?? Infinity)).toBeLessThan(5);
+  });
+});
