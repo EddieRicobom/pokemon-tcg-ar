@@ -10,6 +10,8 @@ import '../../src/styles.css';
 const params = new URLSearchParams(location.search);
 const DEX = Number(params.get('dex') ?? 25);
 const NAME = params.get('name') ?? 'Pikachu';
+/** `bonk=0` abre a corrida normal (vista de cima), útil para olhar a Torre sem a tela de escolha. */
+const BONK = params.get('bonk') !== '0';
 
 const app = createApp({ render: () => h(MinigameSobrevivencia) });
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -22,7 +24,7 @@ const setup = (vm.$.subTree.component as { setupState: Record<string, unknown> }
 };
 
 setTimeout(() => {
-  void setup.beginRun(DEX, NAME, undefined, false, true).then(() => {
+  void setup.beginRun(DEX, NAME, undefined, false, BONK).then(() => {
     if (params.get('god') === '1' && setup.state) {
       setup.state.player.hp = 1e9;
       setup.state.player.maxHp = 1e9;

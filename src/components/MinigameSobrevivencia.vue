@@ -1452,7 +1452,7 @@ function drawSurge(c: CanvasRenderingContext2D, surge: SurvivorSurge, animMs: nu
     const ey = lane.y + lane.dy * SWARM_TRAVEL;
     const nx = -lane.dy * lane.half;
     const ny = lane.dx * lane.half;
-    c.globalAlpha = 0.16 * pulse;
+    c.globalAlpha = 0.22 * pulse;
     c.fillStyle = '#ff5b5b';
     c.beginPath();
     c.moveTo(lane.x + nx, lane.y + ny);
@@ -1465,8 +1465,8 @@ function drawSurge(c: CanvasRenderingContext2D, surge: SurvivorSurge, animMs: nu
     c.strokeStyle = '#ff6b72';
     c.lineWidth = 3;
     // Setas na direção do voo: dá para ler de onde a revoada vem sem texto.
-    const shift = still ? 0 : (animMs / 6) % 90;
-    for (let d = shift; d < SWARM_TRAVEL; d += 90) {
+    const shift = still ? 0 : (animMs / 6) % 70;
+    for (let d = shift; d < SWARM_TRAVEL; d += 70) {
       const cx = lane.x + lane.dx * d;
       const cy = lane.y + lane.dy * d;
       c.beginPath();
@@ -1503,7 +1503,14 @@ function drawSurge(c: CanvasRenderingContext2D, surge: SurvivorSurge, animMs: nu
     const x = surge.x ?? 0;
     const y = surge.y ?? 0;
     const color = '#ffd84a';
-    c.globalAlpha = 0.7;
+    // Contorno escuro por baixo: a baliza dourada some na areia sem ele.
+    c.globalAlpha = 0.5;
+    c.strokeStyle = '#3a2a00';
+    c.lineWidth = 6;
+    c.beginPath();
+    c.arc(x, y, 34 * pulse, 0, Math.PI * 2);
+    c.stroke();
+    c.globalAlpha = 0.9;
     c.strokeStyle = color;
     c.lineWidth = 3;
     c.setLineDash([8, 5]);
@@ -1511,7 +1518,7 @@ function drawSurge(c: CanvasRenderingContext2D, surge: SurvivorSurge, animMs: nu
     c.arc(x, y, 34 * pulse, 0, Math.PI * 2);
     c.stroke();
     c.setLineDash([]);
-    c.globalAlpha = 0.2;
+    c.globalAlpha = 0.32;
     c.fillStyle = color;
     c.beginPath();
     c.arc(x, y, 22 * pulse, 0, Math.PI * 2);

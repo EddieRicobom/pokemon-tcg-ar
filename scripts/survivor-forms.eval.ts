@@ -7,7 +7,8 @@
 //
 // Parâmetros por ambiente: FORMS_DT (passo, ms), FORMS_SECONDS (cenários curtos), FORMS_RUNS (corridas por forma),
 // FORMS_RUN_MIN (teto da corrida, min), FORMS_TYPES=0 para pular a matriz de tipos, FORMS_ONLY=orbit,foco para medir só
-// algumas formas (com as mesmas sementes, dá para paralelizar um processo por forma) e FORMS_SUPREME=1 para usar o Golpe Supremo.
+// algumas formas (com as mesmas sementes, dá para paralelizar um processo por forma), FORMS_SUPREME=1 para usar o Golpe Supremo
+// e FORMS_SURGES=0 para desligar os eventos-relâmpago (`survivor-surges.ts`), que ficam ligados como no jogo.
 //
 // O que cada cenário mede (ver `docs/SURVIVOR_BALANCE_PRINCIPLES.md`):
 //  - alvo único: dano útil por segundo contra um alvo parado (sem sobra de dano em quem já morreu);
@@ -80,6 +81,7 @@ function naturalSpecs(): Map<MoveCategory, Spec[]> {
 
 function newState(seed: number, spec: Spec, spawn: boolean): SurvivorState {
   const state = createSurvivorState(seed, { kindCount: 6, dexId: spec.dexId, move: spec.move, profile: attackProfile(spec.move, spec.stats) });
+  if (process.env.FORMS_SURGES === '0' || !spawn) delete state.surges;
   if (!spawn) {
     state.nextBossAtMs = Number.POSITIVE_INFINITY;
     state.spawnAccumMs = -1e12;
@@ -269,9 +271,17 @@ function smartPick(s: SurvivorState): string {
   return [...options].sort((a, b) => rank(a.id) - rank(b.id))[0]?.id ?? options[0]?.id ?? '';
 }
 
+/** Amigo selvagem ou baliza de desafio esperando: com o entorno calmo, a pessoa vai até lá (é opcional, como no jogo). */
+function surgeDetour(s: SurvivorState): { dx: number; dy: number } | null {
+  const surge = s.surge;
+  if (!surge || surge.phase !== 'offer' || crowdSize(s, 120) >= 2) return null;
+  const at = surge.friend ?? { x: surge.x ?? s.player.x, y: surge.y ?? s.player.y };
+  return { dx: at.x - s.player.x, dy: at.y - s.player.y };
+}
+
 /** Controle de quem joga: movimento da política + carga + especial. */
 function control(s: SurvivorState, policy: Policy, memory: ChargeMemory): SurvivorInput {
-  const move = policy === 'evasiva' ? moveEvasive(s) : moveReach(s);
+  const move = surgeDetour(s) ?? (policy === 'evasiva' ? moveEvasive(s) : moveReach(s));
   const charge = chargeControl(s, memory);
   const input: SurvivorInput = {
     dx: move.dx,
