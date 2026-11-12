@@ -36,7 +36,7 @@ const WITH_TYPES = process.env.FORMS_TYPES !== '0';
 /** Vida dos inimigos da multidão: alta o bastante para as formas fortes não esbarrarem na falta de alvos. */
 const CROWD_HP = 300;
 
-const ALL_FORMS: readonly MoveCategory[] = ['projetil', 'aura', 'area', 'cone', 'orbit', 'foco', 'rapido', 'teleporte'];
+const ALL_FORMS: readonly MoveCategory[] = ['projetil', 'aura', 'area', 'cone', 'orbit', 'foco', 'rapido', 'teleporte', 'trilha'];
 const ONLY = (process.env.FORMS_ONLY ?? '').split(',').map((form) => form.trim()).filter(Boolean);
 const FORMS: readonly MoveCategory[] = ONLY.length ? ALL_FORMS.filter((form) => ONLY.includes(form)) : ALL_FORMS;
 /** Stats médios: nenhuma forma ganha de graça por Velocidade ou Defesa. */
@@ -96,6 +96,8 @@ function desiredDistance(s: SurvivorState): number {
   const p = s.player;
   if (p.move.category === 'aura' || p.move.category === 'orbit') return Math.max(28, p.attackRadius * 0.6);
   if (p.move.category === 'cone') return Math.max(60, p.attackRange * 0.6);
+  // Trilha: passa rente à multidão para ela pisar na faixa; a carga vem da distância percorrida.
+  if (p.move.category === 'trilha') return 70;
   return Math.max(90, Math.min(160, p.attackRange * 0.7));
 }
 
@@ -157,7 +159,7 @@ function moveEvasive(s: SurvivorState): { dx: number; dy: number } {
 function moveReach(s: SurvivorState): { dx: number; dy: number } {
   const p = s.player;
   // Golpes de contato (aura, órbita) aguentam mais gente por perto; os de distância fogem cedo.
-  const melee = p.move.category === 'aura' || p.move.category === 'orbit';
+  const melee = p.move.category === 'aura' || p.move.category === 'orbit' || p.move.category === 'trilha';
   // O Teleporte não tem golpe automático: o alcance dele é o salto, então joga fugindo da multidão e saltando por ela.
   if (p.move.category === 'teleporte') return moveEvasive(s);
   if (crowdSize(s, melee ? 110 : 140) >= (melee ? 6 : 3)) return moveEvasive(s);
@@ -226,6 +228,8 @@ function chargeControl(s: SurvivorState, memory: ChargeMemory): { charge: boolea
     if (level >= 1 || (level >= 0.5 && close < 110)) { memory.holdMs = 0; return { charge: false, aim }; }
     return { charge: true, aim };
   }
+  // Trilha: o botão fica pressionado (como no automático) e a faixa sai assim que a carga enche.
+  if (style === 'trilha') return { charge: true };
   if (style === 'teleporte') {
     if (s.charge.teleportCooldownMs > 0) { memory.holdMs = 0; return { charge: false }; }
     const range = teleportReach(p.attackRange, p.attackRadius, p.shots).range;

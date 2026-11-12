@@ -996,6 +996,8 @@ function stepElementalTerrain(state: SurvivorState, dtMs: number): void {
 }
 /** Depois de um empurrão, o inimigo só pode ser empurrado de novo daqui a 5 s (golpes de área não o mandam longe sem parar). */
 export const KNOCKBACK_COOLDOWN_MS = 5_000;
+/** Empurrão de um orbital em inimigo comum (ver `stepOrbiters`). */
+export const ORBIT_COMMON_PUSH_PX = 16;
 /** Empurra `e` para longe de `from` em `push` unidades, se a recarga permitir; devolve se empurrou. */
 function applyKnockback(e: SurvivorEnemy, from: { x: number; y: number }, push: number): boolean {
   if ((e.knockbackCooldownMs ?? 0) > 0) return false;
@@ -2682,6 +2684,8 @@ function stepOrbiters(state: SurvivorState, dtMs: number): void {
     const orbiter = orbiters.find((candidate) => Math.hypot(e.x - candidate.x, e.y - candidate.y) <= hitRadius + e.radius);
     if (!orbiter) continue;
     e.orbitHitMs = intervalMs;
+    // Órbita afasta os comuns um pouco (com a recarga geral do empurrão): é o escudo que segura as espécies frágeis no começo.
+    if (!e.boss && e.grade === 'comum') applyKnockback(e, p, ORBIT_COMMON_PUSH_PX);
     // O empurrão (Planta/Inseto não empurram, mas afinidades podem) sai do jogador, nunca puxa para dentro do giro.
     hitEnemy(state, e, damage, p, p.move, true, Math.hypot(e.x - p.x, e.y - p.y));
     state.fx.push({ kind: 'orbit-hit', x: e.x, y: e.y, r: Math.max(10, e.radius), color: p.move.color, ageMs: 0, lifeMs: 220, moveType: p.move.type });

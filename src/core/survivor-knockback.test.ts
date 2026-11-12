@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createSurvivorState, KNOCKBACK_COOLDOWN_MS, stepSurvivor } from './survivor';
+import { createSurvivorState, KNOCKBACK_COOLDOWN_MS, ORBIT_COMMON_PUSH_PX, stepSurvivor } from './survivor';
 import type { SurvivorEnemy } from './survivor';
 import { attackProfile, moveFor } from './survivor-moves';
 import type { MoveCategory } from './survivor-moves';
@@ -73,5 +73,41 @@ describe('recarga de empurrão dos inimigos', () => {
     s.enemies.push(target);
     stepSurvivor(s, { dx: 0, dy: 0 }, 16);
     expect(target.knockbackCooldownMs ?? 0).toBe(0);
+  });
+});
+describe('Órbita afasta os comuns', () => {
+  function orbitRun(grade: SurvivorEnemy['grade'], boss = false) {
+    const orbit = as('normal', 'orbit');
+    const s = createSurvivorState(3, { kindCount: 1, move: orbit.move, profile: orbit.profile });
+    s.nextBossAtMs = Number.POSITIVE_INFINITY;
+    s.spawnAccumMs = -1e9;
+    // Parado em cima do primeiro orbital: o toque acontece no primeiro passo.
+    const radius = s.player.attackRadius;
+    const target: SurvivorEnemy = {
+      id: 1, kind: 0, boss, grade, x: s.player.x + radius, y: s.player.y,
+      hp: 1_000_000, maxHp: 1_000_000, speed: 0, damage: 0, radius: 13, hitFlashMs: 0,
+    };
+    s.enemies.push(target);
+    return { s, target };
+  }
+
+  it('um toque empurra o comum para fora, uma vez por recarga de empurrão', () => {
+    const { s, target } = orbitRun('comum');
+    const before = Math.hypot(target.x - s.player.x, target.y - s.player.y);
+    for (let i = 0; i < 20 && target.hp === target.maxHp; i++) stepSurvivor(s, { dx: 0, dy: 0 }, 16);
+    expect(target.hp).toBeLessThan(target.maxHp);
+    const after = Math.hypot(target.x - s.player.x, target.y - s.player.y);
+    expect(after - before).toBeCloseTo(ORBIT_COMMON_PUSH_PX, 0);
+    expect(target.knockbackCooldownMs).toBeGreaterThan(KNOCKBACK_COOLDOWN_MS - 400);
+  });
+
+  it('elites e chefes não são afastados pela órbita', () => {
+    for (const [grade, boss] of [['elite', false], ['comum', true]] as const) {
+      const { s, target } = orbitRun(grade, boss);
+      const x0 = target.x;
+      for (let i = 0; i < 20 && target.hp === target.maxHp; i++) stepSurvivor(s, { dx: 0, dy: 0 }, 16);
+      expect(target.hp).toBeLessThan(target.maxHp);
+      expect(target.x).toBeCloseTo(x0, 5);
+    }
   });
 });

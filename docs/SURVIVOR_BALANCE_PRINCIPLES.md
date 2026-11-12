@@ -478,3 +478,46 @@ formas que abatem pouco enchem mais devagar. Por isso o dano recebido também en
 **Correções de justiça na mesma rodada:** tiros e golpes não gastam mais acerto em quem já caiu no mesmo passo, os tiros
 inimigos ficam suspensos no Relógio parado, a Inversão polar não empurra inimigos para fora da arena e quadros longos viram
 passos de até 34 ms, para um tiro rápido não atravessar um alvo em celular lento ou no Ritmo acelerado.
+
+## Órbita e Foco depois do Supremo — 12/11/2026
+
+Hipótese: com o Golpe Supremo, a distância entre a forma que mais vive e a que menos vive subiu de 1,67× para 1,81×, com o
+Foco no fundo e a Órbita perdendo p10. Nas corridas do Foco, a causa de morte era carregar quase parado: segurar o botão
+deixava o Pokémon a 45% da velocidade, perto de quem chega. A Órbita vive bem na média, mas as espécies frágeis morrem cedo
+cercadas, porque os orbitais acertam e não afastam ninguém.
+
+**O que mudou**
+- Foco: velocidade enquanto carrega de 45% para **60%** (`FOCUS_SLOW_MULTIPLIER`) e carga de 27% para **31%** por segundo
+  (`FOCUS_CHARGE_PER_SEC`). O dano do feixe não mudou.
+- Órbita: cada toque de orbital em inimigo **comum** empurra 16 px (`ORBIT_COMMON_PUSH_PX`), com a mesma recarga de 5 s de
+  todo empurrão. Elites, treinadores e chefes não são afastados; o dano não mudou.
+- O harness passou a medir a **Trilha** (6,5 s desenhando, faixa por 5 s): o robô mantém o botão como o automático e passa
+  rente à multidão.
+
+**Medição** (`FORMS_SUPREME=1 FORMS_TYPES=0 FORMS_SECONDS=10 FORMS_RUNS=12 FORMS_RUN_MIN=12`, um processo por forma com
+`FORMS_ONLY`, **12 sementes** por espécie, amostra natural, política de alcance; média restrita ao teto de 720 s e p10):
+
+| Forma | Antes | Depois | p10 antes → depois |
+| --- | ---: | ---: | ---: |
+| Projétil | 572 | 572 | 341 |
+| Aura | 532 | 532 | 294 |
+| Área | 609 | 609 | 385 |
+| Cone | 677 | 677 | 484 |
+| Órbita | 573 | 611 | 285 → 330 |
+| Foco | 391 | 522 | 264 → 359 |
+| Rajada | 598 | 598 | 366 |
+| Teleporte | 430 | 430 | 72 |
+| Trilha | 445 | 445 | 240 |
+
+Só Órbita e Foco foram medidos de novo: as outras formas não usam nenhum dos valores alterados. A distância entre a melhor
+e a pior forma cai de **1,73×** (Cone 677 / Foco 391) para **1,57×** (Cone 677 / Teleporte 430). Na política evasiva ela
+fica em 1,52× antes e 1,42× depois (Foco 455 → 544, Órbita 475 → 511). O Foco não passa a liderar: fica no meio do grupo.
+
+No cenário controlado (stats e tipo iguais, uma espécie só), o Foco sobe de 395 para 486 e a Órbita vai de 527 para 477;
+com uma espécie e 12 sementes a variação é de cerca de ±10%, então a queda da Órbita ali não é sinal firme, mas fica anotada
+para a próxima rodada. O Teleporte segue bimodal (p10 de 72 s): espécies fracas morrem antes do primeiro salto bom. É o
+próximo alvo, e não foi mexido aqui porque o pedido era Órbita e Foco.
+
+**Custo:** o Foco fica menos punido por carregar; quem já jogava bem com ele ganha folga. **Quem pode ser prejudicado:**
+a Órbita afasta os comuns do anel e pode acertar um pouco menos em multidão fechada (os abates subiram na amostra, 993 → 1.032).
+Falta sessão humana em celular.

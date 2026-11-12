@@ -152,7 +152,9 @@ describe('no jogo', () => {
     const x0 = free.player.x;
     hold(free, 1000, { dx: 1 });
     hold(charging, 1000, { dx: 1, charge: true });
-    expect(charging.player.x - x0).toBeLessThan((free.player.x - x0) * 0.6);
+    // Carregar ainda deixa lento (60% da velocidade), mas sem quase parar: com 45% o Foco era a forma que menos vivia.
+    expect(charging.player.x - x0).toBeLessThan((free.player.x - x0) * 0.65);
+    expect(charging.player.x - x0).toBeGreaterThan((free.player.x - x0) * 0.5);
 
     const state = run('foco');
     const { x, y } = state.player;

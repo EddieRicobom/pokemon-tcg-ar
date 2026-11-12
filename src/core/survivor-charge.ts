@@ -45,8 +45,11 @@ export function createSurvivorCharge(): SurvivorChargeState {
   return { level: 0, holding: false, rushMs: 0, rushTotalMs: 0, moveRatio: 0, lastRelease: 0, teleportHoldMs: 0, teleportCooldownMs: 0, rapidShotsPending: 0, rapidShotDelayMs: 0 };
 }
 
-/** Foco: segurar o botão enche ~27% por segundo (menos de 4 s até o máximo). */
-export const FOCUS_CHARGE_PER_SEC = 0.27;
+/**
+ * Foco: segurar o botão enche ~31% por segundo (pouco mais de 3 s até o máximo). Era 27%: com o Golpe Supremo o Foco ficou
+ * como a forma que menos vive (1,81× atrás da melhor); ver a seção de 12/11/2026 em `docs/SURVIVOR_BALANCE_PRINCIPLES.md`.
+ */
+export const FOCUS_CHARGE_PER_SEC = 0.31;
 /** Foco: cada acerto do disparo normal adianta um pouco a carga. */
 export const FOCUS_HIT_CHARGE = 0.02;
 /**
@@ -55,8 +58,8 @@ export const FOCUS_HIT_CHARGE = 0.02;
  * (e a carga um pouco mais lenta) a sobrevivência fica no grupo e o golpe segue pesado e lento (ver `docs/SURVIVOR_BALANCE_PRINCIPLES.md`).
  */
 export const FOCUS_BEAM_DAMAGE_SCALE = 0.22;
-/** Foco: velocidade do Pokémon enquanto segura a carga. */
-export const FOCUS_SLOW_MULTIPLIER = 0.45;
+/** Foco: velocidade do Pokémon enquanto segura a carga (era 0,45: carregar quase parado era a causa das mortes do Foco). */
+export const FOCUS_SLOW_MULTIPLIER = 0.6;
 /** Foco: abaixo disso, soltar o botão não dispara (a carga fica guardada). */
 export const FOCUS_MIN_RELEASE = 0.15;
 /** Foco: disparo normal mais largo e mais lento que um projétil comum. */
