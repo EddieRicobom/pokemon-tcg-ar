@@ -570,3 +570,67 @@ a chuva vira só sombras e nada pulsa com movimento reduzido. Sons já existente
 **Custo e quem pode ser prejudicado:** mais XP e itens para quem já vai bem (o Cone chega ao teto em 93% das corridas do
 robô). Formas lentas e de contato pagam o desvio. Falta sessão humana em celular, principalmente para ver se a faixa da
 revoada se lê a tempo no tamanho de tela real.
+
+## Aura e Trilha com os eventos-relâmpago — 12/11/2026 (segunda rodada)
+
+Problema: com os eventos ligados, a Aura caiu de 532 para 464 (p10 294 → 237) e o p10 da Trilha de 240 para 186.
+
+**Como a causa foi medida.** O harness ganhou opções de diagnóstico (`FORMS_SURGE_KINDS` deixa só alguns tipos de evento,
+`FORMS_SURGE_DETOUR`, `FORMS_SEED_BASE`, `FORMS_DUMP=1` com o dano tomado em cada fase de cada evento e o evento em curso na
+hora da morte). Com 12 sementes, política de alcance:
+
+| Configuração | Aura | Trilha |
+| --- | ---: | ---: |
+| Sem eventos | 532 (p10 294) | 445 (p10 240) |
+| Todos os eventos | 464 (237) | 428 (186) |
+| Todos, sem o robô ir buscar amigo e baliza | 491 (294) | 456 (250) |
+| Só chuva de orbes | 521 (294) | 465 (250) |
+| Só revoada | 503 (308) | 436 (240) |
+| Só amigo selvagem | 483 (257) | 412 (167) |
+| Só desafio | 485 (257) | 452 (228) |
+
+A maior parte da perda vinha de **sair da luta para buscar** o amigo e a baliza: nas corridas pareadas, as mortes da Trilha
+na fase de oferta tinham 40 a 96 de dano tomado no caminho. Uma pessoa faria o mesmo, então a correção é do jogo, não do
+robô. Com outras 24 sementes (`FORMS_SEED_BASE=5000`) a Aura quase não perdia (502 sem, 509 com): parte da diferença
+original era sorteio dessas 12 sementes. A carta Dificuldade, que o robô pegava no empate, não era a causa (0,3 cartas por
+corrida em média), mas o robô passou a evitá-la (`FORMS_PICK_DIFFICULTY=1` volta ao comportamento antigo).
+
+**O que mudou no jogo**
+- **Amigo selvagem** vem até você a 95 px/s e começa a ajudar quando encosta. Fugir dele por 12 s recusa.
+- **Desafio relâmpago:** a baliza vem até você a 70 px/s e o desafio começa quando ela encosta. Falhar nunca tirou nada,
+  então ninguém precisa largar a luta; fugir dela recusa.
+- **Chuva de orbes:** com 4 inimigos a até 150 px, os orbes caem a 24–100 px de você, em vez de 50–230.
+- **Revoada:** a faixa passa 130 px ao seu lado, de um lado sorteado, e a cunha ficou mais estreita. Quem ataca de longe
+  colhe dali; quem luta de perto escolhe entrar.
+- O robô do harness não vai mais buscar o amigo e a baliza (`FORMS_SURGE_DETOUR=1` religa), porque agora eles vêm até ele.
+
+**Resultado com 36 sementes** (12 com `FORMS_SEED_BASE=2000` mais 24 com 5000, política de alcance, média restrita e p10 das
+duas amostras):
+
+| Forma | Sem eventos | Com eventos, antes | Com eventos, depois | Depois, indo ao encontro |
+| --- | ---: | ---: | ---: | ---: |
+| Aura | 522 (p10 282 / 273) | 464 (p10 237) | 509 (p10 306 / 275) | 529 (p10 259 / 273) |
+| Trilha | 452 (p10 240 / 266) | 428 (p10 186) | 476 (p10 230 / 247) | 447 (p10 181 / 193) |
+
+A Aura fica 2,4% abaixo na média, menos que o ruído de ±10%, com p10 igual ou maior. A Trilha passa a viver mais na média
+(+5%) e o p10 fica 4% a 7% abaixo. Quem ainda corre ao encontro do amigo e da baliza volta a perder p10 na Trilha: é o
+único custo que sobra, e agora é uma escolha.
+
+**Todas as formas, 12 sementes, depois desta rodada** (mesmo robô nos dois lados; média restrita e p10, política de alcance):
+
+| Forma | Sem eventos | Com eventos |
+| --- | ---: | ---: |
+| Projétil | 571 (341) | 567 (363) |
+| Aura | 535 (282) | 513 (306) |
+| Área | 625 (414) | 634 (425) |
+| Cone | 687 (571) | 698 (647) |
+| Órbita | 615 (330) | 619 (289) |
+| Foco | 527 (359) | 585 (309) |
+| Rajada | 609 (366) | 630 (421) |
+| Teleporte | 432 (72) | 423 (72) |
+| Trilha | 447 (240) | 479 (230) |
+
+Distância entre a melhor e a pior forma: **1,59× sem eventos e 1,65× com eventos** (Cone 698 / Teleporte 423), dentro do
+teto de 1,67×. Na política evasiva: 1,52× e 1,63×. Com os eventos ligados, o p10 da Órbita (330 → 289) e do Foco (359 → 309)
+caiu nessas 12 sementes, sem medição extra para separar do sorteio. O mesmo vale para a Aura na política evasiva (p10 245 → 214,
+com o robô quase sem abates). Ficam anotados para a próxima rodada.
