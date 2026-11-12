@@ -9,6 +9,7 @@ import type { LunchEffect } from './survivor-lunch';
 import type { SurvivorMegaState } from './survivor-mega';
 import type { SurvivorProjectileLook } from './survivor-projectile-power';
 import type { HeldItemId, HeldMods, HeldStacks } from './survivor-held';
+import type { SurvivorSurge, SurvivorSurgeKind, SurvivorSurgeTrack } from './survivor-surges';
 
 /**
  * Tipos, constantes e pontuação do modo Sobrevivência (movidos de `survivor.ts` sem mudar o texto, em 2026-10-23).
@@ -241,6 +242,8 @@ export interface SurvivorEnemy {
   timeFrozenMs?: number;
   /** Ladrão de tesouro: foge de você e não ataca (`core/survivor-extras.ts`). */
   thief?: boolean;
+  /** Revoada (`core/survivor-surges.ts`): voa em linha reta e sai da arena quando `leftMs` zera. */
+  swarm?: { vx: number; vy: number; leftMs: number };
   /** Laço do Destino: grupo de inimigos ligados e quanto tempo a corrente ainda dura. */
   linkId?: number;
   linkMs?: number;
@@ -524,6 +527,9 @@ export interface SurvivorState {
   /** Sinal visível no mapa e sua próxima janela; encontros são opcionais, mas dão uma razão para explorar. */
   fieldEvent: SurvivorFieldEvent | null;
   nextFieldEventAtMs: number;
+  /** Eventos-relâmpago (`core/survivor-surges.ts`): agenda e o evento em curso. Sem agenda, não há eventos. */
+  surges?: SurvivorSurgeTrack;
+  surge?: SurvivorSurge | null;
   fx: SurvivorFx[];
   kills: number;
   wave: number;
@@ -779,6 +785,8 @@ export type SurvivorEvent =
   | { type: 'thiefSpawn'; dexId: number; leftMs: number }
   | { type: 'thiefCaught'; coins: number }
   | { type: 'thiefEscaped' }
+  /** Evento-relâmpago: aviso, começo e fim (`value`: meta do desafio, membros da revoada ou abates feitos). */
+  | { type: 'surge'; kind: SurvivorSurgeKind; phase: 'warn' | 'offer' | 'start' | 'success' | 'fail' | 'end'; value?: number; dexId?: number }
   /** Subiu de nível sem carta nova para escolher: o bônus já foi aplicado. */
   | { type: 'levelBonus'; text: string }
   | { type: 'gameover'; summary: SurvivorSummary };

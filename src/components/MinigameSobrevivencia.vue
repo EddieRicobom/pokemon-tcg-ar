@@ -7,6 +7,8 @@ import { MusicPlayer } from '../app/music-player';
 import { CINEMA_BEATS, cinemaFrame, cinemaLook, cinemaPower, cinemaTimeScale, createCinemaCamera, presentationMayResume, resetCinema, showCinemaBanner, simulationSteps, stepCinema, triggerCinema } from '../core/survivor-cinema';
 import type { CinemaBeat, CinemaFrame } from '../core/survivor-cinema';
 import { SURVIVOR_SUPREMES } from '../core/survivor-supreme';
+import { ORB_RAIN_FALL_MS, SURVIVOR_SURGE_LABEL, SWARM_TRAVEL, surgeHudText } from '../core/survivor-surges';
+import type { SurvivorSurge } from '../core/survivor-surges';
 import { flashAlpha, impactFromFx, moveLight, shadowFrom } from '../core/survivor-impacts';
 import { drawCastShadows, drawCinemaBanner, drawImpactFrame, drawKillStreak, drawLights, drawNight, drawPokemonShadow, drawScreenFlash, drawSpeedLines } from '../village/survivor-cinema-art';
 import { addStreakKills, createKillStreak, resetKillStreak, STREAK_SHOW_AT, stepKillStreak, streakFade, streakPop, streakTier, streakVisible } from '../core/survivor-streak';
@@ -699,6 +701,16 @@ const fieldEventHud = computed(() => {
   const label = event.kind === 'resonance' ? '✦ Ressonância' : '⚔ Caçada';
   return `${label} ${direction} · ${Math.ceil(event.remainingMs / 1000)}s`;
 });
+/** Evento-relâmpago em curso (chuva de orbes, revoada, amigo selvagem, desafio): o texto vem do motor puro. */
+const surgeHud = computed(() => (state.value ? surgeHudText(state.value) : null));
+const surgeHudTitle = computed(() => {
+  const surge = state.value?.surge;
+  if (!surge) return '';
+  if (surge.kind === 'orb-rain') return 'Orbes de XP caem onde a sombra aparece: corra para pegar.';
+  if (surge.kind === 'swarm') return 'Uma revoada atravessa a faixa marcada em linha reta. Saia dela ou derrube todos para ganhar um artefato.';
+  if (surge.kind === 'wild-friend') return surge.phase === 'offer' ? 'Um Pokémon selvagem amigável: encoste nele para ele lutar do seu lado.' : 'O amigo selvagem ataca quem chega perto até o tempo acabar.';
+  return surge.phase === 'offer' ? 'Desafio opcional: encoste na baliza para aceitar. Falhar não tira nada.' : 'Derrote a quantidade marcada antes do tempo acabar para ganhar uma chave de baú e orbes.';
+});
 const thiefHud = computed(() => {
   const s = state.value;
   const thief = s?.thief ? s.enemies.find((e) => e.id === s.thief!.enemyId) : null;
@@ -1374,6 +1386,147 @@ function joyCancel(e: PointerEvent): void {
   joyUp(e);
 }
 
+/** Avisos dos eventos-relâmpago: só sons que o jogo já tem e o letreiro de sempre. */
+function announceSurge(ev: Extract<SurvivorEvent, { type: 'surge' }>): void {
+  const label = SURVIVOR_SURGE_LABEL[ev.kind];
+  const tag = `${label.icon} ${label.name}`;
+  if (ev.kind === 'orb-rain') {
+    if (ev.phase === 'start') { playSound('survivor-level'); say(`${tag}! Orbes de XP caem onde a sombra aparece.`, 4200); }
+    else if (ev.phase === 'end') say(`${tag} acabou.`, 2200);
+  } else if (ev.kind === 'swarm') {
+    if (ev.phase === 'warn') { playSound('survivor-boss'); say(`${tag} chegando pela faixa vermelha! Saia dela ou prepare o golpe.`, 3600); }
+    else if (ev.phase === 'success') { playSound('success'); say(`${tag} abatida inteira: um artefato caiu perto de você.`, 3800); }
+    else if (ev.phase === 'end') say(`${tag} passou${ev.value ? `: ${ev.value} derrubado${ev.value === 1 ? '' : 's'}` : ''}.`, 2600);
+  } else if (ev.kind === 'wild-friend') {
+    if (ev.phase === 'offer') { playSound('survivor-pickup'); say(`${tag} apareceu! Encoste nele para ele lutar do seu lado.`, 4200); }
+    else if (ev.phase === 'start') { playSound('success'); say(`${tag} entrou na luta por 24 s!`, 3200); }
+    else if (ev.phase === 'fail') say(`${label.icon} O Pokémon selvagem voltou para o mato.`, 2600);
+    else if (ev.phase === 'end') say(`${label.icon} Seu amigo selvagem se despediu.`, 2600);
+  } else if (ev.phase === 'offer') { playSound('survivor-level'); say(`${tag}: encoste na baliza dourada para aceitar. Falhar não tira nada.`, 4600); }
+  else if (ev.phase === 'start') { playSound('survivor-boss'); say(`${tag}: derrote ${ev.value ?? 0} em 20 s!`, 3600); }
+  else if (ev.phase === 'success') { playSound('success'); say(`${tag} cumprido: uma chave de baú e orbes para você.`, 4000); }
+  else if (ev.phase === 'fail') say(ev.value !== undefined ? `${tag}: faltou pouco (${ev.value} derrotados). Fica para a próxima.` : `${label.icon} A baliza do desafio se apagou.`, 3000);
+}
+
+/**
+ * Desenho dos eventos-relâmpago no chão da arena (coordenadas do mundo). Leve de propósito: sem `shadowBlur`, sem
+ * gradiente por quadro, poucas formas. Modo Rotom e movimento reduzido tiram o pulso e os detalhes; a leitura fica.
+ */
+function drawSurge(c: CanvasRenderingContext2D, surge: SurvivorSurge, animMs: number): void {
+  const simple = effectiveVisual.value.rotomMode;
+  const still = simple || reducedMotion;
+  const pulse = still ? 1 : 1 + Math.sin(animMs / 170) * 0.1;
+  c.save();
+  c.textAlign = 'center';
+  c.textBaseline = 'middle';
+  if (surge.kind === 'orb-rain') {
+    for (const drop of surge.drops ?? []) {
+      const t = Math.max(0, Math.min(1, 1 - drop.landInMs / ORB_RAIN_FALL_MS));
+      // Sombra que cresce até o ponto de queda; o orbe desce em cima dela.
+      c.globalAlpha = 0.25 + t * 0.35;
+      c.fillStyle = 'rgba(20, 40, 70, 0.9)';
+      c.beginPath();
+      c.ellipse(drop.x, drop.y, 6 + t * 8, 3 + t * 4, 0, 0, Math.PI * 2);
+      c.fill();
+      if (simple) continue;
+      const lift = (1 - t) * 150;
+      c.globalAlpha = 0.9;
+      c.strokeStyle = 'rgba(159, 232, 255, 0.55)';
+      c.lineWidth = 2;
+      c.beginPath();
+      c.moveTo(drop.x, drop.y - lift - 22);
+      c.lineTo(drop.x, drop.y - lift);
+      c.stroke();
+      c.fillStyle = '#9fe8ff';
+      c.beginPath();
+      c.arc(drop.x, drop.y - lift, 5, 0, Math.PI * 2);
+      c.fill();
+      c.fillStyle = '#ffffff';
+      c.beginPath();
+      c.arc(drop.x - 1.5, drop.y - lift - 1.5, 1.8, 0, Math.PI * 2);
+      c.fill();
+    }
+  } else if (surge.kind === 'swarm' && surge.phase === 'warn' && surge.lane) {
+    const lane = surge.lane;
+    const ex = lane.x + lane.dx * SWARM_TRAVEL;
+    const ey = lane.y + lane.dy * SWARM_TRAVEL;
+    const nx = -lane.dy * lane.half;
+    const ny = lane.dx * lane.half;
+    c.globalAlpha = 0.16 * pulse;
+    c.fillStyle = '#ff5b5b';
+    c.beginPath();
+    c.moveTo(lane.x + nx, lane.y + ny);
+    c.lineTo(ex + nx, ey + ny);
+    c.lineTo(ex - nx, ey - ny);
+    c.lineTo(lane.x - nx, lane.y - ny);
+    c.closePath();
+    c.fill();
+    c.globalAlpha = 0.75;
+    c.strokeStyle = '#ff6b72';
+    c.lineWidth = 3;
+    // Setas na direção do voo: dá para ler de onde a revoada vem sem texto.
+    const shift = still ? 0 : (animMs / 6) % 90;
+    for (let d = shift; d < SWARM_TRAVEL; d += 90) {
+      const cx = lane.x + lane.dx * d;
+      const cy = lane.y + lane.dy * d;
+      c.beginPath();
+      c.moveTo(cx - lane.dx * 14 + nx * 0.35, cy - lane.dy * 14 + ny * 0.35);
+      c.lineTo(cx, cy);
+      c.lineTo(cx - lane.dx * 14 - nx * 0.35, cy - lane.dy * 14 - ny * 0.35);
+      c.stroke();
+    }
+  } else if (surge.kind === 'wild-friend' && surge.friend) {
+    const f = surge.friend;
+    const color = '#7dff9b';
+    c.globalAlpha = surge.phase === 'offer' ? 0.7 : 0.45;
+    c.strokeStyle = color;
+    c.lineWidth = 3;
+    if (surge.phase === 'offer') c.setLineDash([6, 5]);
+    c.beginPath();
+    c.ellipse(f.x, f.y + 6, 22 * pulse, 10 * pulse, 0, 0, Math.PI * 2);
+    c.stroke();
+    c.setLineDash([]);
+    // O sprite real da espécie (o mesmo pacote dos selvagens da região); sem sprite, a forma neutra de sempre.
+    c.globalAlpha = surge.phase === 'offer' ? 0.95 : 0.88;
+    const sprite = f.dexId === null ? null : enemySprites.get(f.dexId) ?? null;
+    drawSprite(sprite, f.x, f.y, f.x > (state.value?.player.x ?? f.x), 0.8, 'down');
+    c.globalAlpha = 1;
+    c.font = 'bold 15px sans-serif';
+    c.fillStyle = '#ff7aa8';
+    c.fillText('♥', f.x, f.y - 30 - (still ? 0 : Math.abs(Math.sin(animMs / 260)) * 4));
+    if (surge.phase === 'offer') {
+      c.font = 'bold 11px sans-serif';
+      c.fillStyle = color;
+      c.fillText('AMIGO', f.x, f.y - 46);
+    }
+  } else if (surge.kind === 'trial' && surge.phase === 'offer') {
+    const x = surge.x ?? 0;
+    const y = surge.y ?? 0;
+    const color = '#ffd84a';
+    c.globalAlpha = 0.7;
+    c.strokeStyle = color;
+    c.lineWidth = 3;
+    c.setLineDash([8, 5]);
+    c.beginPath();
+    c.arc(x, y, 34 * pulse, 0, Math.PI * 2);
+    c.stroke();
+    c.setLineDash([]);
+    c.globalAlpha = 0.2;
+    c.fillStyle = color;
+    c.beginPath();
+    c.arc(x, y, 22 * pulse, 0, Math.PI * 2);
+    c.fill();
+    c.globalAlpha = 0.95;
+    c.font = 'bold 18px sans-serif';
+    c.fillStyle = '#fff9dd';
+    c.fillText('⏱', x, y);
+    c.font = 'bold 11px sans-serif';
+    c.fillStyle = color;
+    c.fillText('DESAFIO', x, y - 50);
+  }
+  c.restore();
+}
+
 function drawSprite(asset: SpriteAsset | null, x: number, y: number, flip: boolean, scale: number, direction: SurvivorSpriteDirection = 'down', accessory?: string | null, polished = false): void {
   if (!ctx) return;
   if (!asset) {
@@ -1903,6 +2056,8 @@ function drawBonkPointers(c: CanvasRenderingContext2D, s: SurvivorState, physics
     }
   }
   if (s.fieldEvent) pointAt(s.fieldEvent.x, s.fieldEvent.y, s.fieldEvent.kind === 'hunt' ? '#ff6b72' : '#7be6ff', 10);
+  if (s.surge?.friend) pointAt(s.surge.friend.x, s.surge.friend.y, '#7dff9b', 10);
+  else if (s.surge?.kind === 'trial' && s.surge.phase === 'offer') pointAt(s.surge.x ?? 0, s.surge.y ?? 0, '#ffd84a', 10);
   if ((s.keys ?? 0) > 0) for (const chest of s.chests ?? []) pointAt(chest.x, chest.y, '#7ee8a2', 10);
   c.restore();
 }
@@ -2376,6 +2531,8 @@ function draw(): void {
     ctx.fillText(fieldEvent.phase === 'hunt' ? 'CAÇADA' : 'SINAL', fieldEvent.x, fieldEvent.y - 50);
     ctx.restore();
   }
+
+  if (s.surge) drawSurge(ctx, s.surge, animMs);
 
   // Só o que cai na câmera (com folga para o desenho): fora da tela não há nada a pintar.
   const margin = 120;
@@ -3395,6 +3552,7 @@ function loop(ts: number): void {
       else if (ev.type === 'thiefCaught') say(`🪙 Ladrão pego! +${ev.coins} moedas no fim da corrida.`, 3600);
       else if (ev.type === 'thiefEscaped') say('🐾 O ladrão fugiu com o tesouro.', 3000);
       else if (ev.type === 'levelBonus') say(`✨ ${ev.text}`, 3000);
+      else if (ev.type === 'surge') announceSurge(ev);
       else if (ev.type === 'fieldEventSpawn') {
         playSound(ev.kind === 'hunt' ? 'survivor-boss' : 'survivor-level');
         say(ev.kind === 'hunt'
@@ -4124,6 +4282,7 @@ onBeforeUnmount(() => {
             <span v-if="state.shadowTrustStones > 0" class="chip survivor-shadow-chip" :title="`${state.shadowTrustStones} Pedra(s) da Confiança assegurada(s); entram no inventário ao concluir a corrida`">💠 {{ state.shadowTrustStones }} Pedra{{ state.shadowTrustStones === 1 ? '' : 's' }} assegurada{{ state.shadowTrustStones === 1 ? '' : 's' }}</span>
             <span v-if="thiefHud" class="chip survivor-thief-chip" title="Meowth ladrão: pegue antes que fuja para ganhar moedas">{{ thiefHud }}</span>
             <span v-if="state.adaptive" class="chip survivor-adaptive-chip" :title="`Desafio adaptável: inimigos comuns com ${Math.round(state.adaptive.value * 100)}% da força de sempre`">🎚 {{ Math.round(state.adaptive.value * 100) }}%</span>
+            <span v-if="surgeHud" class="chip survivor-field-chip survivor-surge-chip" :class="state.surge ? `surge-${state.surge.kind}` : ''" role="status" :title="surgeHudTitle">{{ surgeHud }}</span>
             <span v-if="fieldEventHud" class="chip survivor-field-chip" :class="{ hunt: state.fieldEvent?.kind === 'hunt' }" :title="state.fieldEvent?.phase === 'hunt' ? 'A caçada já começou; derrote os dois inimigos elite marcados.' : 'Encontro opcional de campo: siga a seta antes que a baliza desapareça.'">{{ fieldEventHud }}</span>
             <span v-if="pvpRun" class="chip survivor-pvp-chip" role="status" title="PvP: esta run rende um Pokémon para a sua equipe 3x3">⚔ Run {{ pvpRun.index + 1 }}/{{ pvpRun.total }} · ⏳ {{ formatTime(Math.max(0, pvpRun.limitMs - state.elapsedMs)) }}</span>
             <span class="chip survivor-run-stats" :title="`${state.kills} inimigos derrotados${state.fast ? ' · Ritmo acelerado' : ''}`">{{ state.fast ? '⚡ ' : '' }}⏱ {{ formatTime(state.elapsedMs) }} · ☠ {{ state.kills }}</span>

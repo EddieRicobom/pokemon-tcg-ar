@@ -19,6 +19,7 @@ import { advanceSpecialEncounter, breakSurvivorShield, createSurvivorSpecial, DA
 import { inSurvivorCone, SURVIVOR_CONE_HALF_ANGLE, SURVIVOR_ORBIT_BASE, SURVIVOR_ORBIT_MAX, survivorAimAngle, survivorOrbitAngularSpeed, survivorOrbiterHitRadius, survivorOrbiters, survivorOrbitHitIntervalMs } from './survivor-shapes';
 import type { PokemonType } from './pokemon-data';
 import { creditSupremeKill, createSurvivorSupreme, gainSupreme, stepSurvivorSupreme, SUPREME_GAIN } from './survivor-supreme';
+import { createSurgeTrack, removeEscapedSwarm, stepSurvivorSurge } from './survivor-surges';
 
 /**
  * Motor puro do modo Sobrevivência (Zona de Sobrevivência, dentro da Vila): você anda pela arena, seu Pokémon ataca
@@ -340,6 +341,8 @@ export function createSurvivorState(seed: number, options: CreateSurvivorOptions
     shadowTrustStones: 0,
     fieldEvent: null,
     nextFieldEventAtMs: SURVIVOR_FIELD_EVENT_FIRST_MS,
+    surges: createSurgeTrack(),
+    surge: null,
     thief: null,
     nextThiefAtMs: SURVIVOR_THIEF_FIRST_MS,
     adaptive: options.adaptive ? { value: ADAPTIVE_START } : null,
@@ -3299,7 +3302,9 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
     if ((e.orbitHitMs ?? 0) > 0) e.orbitHitMs = Math.max(0, (e.orbitHitMs ?? 0) - dtMs);
     // Em estase, a IA não decide cura, proteção, investida ou novos tiros.
     // O restante do quadro ainda reduz efeitos temporários de forma previsível.
-    const target = timeStopped ? { x: e.x, y: e.y } : e.thief ? thiefFleeTarget(e, p, { w: ARENA_W, h: ARENA_H }) : updateEnemyBehavior(state, e, dtMs);
+    // Revoada: segue a faixa em linha reta, sem perseguir nem usar ação especial, até sair da arena.
+    if (e.swarm && !timeStopped) e.swarm.leftMs -= dtMs;
+    const target = timeStopped ? { x: e.x, y: e.y } : e.swarm ? { x: e.x + e.swarm.vx, y: e.y + e.swarm.vy } : e.thief ? thiefFleeTarget(e, p, { w: ARENA_W, h: ARENA_H }) : updateEnemyBehavior(state, e, dtMs);
     const dx = target.x - e.x;
     const dy = target.y - e.y;
     const d = Math.hypot(dx, dy) || 1;
@@ -3307,7 +3312,7 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
     const statusMultiplier = e.slowMs && e.slowMs > 0 ? 0.5 : 1;
     const hasteMultiplier = e.hastenedMs && e.hastenedMs > 0 ? 1.18 : 1;
     const dashMultiplier = e.dashMs && e.dashMs > 0 ? 2.5 : 1;
-    const speed = stunned ? 0 : e.speed * survivorDifficultyEnemyMultiplier(p.difficultyStacks ?? 0) * rangedMultiplier * statusMultiplier * hasteMultiplier * dashMultiplier;
+    const speed = stunned ? 0 : e.swarm ? Math.hypot(e.swarm.vx, e.swarm.vy) * statusMultiplier : e.speed * survivorDifficultyEnemyMultiplier(p.difficultyStacks ?? 0) * rangedMultiplier * statusMultiplier * hasteMultiplier * dashMultiplier;
     e.x += (dx / d) * speed * dt;
     e.y += (dy / d) * speed * dt;
     if (state.special.selected === 'gravity' && state.special.activeMs > 0) {
@@ -3336,6 +3341,8 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
       p.invulnMs = hitInvulnerabilityMs(p);
     }
   }
+
+  removeEscapedSwarm(state);
 
   // Projéteis hostis têm alcance, dano e quantidade limitados; cada um some ao tocar o jogador.
   // No Relógio parado eles ficam suspensos no ar, sem andar nem ferir: o tempo parou para tudo que é inimigo.
@@ -3548,6 +3555,16 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
   }
 
   updateFieldEvent(state, dtMs, events);
+  stepSurvivorSurge(state, dtMs, events, {
+    attackDamage: playerAttackDamage(state),
+    spawnCommon: () => {
+      const id = spawnEnemy(state, false);
+      return id === null ? null : state.enemies.find((e) => e.id === id) ?? null;
+    },
+    dropKey: (x, y) => { dropKey(state, x, y); },
+    dropArtifact: (x, y) => { state.artifacts.push({ id: state.nextId++, x, y, kind: artifactKind(state.rng) }); },
+    record: (name, color, damage) => { if (state.runStats) recordDamage(state.runStats, name, color, damage); },
+  });
   updateThief(state, dtMs, events);
   stepChests(state, events);
 
