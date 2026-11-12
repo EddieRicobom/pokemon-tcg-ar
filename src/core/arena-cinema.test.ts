@@ -48,7 +48,7 @@ describe('direção de cena da luta', () => {
 
   it('o Especial pede cut-in e um feixe não interrompe um plano mais forte', () => {
     const d = new ArenaDirector();
-    expect(d.take([{ k: 'special', side: 1, index: 4, shape: 'beam' }], alive(3, 3), 0)).toEqual([{ kind: 'cut-in', side: 1, index: 4 }]);
+    expect(d.take([{ k: 'special', side: 1, index: 4 }], alive(3, 3), 0)).toEqual([{ kind: 'cut-in', side: 1, index: 4 }]);
     d.take([{ k: 'faint', side: 0, index: 0 }], alive(2, 3), 50);
     d.take([{ k: 'beam', side: 1, x0: 0, y0: 0, x1: 1, y1: 1, width: 20, leftMs: 0 }], alive(2, 3), 120);
     expect(d.camera(200)!.side).toBe(0);

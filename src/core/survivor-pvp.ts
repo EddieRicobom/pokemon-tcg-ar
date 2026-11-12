@@ -6,6 +6,8 @@ import {
   distanceToSegment, FOCUS_SHOT_SIZE_MULTIPLIER, RAPID_BURST_MIN_CYCLE_MS,
   RAPID_BURST_SHOT_INTERVAL_MS, RAPID_BURST_SHOTS, RAPID_BURST_SPREAD, TELEPORT_HIT_RADIUS, TELEPORT_MIN_COOLDOWN_MS, TELEPORT_MIN_DAMAGE_MULTIPLIER,
 } from './survivor-charge';
+import { arenaSpecialOf, planSpecial } from './arena-specials';
+import type { SpecialRider } from './arena-specials';
 import { inSurvivorCone, survivorOrbiterHitRadius, survivorOrbitAngularSpeed, survivorOrbitHitIntervalMs, survivorOrbiters } from './survivor-shapes';
 
 /**
@@ -38,6 +40,10 @@ export const SV_SHOT_SPEED = 250;
 export const SV_SHOT_LIFE_MS = 1600;
 /** Área e golpes que travam no alvo avisam no chão antes de acertar. */
 export const SV_TELEGRAPH_MS = 1500;
+/** Cone e aura: preparo curto e visível. Quem sai da marca nesse tempo não leva, e atordoar quem prepara cancela o golpe. */
+export const SV_MELEE_WINDUP_MS = 400;
+/** Folga entre o golpe e o próximo aviso: o preparo não vira uma marca acesa o tempo todo. */
+export const SV_MELEE_GAP_MS = 180;
 /** Recarga entre trocas voluntárias (a troca forçada por desmaio não paga recarga). */
 export const SV_SWITCH_COOLDOWN_MS = 10_000;
 /** Troca de Pokémon: 1,5 s para o atual voltar à bola (laser vermelho) e 1,5 s para o novo sair. Quem troca fica parado e protegido. */
@@ -63,7 +69,7 @@ export const SV_TRAIL_MAX_POINTS = 40;
 export const SV_FOCUS_MIN_CHARGE_MS = 2200;
 export const SV_FOCUS_TELEGRAPH_MS = 1000;
 export const SV_FOCUS_LENGTH = 560;
-export const SV_FOCUS_DAMAGE_MULT = 2.6;
+export const SV_FOCUS_DAMAGE_MULT = 3;
 /** Na arena o tipo pesa até 2,5×: com o 4× da fraqueza dupla, um Pokémon caía em segundos, sem tempo de reagir. */
 export const SV_MAX_TYPE_MULT = 2.5;
 /** Esquiva: um arranque curto com invulnerabilidade só durante ele. Quem acerta o tempo atravessa o golpe. */
@@ -74,13 +80,11 @@ export const SV_DODGE_COOLDOWN_MS = 2600;
 export const SV_BLINK_WINDUP_MS = 350;
 /** Especial: cada Pokémon enche a própria barra causando e levando dano; o aviso é curto, mas dá tempo de esquivar. */
 export const SV_SPECIAL_WINDUP_MS = 650;
-export const SV_SPECIAL_BEAM_WIDTH = 34;
-export const SV_SPECIAL_NOVA_RADIUS = 130;
 /** Nenhum Especial tira mais que esta fração da vida máxima de quem leva, mesmo com vantagem de tipo. */
 export const SV_SPECIAL_HIT_CAP = 0.45;
-/** Quanto enche: derrubar uma barra inteira de vida do rival vale 0,9; perder a própria, 0,7; cada golpe esquivado, 0,06. */
-export const SV_SPECIAL_GAIN_DEALT = 0.9;
-export const SV_SPECIAL_GAIN_TAKEN = 0.7;
+/** Quanto enche: derrubar uma barra inteira de vida do rival vale 1; perder a própria, 0,8; cada golpe esquivado, 0,06. */
+export const SV_SPECIAL_GAIN_DEALT = 1;
+export const SV_SPECIAL_GAIN_TAKEN = 0.8;
 export const SV_SPECIAL_GAIN_EVADE = 0.06;
 /** Efeitos dos golpes, com as mesmas durações da corrida (`EFFECT_MS`). */
 const SV_EFFECT = { burnMs: 2000, burnFactor: 0.35, slowMs: 1500, stunMs: 400, stunCdMs: 5000, pushCdMs: 400, push: 14 } as const;
@@ -89,6 +93,9 @@ export const SV_COUNTDOWN_MS = 3000;
 export const SV_SUDDEN_DEATH_MS = 90_000;
 export const SV_SUDDEN_DRAIN_PER_S = 0.06;
 export const SV_MAX_MS = 170_000;
+/** A luta de seis, com 2,38× de vida: a morte súbita de 3 min pegava três em cada quatro lutas, e a de 3min45 ainda mais da metade (medido em 48 lutas entre rivais). */
+export const SV_SUDDEN_DEATH_SIX_MS = 255_000;
+export const SV_MAX_SIX_MS = 340_000;
 /** Intervalo entre instantâneos do anfitrião (~15 Hz). */
 export const SV_SNAPSHOT_MS = 66;
 export const SV_MAX_DT_MS = 60;
@@ -259,9 +266,6 @@ export function svMonFromRun(r: SvRunResult, id: string): SvMonSpec {
 
 export type ArenaSide = 0 | 1;
 export type ArenaWinner = ArenaSide | 'draw';
-/** Forma do Especial: quem luta de perto explode em volta de si, quem luta de longe solta um feixe. */
-export type ArenaSpecialShape = 'beam' | 'nova';
-
 export interface ArenaMon extends SvMonSpec {
   hp: number;
   /** Está usando o segundo ataque. */
@@ -329,6 +333,8 @@ export interface ArenaTeamState {
   blinkMs: number;
   blinkX: number;
   blinkY: number;
+  /** O salto anunciado é o arranque de um Especial (Punho Cometa, Bote Noturno). Só no anfitrião. */
+  blinkSpecial?: { damage: number; type: PokemonType; rider?: SpecialRider } | null;
 }
 
 export interface ArenaShot {
@@ -357,15 +363,26 @@ export interface ArenaMarker {
   side: ArenaSide;
   x: number;
   y: number;
+  /** Raio do círculo; no cone, o alcance. */
   radius: number;
   damage: number;
   type: PokemonType;
   leftMs: number;
+  /** Duração total do aviso (sem isto, é o tempo da área). */
+  totalMs?: number;
+  /** `aura`/`cone`: o golpe de quem prepara em volta de si ou à frente. Sem isto, é um círculo no chão. */
+  kind?: ArenaMarkerKind;
+  /** Direção do cone. */
+  angle?: number;
   /** Só no anfitrião: quem lançou, o efeito dele e se é o Especial. */
   monIndex?: number;
   effect?: MoveEffect;
   special?: boolean;
+  rider?: SpecialRider;
+  share?: number;
 }
+
+export type ArenaMarkerKind = 'aura' | 'cone';
 
 /** Feixe do Foco já marcado no chão: sai quando `leftMs` zera e acerta quem estiver na linha. Só o anfitrião guarda. */
 export interface ArenaBeam {
@@ -381,6 +398,8 @@ export interface ArenaBeam {
   type: PokemonType;
   leftMs: number;
   special?: boolean;
+  rider?: SpecialRider;
+  share?: number;
 }
 
 export interface ArenaState {
@@ -426,8 +445,9 @@ export type ArenaEvent =
   | { k: 'guard'; side: ArenaSide }
   /** `side` = quem foi atacado e não levou o dano por causa do escudo. */
   | { k: 'block'; side: ArenaSide }
-  | { k: 'cone'; side: ArenaSide; angle: number; range: number }
-  | { k: 'pulse'; side: ArenaSide; radius: number }
+  /** Golpe de cone saindo agora; `x`/`y` é de onde ele saiu (quem prepara pode ter andado). */
+  | { k: 'cone'; side: ArenaSide; angle: number; range: number; x?: number; y?: number }
+  | { k: 'pulse'; side: ArenaSide; radius: number; x?: number; y?: number }
   /** Teleporte: com `leftMs` > 0 é a linha do salto anunciado; sem ele, o salto aconteceu. */
   | { k: 'blink'; side: ArenaSide; x0: number; y0: number; x1: number; y1: number; leftMs?: number }
   /** `side` arrancou numa esquiva, de (x0, y0) até (x1, y1). */
@@ -435,9 +455,9 @@ export type ArenaEvent =
   /** `side` atravessou um golpe durante a esquiva. */
   | { k: 'evade'; side: ArenaSide }
   /** `side` lançou o Especial do Pokémon `index`. */
-  | { k: 'special'; side: ArenaSide; index: number; shape: ArenaSpecialShape }
+  | { k: 'special'; side: ArenaSide; index: number }
   /** Foco: com `leftMs` > 0 é a linha marcada no chão; com 0 o feixe sai agora. */
-  | { k: 'beam'; side: ArenaSide; x0: number; y0: number; x1: number; y1: number; width: number; leftMs: number };
+  | { k: 'beam'; side: ArenaSide; x0: number; y0: number; x1: number; y1: number; width: number; leftMs: number; multi?: boolean };
 
 const startPosition = (side: ArenaSide): { x: number; y: number } => ({ x: SV_ARENA_W / 2, y: SV_ARENA_H / 2 + (side === 0 ? SV_START_OFFSET : -SV_START_OFFSET) });
 
@@ -470,11 +490,11 @@ function teamState(side: ArenaSide, specs: readonly SvMonSpec[]): ArenaTeamState
 
 /** Lado 0 = anfitrião (embaixo), lado 1 = convidado (em cima). */
 export function createArena(host: readonly SvMonSpec[], guest: readonly SvMonSpec[]): ArenaState {
-  // A morte súbita apressa o Pokémon em campo: seis de cada lado precisam do dobro do tempo de três.
-  const scale = Math.max(1, Math.max(host.length, guest.length) / SV_TEAM_SIZE);
+  // A morte súbita apressa o Pokémon em campo. A luta de seis, com mais vida, tem o próprio relógio.
+  const six = Math.max(host.length, guest.length) > SV_TEAM_SIZE;
   return {
     timeMs: 0, countdownMs: SV_COUNTDOWN_MS, sides: [teamState(0, host), teamState(1, guest)], shots: [], markers: [], beams: [], nextShotId: 1, winner: null,
-    suddenDeathMs: SV_SUDDEN_DEATH_MS * scale, maxMs: SV_MAX_MS * scale,
+    suddenDeathMs: six ? SV_SUDDEN_DEATH_SIX_MS : SV_SUDDEN_DEATH_MS, maxMs: six ? SV_MAX_SIX_MS : SV_MAX_MS,
   };
 }
 
@@ -557,12 +577,6 @@ export function specialBlockReason(state: ArenaState, side: ArenaSide): string |
   return null;
 }
 
-/** Quem luta de perto explode em volta de si; os demais soltam um feixe na linha do rival. */
-export function specialShapeOf(mon: Pick<ArenaMon, 'moveCategory'>): ArenaSpecialShape {
-  const category = mon.moveCategory ?? 'projetil';
-  return category === 'aura' || category === 'orbit' || category === 'cone' || category === 'trilha' ? 'nova' : 'beam';
-}
-
 /** Pode trocar o ataque do Pokémon em campo agora? */
 export function canSwapAttack(state: ArenaState, side: ArenaSide): boolean {
   const team = state.sides[side];
@@ -618,6 +632,7 @@ function enter(team: ArenaTeamState, index: number): void {
   team.focusCharge = 0;
   team.dodgeMs = 0;
   team.blinkMs = 0;
+  team.blinkSpecial = null;
 }
 
 /** Tira vida do Pokémon em campo; se cai, a troca forçada põe o próximo de pé (sem recarga). */
@@ -661,8 +676,12 @@ function cycleMs(mon: ArenaMon): number {
   const category = categoryOf(mon);
   if (category === 'rapido') return Math.max(RAPID_BURST_MIN_CYCLE_MS, mon.fireMs);
   if (category === 'teleporte') return Math.max(TELEPORT_MIN_COOLDOWN_MS, mon.fireMs);
+  if (category === 'cone' || category === 'aura') return Math.max(SV_MELEE_WINDUP_MS + SV_MELEE_GAP_MS, mon.fireMs);
   return mon.fireMs;
 }
+
+/** O preparo espaça os golpes de cone e aura de recarga curta: quem bate menos vezes bate mais forte, e o dano por segundo não muda. */
+const meleeDamage = (mon: ArenaMon): number => arenaDamage(mon) * (cycleMs(mon) / Math.max(1, mon.fireMs));
 
 interface HitSource {
   team: ArenaTeamState;
@@ -707,7 +726,57 @@ const gainEnergy = (mon: ArenaMon, amount: number): void => {
   mon.energy = clamp((mon.energy ?? 0) + amount, 0, 1);
 };
 
-function hitActive(target: ArenaTeamState, side: ArenaSide, type: PokemonType, damage: number, events: ArenaEvent[], effect?: MoveEffect, source: HitSource | null = null, special = false): void {
+/** O que o Especial soma ao dano: o efeito de cada elemento (`arena-specials.ts`). */
+function applyRider(rider: SpecialRider | undefined, source: HitSource | null, target: ArenaTeamState, defender: ArenaMon, dealt: number): void {
+  switch (rider) {
+    case 'burn':
+      target.burnMs = 3000;
+      target.burnDps = Math.max(target.burnDps, round1n(dealt * 0.12));
+      break;
+    case 'toxin':
+      target.burnMs = 5000;
+      target.burnDps = Math.max(target.burnDps, round1n(defender.maxHp * 0.02));
+      break;
+    case 'slow':
+      target.slowMs = Math.max(target.slowMs, 3000);
+      break;
+    case 'stun':
+      if (target.stunCdMs <= 0) {
+        target.stunMs = Math.max(target.stunMs, 800);
+        target.stunCdMs = SV_EFFECT.stunCdMs;
+      }
+      break;
+    case 'push':
+    case 'gust': {
+      if (!source) break;
+      const dx = target.x - source.team.x;
+      const dy = target.y - source.team.y;
+      const d = Math.hypot(dx, dy) || 1;
+      const distance = rider === 'gust' ? 110 : 60;
+      target.x = clamp(target.x + (dx / d) * distance, SV_MON_RADIUS, SV_ARENA_W - SV_MON_RADIUS);
+      target.y = clamp(target.y + (dy / d) * distance, SV_MON_RADIUS, SV_ARENA_H - SV_MON_RADIUS);
+      target.pushCdMs = SV_EFFECT.pushCdMs;
+      break;
+    }
+    case 'siphon': {
+      const taken = (defender.energy ?? 0) * 0.5;
+      defender.energy = clamp((defender.energy ?? 0) - taken, 0, 1);
+      if (source) gainEnergy(source.mon, taken * 0.5);
+      break;
+    }
+    default:
+      break;
+  }
+}
+
+/** Marca de Especial: `share` é a fração do golpe que essa parte vale (o limite de dano é dividido com ela). */
+interface SpecialHit {
+  rider?: SpecialRider;
+  share: number;
+}
+
+function hitActive(target: ArenaTeamState, side: ArenaSide, type: PokemonType, damage: number, events: ArenaEvent[], effect?: MoveEffect, source: HitSource | null = null, specialHit: SpecialHit | null = null): void {
+  const special = specialHit !== null;
   const defender = target.mons[target.active];
   if (!defender || defender.hp <= 0 || target.shieldMs > 0) return;
   // Esquiva: atravessa o golpe, e acertar o tempo enche um pouco o Especial.
@@ -722,7 +791,7 @@ function hitActive(target: ArenaTeamState, side: ArenaSide, type: PokemonType, d
     return;
   }
   const mult = Math.min(SV_MAX_TYPE_MULT, typeEffectiveness(type, defender.types));
-  const landed = special ? Math.min(damage, (defender.maxHp * SV_SPECIAL_HIT_CAP) / Math.max(1, mult)) : damage;
+  const landed = specialHit ? Math.min(damage, (defender.maxHp * SV_SPECIAL_HIT_CAP * specialHit.share) / Math.max(1, mult)) : damage;
   const dealt = mult === 0 ? 0 : Math.max(1, Math.round(landed * mult));
   events.push({ k: 'hit', side, damage: dealt, mult, ...(special ? { special: true } : {}) });
   damageActive(target, side, dealt, events);
@@ -733,7 +802,11 @@ function hitActive(target: ArenaTeamState, side: ArenaSide, type: PokemonType, d
     if (!special) gainEnergy(source.mon, (dealt / defender.maxHp) * SV_SPECIAL_GAIN_DEALT);
   }
   if (!special) gainEnergy(defender, (dealt / defender.maxHp) * SV_SPECIAL_GAIN_TAKEN);
-  if (dealt > 0 && defender.hp > 0) applyEffect(effect, source, target, dealt);
+  if (dealt > 0 && specialHit?.rider === 'drain' && source && source.mon.hp > 0) source.mon.hp = Math.min(source.mon.maxHp, source.mon.hp + Math.round(dealt * 0.4));
+  if (dealt > 0 && defender.hp > 0) {
+    applyEffect(effect, source, target, dealt);
+    applyRider(specialHit?.rider, source, target, defender, dealt);
+  }
 }
 
 interface ShotPlan {
@@ -781,20 +854,16 @@ function fireAttack(state: ArenaState, side: ArenaSide, events: ArenaEvent[]): v
   const ay = foe.y - team.y;
   const dist = Math.hypot(ax, ay) || 1;
   const aim = Math.atan2(ay, ax);
-  const source: HitSource = { team, mon };
 
   switch (category) {
     case 'orbit':
     case 'trilha':
     case 'foco':
       return; // dano contínuo (orbitais e faixa) ou carregado (feixe): ver `stepOrbit`, `stepTrail` e `stepFocus`
-    case 'aura': {
-      // A aura pulsa sempre e só causa dano se o rival está dentro do raio (80% do raio do golpe, como na corrida).
-      const pulse = arenaRadius(mon) * 0.8;
-      events.push({ k: 'pulse', side, radius: pulse });
-      if (dist <= pulse + SV_MON_RADIUS) hitActive(foe, foeSide, mon.attackType, arenaDamage(mon), events, mon.moveEffect, source);
+    case 'aura':
+      // A aura pulsa sempre, mas agora avisa antes: o anel marca onde o pulso vai bater (80% do raio do golpe, como na corrida).
+      state.markers.push({ id: state.nextShotId++, side, x: round1n(team.x), y: round1n(team.y), radius: arenaRadius(mon) * 0.8, damage: meleeDamage(mon), type: mon.attackType, leftMs: SV_MELEE_WINDUP_MS, totalMs: SV_MELEE_WINDUP_MS, kind: 'aura', monIndex: team.active, effect: mon.moveEffect });
       return;
-    }
     case 'area': {
       // Área fixa a posição atual do alvo e revela o círculo por 1,5 s. Não há dano instantâneo nem perseguição invisível.
       // O alvo começa no centro: o círculo nunca é maior do que ele consegue sair andando e esquivando no tempo do aviso.
@@ -804,16 +873,14 @@ function fireAttack(state: ArenaState, side: ArenaSide, events: ArenaEvent[]): v
       events.push({ k: 'telegraph', side, x: foe.x, y: foe.y, radius, type: mon.attackType });
       return;
     }
-    case 'cone': {
-      const range = arenaRange(mon);
-      events.push({ k: 'cone', side, angle: round1n(aim * 100) / 100, range });
-      if (inSurvivorCone({ x: team.x, y: team.y, aimAngle: aim, facing: 1 }, foe.x, foe.y, range, SV_MON_RADIUS)) {
-        hitActive(foe, foeSide, mon.attackType, arenaDamage(mon), events, mon.moveEffect, source);
-      }
+    case 'cone':
+      // O leque fica marcado na direção em que o rival estava: quem sai dele a tempo não leva.
+      state.markers.push({ id: state.nextShotId++, side, x: round1n(team.x), y: round1n(team.y), radius: arenaRange(mon), damage: meleeDamage(mon), type: mon.attackType, leftMs: SV_MELEE_WINDUP_MS, totalMs: SV_MELEE_WINDUP_MS, kind: 'cone', angle: aim, monIndex: team.active, effect: mon.moveEffect });
       return;
-    }
     case 'teleporte': {
       // Anuncia a linha até onde o rival está agora e só então salta (`stepBlink`): quem sai dela não leva.
+      if (team.blinkMs > 0) return; // um arranque de Especial já está anunciado
+      team.blinkSpecial = null;
       const travel = Math.max(0, Math.min(arenaRange(mon), dist - SV_MON_RADIUS * 2));
       team.blinkX = round1n(clamp(team.x + (ax / dist) * travel, SV_MON_RADIUS, SV_ARENA_W - SV_MON_RADIUS));
       team.blinkY = round1n(clamp(team.y + (ay / dist) * travel, SV_MON_RADIUS, SV_ARENA_H - SV_MON_RADIUS));
@@ -847,12 +914,15 @@ function stepBlink(state: ArenaState, side: ArenaSide, dt: number, events: Arena
   const foe = state.sides[foeSide];
   const x0 = team.x;
   const y0 = team.y;
+  const dash = team.blinkSpecial;
+  team.blinkSpecial = null;
   team.x = team.blinkX;
   team.y = team.blinkY;
   team.shieldMs = Math.max(team.shieldMs, 300);
   events.push({ k: 'blink', side, x0: round1n(x0), y0: round1n(y0), x1: round1n(team.x), y1: round1n(team.y) });
   if (distanceToSegment(foe.x, foe.y, x0, y0, team.x, team.y) <= TELEPORT_HIT_RADIUS) {
-    hitActive(foe, foeSide, mon.attackType, arenaDamage(mon) * TELEPORT_MIN_DAMAGE_MULTIPLIER, events, mon.moveEffect, { team, mon });
+    if (dash) hitActive(foe, foeSide, dash.type, dash.damage, events, mon.moveEffect, { team, mon }, { share: 1, ...(dash.rider ? { rider: dash.rider } : {}) });
+    else hitActive(foe, foeSide, mon.attackType, arenaDamage(mon) * TELEPORT_MIN_DAMAGE_MULTIPLIER, events, mon.moveEffect, { team, mon });
   }
 }
 
@@ -893,25 +963,39 @@ function castSpecial(state: ArenaState, side: ArenaSide, events: ArenaEvent[]): 
   const mon = team.mons[team.active];
   if (!mon) return;
   const foe = state.sides[side === 0 ? 1 : 0];
-  const shape = specialShapeOf(mon);
-  const damage = specialDamage(mon);
+  const def = arenaSpecialOf(mon.attackType);
+  const damage = specialDamage(mon) * def.power;
   mon.energy = 0;
-  events.push({ k: 'special', side, index: team.active, shape });
-  if (shape === 'nova') {
-    state.markers.push({ id: state.nextShotId++, side, x: team.x, y: team.y, radius: SV_SPECIAL_NOVA_RADIUS, damage, type: mon.attackType, leftMs: SV_SPECIAL_WINDUP_MS, monIndex: team.active, effect: mon.moveEffect, special: true });
-    events.push({ k: 'telegraph', side, x: team.x, y: team.y, radius: SV_SPECIAL_NOVA_RADIUS, type: mon.attackType });
-    return;
+  events.push({ k: 'special', side, index: team.active });
+  if (def.healPct) mon.hp = Math.min(mon.maxHp, mon.hp + mon.maxHp * def.healPct);
+  if (def.guardMs) team.guardMs = Math.max(team.guardMs, def.guardMs);
+  const strikes = planSpecial(def, team, foe, { w: SV_ARENA_W, h: SV_ARENA_H, margin: SV_MON_RADIUS });
+  const common = { type: mon.attackType, special: true as const, monIndex: team.active, ...(def.rider ? { rider: def.rider } : {}) };
+  // O feixe do Especial toma o lugar do Foco que estivesse marcado: a tela mostra só as linhas de um golpe por lado.
+  if (strikes.some((s) => s.kind === 'beam')) {
+    state.beams = state.beams.filter((b) => b.side !== side);
+    team.focusCharge = 0;
   }
-  // O feixe do Especial toma o lugar do Foco que estivesse marcado: a tela mostra uma linha por lado.
-  state.beams = state.beams.filter((b) => b.side !== side);
-  team.focusCharge = 0;
-  const aim = Math.atan2(foe.y - team.y, foe.x - team.x);
-  const beam: ArenaBeam = {
-    side, monIndex: team.active, x0: round1n(team.x), y0: round1n(team.y), x1: round1n(team.x + Math.cos(aim) * SV_FOCUS_LENGTH), y1: round1n(team.y + Math.sin(aim) * SV_FOCUS_LENGTH),
-    width: SV_SPECIAL_BEAM_WIDTH, damage, type: mon.attackType, leftMs: SV_SPECIAL_WINDUP_MS, special: true,
-  };
-  state.beams.push(beam);
-  events.push({ k: 'beam', side, x0: beam.x0, y0: beam.y0, x1: beam.x1, y1: beam.y1, width: beam.width, leftMs: beam.leftMs });
+  for (const strike of strikes) {
+    const leftMs = def.windupMs + strike.delayMs;
+    const part = { ...common, damage: damage * strike.share, share: strike.share, leftMs };
+    if (strike.kind === 'circle') {
+      state.markers.push({ id: state.nextShotId++, side, x: strike.x, y: strike.y, radius: strike.radius, totalMs: leftMs, effect: mon.moveEffect, ...part });
+      events.push({ k: 'telegraph', side, x: strike.x, y: strike.y, radius: strike.radius, type: mon.attackType });
+    } else if (strike.kind === 'cone') {
+      state.markers.push({ id: state.nextShotId++, side, x: strike.x, y: strike.y, radius: strike.range, totalMs: leftMs, kind: 'cone', angle: strike.angle, effect: mon.moveEffect, ...part });
+    } else if (strike.kind === 'beam') {
+      const beam: ArenaBeam = { side, x0: strike.x0, y0: strike.y0, x1: strike.x1, y1: strike.y1, width: strike.width, ...part };
+      state.beams.push(beam);
+      events.push({ k: 'beam', side, x0: beam.x0, y0: beam.y0, x1: beam.x1, y1: beam.y1, width: beam.width, leftMs: beam.leftMs, ...(strikes.length > 1 ? { multi: true } : {}) });
+    } else {
+      team.blinkX = strike.x;
+      team.blinkY = strike.y;
+      team.blinkMs = leftMs;
+      team.blinkSpecial = { damage: part.damage, type: mon.attackType, ...(def.rider ? { rider: def.rider } : {}) };
+      events.push({ k: 'blink', side, x0: round1n(team.x), y0: round1n(team.y), x1: strike.x, y1: strike.y, leftMs });
+    }
+  }
 }
 
 /** Órbita: os orbitais giram o tempo todo e acertam quem tocam, com um intervalo entre toques. */
@@ -994,7 +1078,7 @@ function stepBeams(state: ArenaState, dt: number, events: ArenaEvent[]): void {
     const targetSide: ArenaSide = beam.side === 0 ? 1 : 0;
     const target = state.sides[targetSide];
     if (distanceToSegment(target.x, target.y, beam.x0, beam.y0, beam.x1, beam.y1) <= beam.width + SV_MON_RADIUS) {
-      hitActive(target, targetSide, beam.type, beam.damage, events, ownerMon.moveEffect, { team: owner, mon: ownerMon }, beam.special === true);
+      hitActive(target, targetSide, beam.type, beam.damage, events, ownerMon.moveEffect, { team: owner, mon: ownerMon }, beam.special ? { share: beam.share ?? 1, ...(beam.rider ? { rider: beam.rider } : {}) } : null);
     }
   }
   state.beams = live;
@@ -1112,14 +1196,24 @@ export function stepArena(state: ArenaState, inputs: readonly [ArenaInput | unde
   const markers: ArenaMarker[] = [];
   for (const marker of state.markers) {
     marker.leftMs -= dt;
+    const owner = state.sides[marker.side];
+    const ownerMon = owner.mons[marker.monIndex ?? owner.active];
+    // Cone e aura fazem parte do corpo de quem prepara: saiu de campo, caiu ou levou atordoamento, o golpe não sai.
+    if (marker.kind && !marker.special && (owner.active !== marker.monIndex || !ownerMon || ownerMon.hp <= 0 || owner.swapMs > 0 || owner.stunMs > 0)) continue;
+    // A aura envolve o corpo: o anel anda com quem prepara. O cone fica na direção marcada.
+    if (marker.kind === 'aura' && !marker.special) {
+      marker.x = round1n(owner.x);
+      marker.y = round1n(owner.y);
+    }
     if (marker.leftMs > 0) { markers.push(marker); continue; }
     const targetSide: ArenaSide = marker.side === 0 ? 1 : 0;
     const target = state.sides[targetSide];
-    if (Math.hypot(marker.x - target.x, marker.y - target.y) <= marker.radius + SV_MON_RADIUS) {
-      const owner = state.sides[marker.side];
-      const ownerMon = owner.mons[marker.monIndex ?? owner.active];
-      hitActive(target, targetSide, marker.type, marker.damage, events, marker.effect, ownerMon ? { team: owner, mon: ownerMon } : null, marker.special === true);
-    }
+    if (marker.kind === 'cone') events.push({ k: 'cone', side: marker.side, angle: round1n((marker.angle ?? 0) * 100) / 100, range: marker.radius, x: marker.x, y: marker.y });
+    else if (marker.kind === 'aura') events.push({ k: 'pulse', side: marker.side, radius: marker.radius, x: marker.x, y: marker.y });
+    const hits = marker.kind === 'cone'
+      ? inSurvivorCone({ x: marker.x, y: marker.y, aimAngle: marker.angle ?? 0, facing: 1 }, target.x, target.y, marker.radius, SV_MON_RADIUS)
+      : Math.hypot(marker.x - target.x, marker.y - target.y) <= marker.radius + SV_MON_RADIUS;
+    if (hits) hitActive(target, targetSide, marker.type, marker.damage, events, marker.effect, ownerMon ? { team: owner, mon: ownerMon } : null, marker.special ? { share: marker.share ?? 1, ...(marker.rider ? { rider: marker.rider } : {}) } : null);
   }
   state.markers = markers;
   stepBeams(state, dt, events);
@@ -1242,7 +1336,24 @@ export interface ArenaMarkerSnap {
   radius: number;
   type: PokemonType;
   leftMs: number;
+  totalMs?: number;
+  kind?: ArenaMarkerKind;
+  angle?: number;
+  /** Marca de Especial: só muda o peso do desenho. */
+  special?: boolean;
 }
+
+/** O que a tela precisa saber de uma marca no chão: o anfitrião desenha o mesmo que manda ao convidado. */
+export function markerSnapshot(m: ArenaMarker): ArenaMarkerSnap {
+  return {
+    id: m.id, side: m.side, x: round1n(m.x), y: round1n(m.y), radius: round1n(m.radius), type: m.type, leftMs: Math.max(0, Math.round(m.leftMs)),
+    ...(m.totalMs ? { totalMs: m.totalMs } : {}), ...(m.kind ? { kind: m.kind } : {}), ...(m.angle !== undefined ? { angle: Math.round(m.angle * 100) / 100 } : {}), ...(m.special ? { special: true } : {}),
+  };
+}
+
+/** Limites do instantâneo: acima disso o fio recusaria a mensagem inteira (e o convidado congelaria). Fica o que é mais recente. */
+export const SV_SNAP_MAX_SHOTS = 150;
+export const SV_SNAP_MAX_MARKERS = 32;
 
 export interface ArenaSnapshot {
   tick: number;
@@ -1271,8 +1382,8 @@ export function snapshotArena(state: ArenaState, tick: number): ArenaSnapshot {
   return {
     tick, timeMs: Math.round(state.timeMs), countdownMs: Math.round(state.countdownMs), winner: state.winner,
     sides: [side(state.sides[0]), side(state.sides[1])],
-    shots: state.shots.map((s) => ({ id: s.id, side: s.side, x: round1(s.x), y: round1(s.y), vx: round1(s.vx), vy: round1(s.vy), type: s.type, radius: round1(s.radius) })),
-    markers: state.markers.map((m) => ({ id: m.id, side: m.side, x: round1(m.x), y: round1(m.y), radius: round1(m.radius), type: m.type, leftMs: Math.max(0, Math.round(m.leftMs)) })),
+    shots: state.shots.slice(-SV_SNAP_MAX_SHOTS).map((s) => ({ id: s.id, side: s.side, x: round1(s.x), y: round1(s.y), vx: round1(s.vx), vy: round1(s.vy), type: s.type, radius: round1(s.radius) })),
+    markers: state.markers.slice(-SV_SNAP_MAX_MARKERS).map(markerSnapshot),
   };
 }
 
@@ -1316,6 +1427,6 @@ export function applyArenaSnapshot(state: ArenaState, snap: ArenaSnapshot): bool
   state.countdownMs = snap.countdownMs;
   state.winner = snap.winner;
   state.shots = snap.shots.map((s) => ({ id: s.id, side: s.side, x: s.x, y: s.y, vx: s.vx, vy: s.vy, damage: 0, type: s.type, ageMs: 0, radius: s.radius, pierce: 0 }));
-  state.markers = snap.markers.map((m) => ({ id: m.id, side: m.side, x: m.x, y: m.y, radius: m.radius, damage: 0, type: m.type, leftMs: m.leftMs }));
+  state.markers = snap.markers.map((m) => ({ ...m, damage: 0 }));
   return true;
 }

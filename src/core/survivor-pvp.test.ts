@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  aliveCount, applyArenaSnapshot, canDodge, canSpecial, canSwitch, createArena, dodgeBlockReason, specialBlockReason, specialDamage, specialShapeOf, SV_BLINK_WINDUP_MS, SV_DODGE_COOLDOWN_MS, SV_DODGE_DISTANCE, SV_DODGE_MS, SV_SPECIAL_HIT_CAP, SV_SPECIAL_NOVA_RADIUS, SV_SPECIAL_WINDUP_MS, SV_TELEGRAPH_MS, guardBlockReason, NO_INPUT, arenaCamera, arenaCameraTarget, offscreenPointer, SV_ARENA_H, SV_ARENA_W, SV_START_OFFSET, SV_VIEW_H, SV_VIEW_W, SV_COUNTDOWN_MS, SV_ENTRY_SHIELD_MS, SV_GUARD_COOLDOWN_MS,
+  aliveCount, applyArenaSnapshot, canDodge, canSpecial, canSwitch, createArena, dodgeBlockReason, specialBlockReason, specialDamage, SV_BLINK_WINDUP_MS, SV_MELEE_GAP_MS, SV_MELEE_WINDUP_MS, SV_DODGE_COOLDOWN_MS, SV_DODGE_DISTANCE, SV_DODGE_MS, SV_SPECIAL_HIT_CAP, SV_SPECIAL_WINDUP_MS, SV_TELEGRAPH_MS, guardBlockReason, NO_INPUT, arenaCamera, arenaCameraTarget, offscreenPointer, SV_ARENA_H, SV_ARENA_W, SV_START_OFFSET, SV_VIEW_H, SV_VIEW_W, SV_COUNTDOWN_MS, SV_ENTRY_SHIELD_MS, SV_GUARD_COOLDOWN_MS,
   SV_GUARD_MS, SV_MAX_MS, SV_SUDDEN_DEATH_MS, SV_SWAP_RECALL_MS, SV_SWAP_SEND_MS, SV_SWAP_TOTAL_MS, SV_SWITCH_COOLDOWN_MS, snapshotArena, stepArena, svMonFromRun, svRunScore, switchBlockReason,
 } from './survivor-pvp';
 import type { ArenaEvent, ArenaInput, ArenaState, SvMonSpec, SvRunResult } from './survivor-pvp';
@@ -337,13 +337,13 @@ describe('survival pvp: golpes iguais aos da corrida', () => {
     const near = createArena([mon('a', { moveCategory: 'cone', attackRange: 200, fireMs: 400 })], [mon('x', idle)]);
     begin(near);
     place(near, 250);
-    const seen = events(near, 800);
+    const seen = events(near, 1200);
     expect(seen.some((e) => e.k === 'cone' && e.side === 0 && e.range === 200)).toBe(true);
     expect(foeLost(near)).toBeGreaterThan(0);
     const far = createArena([mon('a', { moveCategory: 'cone', attackRange: 200, fireMs: 400 })], [mon('x', idle)]);
     begin(far);
     place(far, 90);
-    events(far, 800);
+    events(far, 1200);
     expect(foeLost(far)).toBe(0);
   });
 
@@ -351,14 +351,84 @@ describe('survival pvp: golpes iguais aos da corrida', () => {
     const s = createArena([mon('a', { moveCategory: 'aura', attackRadius: 100, fireMs: 400 })], [mon('x', idle)]);
     begin(s);
     place(s, 390 - 90); // 90 <= 80 + 18: o rival está dentro do pulso
-    const seen = events(s, 800);
+    const seen = events(s, 1200);
     expect(seen.find((e) => e.k === 'pulse')).toMatchObject({ radius: 80 });
     expect(foeLost(s)).toBeGreaterThan(0);
     const out = createArena([mon('a', { moveCategory: 'aura', attackRadius: 100, fireMs: 400 })], [mon('x', idle)]);
     begin(out);
     place(out, 390 - 140);
-    events(out, 800);
+    events(out, 1200);
     expect(foeLost(out)).toBe(0);
+  });
+
+  it.each(['cone', 'aura'] as const)('%s: mostra o preparo antes e não fere enquanto ele dura', (moveCategory) => {
+    const s = createArena([mon('a', { moveCategory, attackRange: 200, attackRadius: 100, fireMs: 800 })], [mon('x', idle)]);
+    begin(s);
+    place(s, 390 - 60);
+    while (s.markers.length === 0) stepArena(s, [NO_INPUT, NO_INPUT], 20);
+    expect(s.markers[0]).toMatchObject({ kind: moveCategory, leftMs: SV_MELEE_WINDUP_MS, totalMs: SV_MELEE_WINDUP_MS });
+    expect(foeLost(s)).toBe(0);
+    for (let t = 0; t < SV_MELEE_WINDUP_MS - 40; t += 20) stepArena(s, [NO_INPUT, NO_INPUT], 20);
+    expect(foeLost(s)).toBe(0);
+    for (let t = 0; t < 80; t += 20) stepArena(s, [NO_INPUT, NO_INPUT], 20);
+    expect(foeLost(s)).toBeGreaterThan(0);
+  });
+
+  it('quem sai da marca do cone durante o preparo não leva', () => {
+    const s = createArena([mon('a', { moveCategory: 'cone', attackRange: 120, fireMs: 800 })], [mon('x', { ...idle, speed: 220 })]);
+    begin(s);
+    place(s, 390 - 100);
+    while (s.markers.length === 0) stepArena(s, [NO_INPUT, NO_INPUT], 20);
+    for (let t = 0; t < SV_MELEE_WINDUP_MS + 40; t += 20) stepArena(s, [NO_INPUT, { dx: 0, dy: -1, switchTo: -1 }], 20);
+    expect(foeLost(s)).toBe(0);
+  });
+
+  it('colado em quem prepara, a esquiva para o lado ainda salva do cone', () => {
+    const s = createArena([mon('a', { moveCategory: 'cone', attackRange: 120, fireMs: 800 })], [mon('x', { ...idle, speed: 120 })]);
+    begin(s);
+    place(s, 390 - 80);
+    while (s.markers.length === 0) stepArena(s, [NO_INPUT, NO_INPUT], 20);
+    stepArena(s, [NO_INPUT, { dx: 1, dy: 0, switchTo: -1, dodge: true }], 20);
+    for (let t = 0; t < SV_MELEE_WINDUP_MS + 40; t += 20) stepArena(s, [NO_INPUT, { dx: 1, dy: 0, switchTo: -1 }], 20);
+    expect(foeLost(s)).toBe(0);
+  });
+
+  it('a aura anda com quem prepara; o cone fica onde foi marcado', () => {
+    for (const moveCategory of ['aura', 'cone'] as const) {
+      const s = createArena([mon('a', { moveCategory, attackRange: 200, attackRadius: 100, fireMs: 800 })], [mon('x', idle)]);
+      begin(s);
+      place(s, 390 - 60);
+      while (s.markers.length === 0) stepArena(s, [NO_INPUT, NO_INPUT], 20);
+      const before = s.markers[0]!.x;
+      stepArena(s, [{ dx: 1, dy: 0, switchTo: -1 }, NO_INPUT], 20);
+      stepArena(s, [{ dx: 1, dy: 0, switchTo: -1 }, NO_INPUT], 20);
+      if (moveCategory === 'aura') expect(s.markers[0]!.x).toBeCloseTo(s.sides[0].x, 0);
+      else expect(s.markers[0]!.x).toBe(before);
+    }
+  });
+
+  it('atordoar quem prepara cancela o cone e a aura', () => {
+    const s = createArena([mon('a', { moveCategory: 'aura', attackRadius: 100, fireMs: 800 })], [mon('x', idle)]);
+    begin(s);
+    place(s, 390 - 60);
+    while (s.markers.length === 0) stepArena(s, [NO_INPUT, NO_INPUT], 20);
+    s.sides[0].stunMs = 200;
+    for (let t = 0; t < SV_MELEE_WINDUP_MS + 40; t += 20) stepArena(s, [NO_INPUT, NO_INPUT], 20);
+    expect(foeLost(s)).toBe(0);
+    expect(s.markers).toHaveLength(0);
+  });
+
+  it('recarga curta não vira marca acesa: bate menos vezes e mais forte, com o mesmo dano por segundo', () => {
+    const fast = createArena([mon('a', { moveCategory: 'aura', attackRadius: 100, fireMs: 260, power: 20 })], [mon('x', { ...idle, maxHp: 1500 })]);
+    begin(fast);
+    place(fast, 390 - 60);
+    const slow = createArena([mon('a', { moveCategory: 'aura', attackRadius: 100, fireMs: SV_MELEE_WINDUP_MS + SV_MELEE_GAP_MS, power: 20 * (SV_MELEE_WINDUP_MS + SV_MELEE_GAP_MS) / 260 })], [mon('x', { ...idle, maxHp: 1500 })]);
+    begin(slow);
+    place(slow, 390 - 60);
+    const stepsFast = events(fast, 6000).filter((e) => e.k === 'pulse').length;
+    events(slow, 6000);
+    expect(stepsFast).toBeLessThan(13);
+    expect(Math.abs(foeLost(fast) - foeLost(slow))).toBeLessThan(40);
   });
 
   it('órbita: os orbitais giram e acertam quem encosta', () => {
@@ -688,11 +758,11 @@ describe('Especial', () => {
   });
 
   it('feixe: esvazia a barra, avisa a linha e acerta quem ficou', () => {
-    const s = createArena([mon('a', { fireMs: 60_000 })], [mon('x', { ...trail, maxHp: 1000 })]);
+    const s = createArena([mon('a', { fireMs: 60_000, attackType: 'flying' })], [mon('x', { ...trail, maxHp: 1000 })]);
     begin(s);
     s.sides[0].mons[0]!.energy = 1;
     const first = stepArena(s, [cast, NO_INPUT], 20);
-    expect(first.some((e) => e.k === 'special' && e.shape === 'beam')).toBe(true);
+    expect(first.some((e) => e.k === 'special')).toBe(true);
     expect(first.some((e) => e.k === 'beam' && e.leftMs > 0)).toBe(true);
     expect(s.sides[0].mons[0]!.energy).toBe(0);
     expect(s.sides[1].mons[0]!.hp).toBe(1000);
@@ -703,13 +773,13 @@ describe('Especial', () => {
   });
 
   it('feixe: dá para sair andando ou esquivando', () => {
-    const walk = createArena([mon('a', { fireMs: 60_000 })], [mon('x', { ...trail, maxHp: 1000, speed: 120 })]);
+    const walk = createArena([mon('a', { fireMs: 60_000, attackType: 'flying' })], [mon('x', { ...trail, maxHp: 1000, speed: 120 })]);
     begin(walk);
     walk.sides[0].mons[0]!.energy = 1;
     stepArena(walk, [cast, NO_INPUT], 20);
     run60(walk, SV_SPECIAL_WINDUP_MS + 40, NO_INPUT, { dx: 1, dy: 0, switchTo: -1 });
     expect(walk.sides[1].mons[0]!.hp).toBe(1000);
-    const dash = createArena([mon('a', { fireMs: 60_000 })], [mon('x', { ...trail, maxHp: 1000, speed: 40 })]);
+    const dash = createArena([mon('a', { fireMs: 60_000, attackType: 'flying' })], [mon('x', { ...trail, maxHp: 1000, speed: 40 })]);
     begin(dash);
     dash.sides[0].mons[0]!.energy = 1;
     stepArena(dash, [cast, { dx: 1, dy: 0, switchTo: -1, dodge: true }], 20);
@@ -717,12 +787,10 @@ describe('Especial', () => {
     expect(dash.sides[1].mons[0]!.hp).toBe(1000);
   });
 
-  it('nova: quem luta de perto explode em volta de si', () => {
-    expect(specialShapeOf({ moveCategory: 'aura' })).toBe('nova');
-    expect(specialShapeOf({ moveCategory: 'projetil' })).toBe('beam');
-    const s = createArena([mon('a', { moveCategory: 'aura', fireMs: 60_000, attackRadius: 40 })], [mon('x', { ...trail, maxHp: 1000 })]);
+  it('explosão em volta de si: marca o círculo e acerta quem ficou dentro', () => {
+    const s = createArena([mon('a', { attackType: 'normal', moveCategory: 'aura', fireMs: 60_000, attackRadius: 40 })], [mon('x', { ...trail, maxHp: 1000 })]);
     begin(s);
-    s.sides[1].y = s.sides[0].y - SV_SPECIAL_NOVA_RADIUS + 20;
+    s.sides[1].y = s.sides[0].y - 110;
     s.sides[0].mons[0]!.energy = 1;
     expect(stepArena(s, [cast, NO_INPUT], 20).some((e) => e.k === 'telegraph')).toBe(true);
     expect(s.markers).toHaveLength(1);

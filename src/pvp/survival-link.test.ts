@@ -262,10 +262,9 @@ describe('esquiva e Especial no fio', () => {
   it('aceita os eventos novos e recusa os malformados', () => {
     expect(parseEvent({ k: 'dodge', side: 1, x0: 10, y0: 10, x1: 90, y1: 10 })).not.toBeNull();
     expect(parseEvent({ k: 'evade', side: 0 })).not.toBeNull();
-    expect(parseEvent({ k: 'special', side: 0, index: 2, shape: 'nova' })).not.toBeNull();
+    expect(parseEvent({ k: 'special', side: 0, index: 2 })).not.toBeNull();
     expect(parseEvent({ k: 'blink', side: 0, x0: 1, y0: 1, x1: 2, y1: 2, leftMs: 350 })).not.toBeNull();
-    expect(parseEvent({ k: 'special', side: 0, index: 9, shape: 'nova' })).toBeNull();
-    expect(parseEvent({ k: 'special', side: 0, index: 1, shape: 'raio' })).toBeNull();
+    expect(parseEvent({ k: 'special', side: 0, index: 9 })).toBeNull();
     expect(parseEvent({ k: 'dodge', side: 1, x0: -5000, y0: 10, x1: 90, y1: 10 })).toBeNull();
     expect(parseEvent({ k: 'blink', side: 0, x0: 1, y0: 1, x1: 2, y1: 2, leftMs: 99999 })).toBeNull();
   });

@@ -2,7 +2,7 @@ import type { SurvivorUpgradeRarity } from '../core/survivor-types';
 import { POKEMON_TYPES } from '../core/pokemon-data';
 import type { PokemonType } from '../core/pokemon-data';
 import type { MoveCategory, MoveEffect } from '../core/survivor-moves';
-import { SV_ARENA_H, SV_ARENA_W, SV_LIMITS, SV_MAX_TEAM } from '../core/survivor-pvp';
+import { SV_ARENA_H, SV_ARENA_W, SV_LIMITS, SV_MAX_TEAM, SV_SNAP_MAX_MARKERS, SV_SNAP_MAX_SHOTS } from '../core/survivor-pvp';
 import type { ArenaEvent, ArenaInput, ArenaSnapshot, ArenaWinner, SvAttackForm, SvMonSpec } from '../core/survivor-pvp';
 
 /**
@@ -151,7 +151,7 @@ function parseSideSnap(v: unknown): ArenaSnapshot['sides'][0] | null {
 export function parseSvSnapshot(v: unknown): ArenaSnapshot | null {
   if (!isObj(v) || !isInt(v.tick, 0, 1e9) || !isNum(v.timeMs, 0, 1e7) || !isNum(v.countdownMs, 0, 60000)) return null;
   const winner = parseWinner(v.winner);
-  if (winner === undefined || !Array.isArray(v.sides) || v.sides.length !== 2 || !Array.isArray(v.shots) || v.shots.length > 160 || !Array.isArray(v.markers) || v.markers.length > 16) return null;
+  if (winner === undefined || !Array.isArray(v.sides) || v.sides.length !== 2 || !Array.isArray(v.shots) || v.shots.length > SV_SNAP_MAX_SHOTS || !Array.isArray(v.markers) || v.markers.length > SV_SNAP_MAX_MARKERS) return null;
   const a = parseSideSnap(v.sides[0]);
   const b = parseSideSnap(v.sides[1]);
   if (!a || !b) return null;
@@ -164,11 +164,20 @@ export function parseSvSnapshot(v: unknown): ArenaSnapshot | null {
   const markers: ArenaSnapshot['markers'] = [];
   for (const marker of v.markers) {
     if (!isObj(marker) || !isInt(marker.id, 0, 1e9) || !isSide(marker.side) || !isNum(marker.x, 0, SV_ARENA_W) || !isNum(marker.y, 0, SV_ARENA_H)) return null;
-    if (!isNum(marker.radius, 18, 160) || !isType(marker.type) || !isNum(marker.leftMs, 0, 1500)) return null;
-    markers.push({ id: marker.id, side: marker.side, x: marker.x, y: marker.y, radius: marker.radius, type: marker.type, leftMs: marker.leftMs });
+    // O raio vale para círculo e para o alcance do cone; a aura de raio mínimo fica em 14,4.
+    if (!isNum(marker.radius, 8, 400) || !isType(marker.type) || !isNum(marker.leftMs, 0, 1500)) return null;
+    if ((marker.totalMs !== undefined && !isNum(marker.totalMs, 0, 2000)) || (marker.angle !== undefined && !isNum(marker.angle, -7, 7)) || (marker.kind !== undefined && marker.kind !== 'aura' && marker.kind !== 'cone')) return null;
+    markers.push({
+      id: marker.id, side: marker.side, x: marker.x, y: marker.y, radius: marker.radius, type: marker.type, leftMs: marker.leftMs,
+      ...(marker.totalMs !== undefined ? { totalMs: marker.totalMs } : {}), ...(marker.kind ? { kind: marker.kind } : {}), ...(marker.angle !== undefined ? { angle: marker.angle } : {}), ...(marker.special === true ? { special: true } : {}),
+    });
   }
   return { tick: v.tick, timeMs: v.timeMs, countdownMs: v.countdownMs, winner, sides: [a, b], shots, markers };
 }
+
+/** Ponto de saída opcional do golpe preparado: um anfitrião que não manda continua valendo. */
+const isPlace = (e: Record<string, unknown>): boolean => (e.x === undefined && e.y === undefined) || (isNum(e.x, 0, SV_ARENA_W) && isNum(e.y, 0, SV_ARENA_H));
+const placeOf = (e: Record<string, unknown>): { x?: number; y?: number } => (typeof e.x === 'number' && typeof e.y === 'number' ? { x: e.x, y: e.y } : {});
 
 function parseEvents(v: unknown): ArenaEvent[] | null {
   if (!Array.isArray(v) || v.length > 40) return null;
@@ -182,14 +191,14 @@ function parseEvents(v: unknown): ArenaEvent[] | null {
     else if (e.k === 'attack' && isInt(e.index, 0, SV_MAX_TEAM - 1)) out.push({ k: 'attack', side: e.side, index: e.index });
     else if (e.k === 'guard') out.push({ k: 'guard', side: e.side });
     else if (e.k === 'block') out.push({ k: 'block', side: e.side });
-    else if (e.k === 'cone' && isNum(e.angle, -7, 7) && isNum(e.range, 0, 600)) out.push({ k: 'cone', side: e.side, angle: e.angle, range: e.range });
-    else if (e.k === 'pulse' && isNum(e.radius, 0, 400)) out.push({ k: 'pulse', side: e.side, radius: e.radius });
+    else if (e.k === 'cone' && isNum(e.angle, -7, 7) && isNum(e.range, 0, 600) && isPlace(e)) out.push({ k: 'cone', side: e.side, angle: e.angle, range: e.range, ...placeOf(e) });
+    else if (e.k === 'pulse' && isNum(e.radius, 0, 400) && isPlace(e)) out.push({ k: 'pulse', side: e.side, radius: e.radius, ...placeOf(e) });
     else if (e.k === 'blink' && isNum(e.x0, 0, SV_ARENA_W) && isNum(e.y0, 0, SV_ARENA_H) && isNum(e.x1, 0, SV_ARENA_W) && isNum(e.y1, 0, SV_ARENA_H) && (e.leftMs === undefined || isNum(e.leftMs, 0, 1000))) out.push({ k: 'blink', side: e.side, x0: e.x0, y0: e.y0, x1: e.x1, y1: e.y1, ...(typeof e.leftMs === 'number' ? { leftMs: e.leftMs } : {}) });
     else if (e.k === 'dodge' && isNum(e.x0, 0, SV_ARENA_W) && isNum(e.y0, 0, SV_ARENA_H) && isNum(e.x1, 0, SV_ARENA_W) && isNum(e.y1, 0, SV_ARENA_H)) out.push({ k: 'dodge', side: e.side, x0: e.x0, y0: e.y0, x1: e.x1, y1: e.y1 });
     else if (e.k === 'evade') out.push({ k: 'evade', side: e.side });
-    else if (e.k === 'special' && isInt(e.index, 0, SV_MAX_TEAM - 1) && (e.shape === 'beam' || e.shape === 'nova')) out.push({ k: 'special', side: e.side, index: e.index, shape: e.shape });
+    else if (e.k === 'special' && isInt(e.index, 0, SV_MAX_TEAM - 1)) out.push({ k: 'special', side: e.side, index: e.index });
     else if (e.k === 'beam' && isNum(e.x0, -700, SV_ARENA_W + 700) && isNum(e.y0, -700, SV_ARENA_H + 700) && isNum(e.x1, -700, SV_ARENA_W + 700) && isNum(e.y1, -700, SV_ARENA_H + 700) && isNum(e.width, 4, 60) && isNum(e.leftMs, 0, 2000)) {
-      out.push({ k: 'beam', side: e.side, x0: e.x0, y0: e.y0, x1: e.x1, y1: e.y1, width: e.width, leftMs: e.leftMs });
+      out.push({ k: 'beam', side: e.side, x0: e.x0, y0: e.y0, x1: e.x1, y1: e.y1, width: e.width, leftMs: e.leftMs, ...(e.multi === true ? { multi: true } : {}) });
     } else return null;
   }
   return out;
