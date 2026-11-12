@@ -82,7 +82,7 @@ import type { Sprite, SpriteAsset } from '../village/survivor-sprite';
 import { SoundEngine } from '../box/sound';
 import { survivorRegionLabel } from '../core/survivor-regions';
 import { survivorBiomeAt, survivorBiomeLabel } from '../core/survivor-biomes';
-import { resolveSurvivorLandscapeMove } from '../core/survivor-collision';
+import { resolveSurvivorLandscapeMove, unstickSurvivorItems } from '../core/survivor-collision';
 import { createSurvivorLandscape, planSurvivorFloor, SURVIVOR_LANDSCAPE_CELL } from '../village/survivor-landscape';
 import { REGIONAL_ENCOUNTERS, REGIONAL_ENEMY_SPRITES, REGIONAL_KIND_COUNT, regionalEnemyDexId } from '../core/survivor-encounters';
 import { survivorRegionAt } from '../core/survivor-regions';
@@ -226,6 +226,10 @@ function watchFrameCost(dtMs: number, fps: number): void {
 // A arte é um setor repetível: o mundo cresce sem ampliar árvores, itens ou a textura de cada canvas.
 const drawLandscape = createSurvivorLandscape(SURVIVOR_LANDSCAPE_TILE_W, SURVIVOR_LANDSCAPE_TILE_H);
 const collisionPlans = new Map<number, ReturnType<typeof planSurvivorFloor>>();
+/** Itens já conferidos contra a grade atual (refeito quando a região, e com ela a grade, muda). */
+let itemsChecked = new WeakSet<object>();
+let lastItemGrid: unknown = null;
+const ITEM_RADIUS = 10;
 function landscapeCollisionPlan(elapsedMs: number, runSeed: number) {
   const { current } = survivorRegionAt(elapsedMs, runSeed);
   let plan = collisionPlans.get(current);
@@ -3278,6 +3282,16 @@ function loop(ts: number): void {
       );
       s.player.x = resolved.x;
       s.player.y = resolved.y;
+      // Nada que dá para pegar fica dentro de árvore ou rocha: quem nasceu ali vai para a clareira mais perto.
+      const grid = landscapeCollisionPlan(s.elapsedMs, s.runSeed);
+      if (grid.solid !== lastItemGrid) {
+        lastItemGrid = grid.solid;
+        itemsChecked = new WeakSet();
+      }
+      unstickSurvivorItems(grid, s.orbs, ITEM_RADIUS, itemsChecked);
+      unstickSurvivorItems(grid, s.artifacts, ITEM_RADIUS, itemsChecked);
+      if (s.keyDrops) unstickSurvivorItems(grid, s.keyDrops, ITEM_RADIUS, itemsChecked);
+      if (s.chests) unstickSurvivorItems(grid, s.chests, ITEM_RADIUS + 6, itemsChecked);
     }
     const movedX = s.player.x - beforePlayerPosition.x;
     const movedY = s.player.y - beforePlayerPosition.y;

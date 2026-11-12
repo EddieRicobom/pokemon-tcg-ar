@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { nearestSurvivorLandscapeFreePoint, resolveSurvivorLandscapeMove, survivorCircleHitsLandscape } from './survivor-collision';
+import { nearestSurvivorLandscapeFreePoint, resolveSurvivorLandscapeMove, survivorCircleHitsLandscape, unstickSurvivorItems } from './survivor-collision';
 
 const grid = {
   cols: 4,
@@ -34,5 +34,20 @@ describe('colisão da paisagem da Torre', () => {
     const sliding = resolveSurvivorLandscapeMove(grid, { x: 8, y: 8 }, { x: 40, y: 40 }, 6);
     expect(sliding.y).toBeGreaterThan(8);
     expect(survivorCircleHitsLandscape(grid, sliding.x, sliding.y, 6)).toBe(false);
+  });
+});
+
+describe('itens presos na paisagem', () => {
+  it('tira da rocha só quem está preso, uma vez, e deixa os livres onde estão', () => {
+    const stuck = { x: 24, y: 24 };
+    const free = { x: 4, y: 4 };
+    const checked = new WeakSet<object>();
+    expect(unstickSurvivorItems(grid, [stuck, free], 4, checked)).toBe(1);
+    expect(survivorCircleHitsLandscape(grid, stuck.x, stuck.y, 4)).toBe(false);
+    expect(free).toEqual({ x: 4, y: 4 });
+    // Já conferidos: não roda de novo.
+    stuck.x = 24;
+    stuck.y = 24;
+    expect(unstickSurvivorItems(grid, [stuck, free], 4, checked)).toBe(0);
   });
 });

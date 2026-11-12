@@ -2204,8 +2204,8 @@ function drain(state: SurvivorState, hits: number, move: SurvivorMove): void {
 }
 
 const TRAIL_DISTANCE_TO_CHARGE = 150 * 15;
-const TRAIL_DRAW_MS = 4000;
-const TRAIL_LIFE_MS = 3500;
+const TRAIL_DRAW_MS = 6500;
+const TRAIL_LIFE_MS = 5000;
 const TRAIL_POINT_SPACING = 12;
 const TRAIL_TICK_MS = 420;
 /** Enquanto a Trilha esta sendo desenhada, o jogador anda 25% mais rapido (ate acabar e voltar a carregar). */

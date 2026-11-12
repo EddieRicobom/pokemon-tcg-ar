@@ -78,3 +78,23 @@ export function resolveSurvivorLandscapeMove(grid: SurvivorCollisionGrid, from: 
   }
   return { x, y };
 }
+
+/**
+ * Itens no chão (orbes, artefatos, chaves, baús) que nasceram dentro de árvore ou rocha vão para a clareira mais próxima:
+ * nenhum item fica preso onde o Pokémon não alcança. `checked` guarda quem já foi conferido, para não repetir por quadro.
+ * Devolve quantos foram movidos.
+ */
+export function unstickSurvivorItems(grid: SurvivorCollisionGrid, items: readonly SurvivorPoint[], radius: number, checked?: WeakSet<object>): number {
+  let moved = 0;
+  for (const item of items) {
+    if (checked?.has(item)) continue;
+    checked?.add(item);
+    if (!survivorCircleHitsLandscape(grid, item.x, item.y, radius)) continue;
+    const free = nearestSurvivorLandscapeFreePoint(grid, item, radius);
+    if (free.x === item.x && free.y === item.y) continue;
+    (item as SurvivorPoint).x = free.x;
+    (item as SurvivorPoint).y = free.y;
+    moved++;
+  }
+  return moved;
+}

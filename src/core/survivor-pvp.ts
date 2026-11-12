@@ -59,8 +59,8 @@ export const SV_GUARD_MS = 2000;
 export const SV_GUARD_COOLDOWN_MS = 10_000;
 /** Trilha: a corrida enche a faixa em 2250 px andados; a arena é bem menor. O resto vem do golpe da corrida. */
 export const SV_TRAIL_DISTANCE = 700;
-export const SV_TRAIL_DRAW_MS = 4000;
-export const SV_TRAIL_LIFE_MS = 3500;
+export const SV_TRAIL_DRAW_MS = 6500;
+export const SV_TRAIL_LIFE_MS = 5000;
 export const SV_TRAIL_POINT_SPACING = 12;
 export const SV_TRAIL_TICK_MS = 420;
 export const SV_TRAIL_SPEED_MULTIPLIER = 1.25;
