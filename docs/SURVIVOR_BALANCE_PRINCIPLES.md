@@ -521,3 +521,52 @@ próximo alvo, e não foi mexido aqui porque o pedido era Órbita e Foco.
 **Custo:** o Foco fica menos punido por carregar; quem já jogava bem com ele ganha folga. **Quem pode ser prejudicado:**
 a Órbita afasta os comuns do anel e pode acertar um pouco menos em multidão fechada (os abates subiram na amostra, 993 → 1.032).
 Falta sessão humana em celular.
+
+## Eventos-relâmpago — 12/11/2026
+
+Hipótese: entre um chefe e um treinador, a corrida vira uma rotina de andar em círculo. Momentos curtos e legíveis, com
+escolha e recompensa dos sistemas que já existem, dão picos de atenção sem empilhar ameaça. Lógica em
+`src/core/survivor-surges.ts` (testes em `survivor-surges.test.ts`); o primeiro evento chega aos 2:30 jogados e os
+seguintes a cada 105 s. Cada volta de quatro passa por todos os tipos, embaralhados por um hash da semente (não consome o
+RNG de combate). O evento espera 15 s se houver time de treinador ou lendário sombrio em campo, ou o chefão final a menos
+de 30 s. Desligado no PvP, no BONK e no laboratório.
+
+| Evento | Regra | Prêmio e teto |
+| --- | --- | --- |
+| Chuva de orbes | 20 orbes caem em 9 s, a 50–230 px de você; a sombra avisa 0,7 s antes | orbes de 6 a 14 de XP (pares, +2 a cada 4 min); no máximo 280 de XP por chuva |
+| Revoada | só depois de 4 min; faixa vermelha avisada por 1,8 s; 10 Pokémon com 40% da vida e 45% do dano de um comum cruzam 1.120 px em linha reta | cada um dá o orbe normal; quem não cai sai sem deixar nada; derrubar todos deixa 1 artefato |
+| Amigo selvagem | um Pokémon do elenco da região espera 12 s; encostar faz ele ajudar por 24 s, um golpe a cada 0,7 s em quem estiver a até 260 px | 55% do dano do golpe principal por golpe; sem vida nem hitbox, não ocupa vaga de apoio |
+| Desafio relâmpago | baliza opcional por 15 s; encostar aceita "derrote N em 20 s", com N = abates do último minuto levados a 20 s com folga de 30%, entre 8 e 40 | 1 chave de baú e 4 orbes de 10; falhar não tira nada |
+
+**Medição** (mesmo comando da seção anterior, 12 sementes, com os eventos ligados; o robô vai até o amigo e a baliza
+quando não há dois inimigos a menos de 120 px; média restrita e p10 na política de alcance, comparados com a tabela
+"Depois" da seção anterior):
+
+| Forma | Sem eventos | Com eventos | p10 sem → com |
+| --- | ---: | ---: | ---: |
+| Projétil | 572 | 546 | 341 → 343 |
+| Aura | 532 | 464 | 294 → 237 |
+| Área | 609 | 589 | 385 → 333 |
+| Cone | 677 | 703 | 484 → 720 |
+| Órbita | 611 | 617 | 330 → 364 |
+| Foco | 522 | 562 | 359 → 347 |
+| Rajada | 598 | 586 | 366 → 364 |
+| Teleporte | 430 | 446 | 72 → 72 |
+| Trilha | 445 | 428 | 240 → 186 |
+
+A distância entre a melhor e a pior forma fica em **1,64×** (Cone 703 / Trilha 428), dentro do teto de 1,67×; na
+política evasiva, 1,46×. Os eventos mudam a ordem do RNG a partir de 2:30, então cada corrida passa a ser outra e parte da
+diferença é sorteio (±10% com 12 sementes). A queda da Aura (−13%) e do p10 da Trilha passa disso e fica como sinal a
+olhar: são as duas formas que não se afastam da multidão, e o robô sai do lugar para buscar o amigo e a baliza. Baixar o
+dano da revoada de 60% para 45% não mudou nenhum número da Aura e da Trilha nessas sementes (as mortes delas não vêm da
+revoada). Se a sessão humana confirmar, o próximo passo é dar à Aura e à Trilha um retorno próprio nos eventos (por
+exemplo, a chuva caindo mais perto de quem está cercado), não cortar o evento.
+
+**Desenho:** sombra e orbe caindo, faixa com setas na direção do voo, anel verde com o sprite real e um coração para o
+amigo, baliza dourada com contorno escuro (some na areia sem ele). Sem `shadowBlur` nem gradiente por quadro; no Modo Rotom
+a chuva vira só sombras e nada pulsa com movimento reduzido. Sons já existentes (`survivor-level`, `survivor-boss`,
+`survivor-pickup`, `success`) e o letreiro de sempre; o chip do HUD mostra tempo, direção e o placar do desafio.
+
+**Custo e quem pode ser prejudicado:** mais XP e itens para quem já vai bem (o Cone chega ao teto em 93% das corridas do
+robô). Formas lentas e de contato pagam o desvio. Falta sessão humana em celular, principalmente para ver se a faixa da
+revoada se lê a tempo no tamanho de tela real.

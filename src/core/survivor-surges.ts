@@ -50,9 +50,12 @@ export const SWARM_SIZE = 10;
 export const SWARM_SPEED = 230;
 /** Distância percorrida pela revoada; quem não cair sai da arena sem dar nada. */
 export const SWARM_TRAVEL = 1120;
-/** Membros frágeis: 40% da vida e 60% do dano de um inimigo comum do mesmo momento. */
+/**
+ * Membros frágeis: 40% da vida e 45% do dano de um inimigo comum do mesmo momento. Com 60% de dano, Aura e Trilha (que
+ * não fogem da faixa) perdiam p10 na medição de 12/11/2026; a revoada é para colher, não para punir quem fica.
+ */
 export const SWARM_HP_FACTOR = 0.4;
-export const SWARM_DAMAGE_FACTOR = 0.6;
+export const SWARM_DAMAGE_FACTOR = 0.45;
 
 /** Amigo selvagem: 12 s para encostar nele, 24 s de ajuda, um golpe a cada 0,7 s em quem estiver a até 260 px. */
 export const FRIEND_OFFER_MS = 12_000;
