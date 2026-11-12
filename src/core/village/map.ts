@@ -46,6 +46,14 @@ export interface VillageMap {
 }
 
 /** O prédio que ocupa o bloco (x, y), se houver. */
+/**
+ * O bloco a mirar quando se toca num prédio: o que fica logo acima da porta. É parte do prédio, então chegar ao lado
+ * dele e apertar A abre o prédio; a porta em si é chão livre e não aceita interação.
+ */
+export function buildingTapTile(building: Pick<Building, 'door'>): { x: number; y: number } {
+  return { x: building.door.x, y: building.door.y - 1 };
+}
+
 export function buildingAt(map: VillageMap, x: number, y: number): Building | null {
   return map.buildings.find((b) => x >= b.x && x < b.x + b.w && y >= b.y && y < b.y + b.h) ?? null;
 }

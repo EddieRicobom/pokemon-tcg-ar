@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { seededRng } from '../battle';
 import { bookPage, moodOf, unlocksAt } from './book';
 import {
-  add, claimFriendMilestones, dislikeOf, emptyVillage, favoriteOf, FRIEND_LEVELS, FRIEND_LOSS, friendLevel, friendOf, friendProgressText, gainFriendship, giveGift, normalizeVillage, talk, TALK_FRIENDSHIP,
+  add, claimFriendMilestones, dislikeOf, emptyVillage, favoriteOf, FRIEND_LEVELS, FRIEND_LOSS, friendLevel, friendOf, friendProgressText, gainFriendship, giveGift, normalizeVillage, talk, TALK_COINS, TALK_FRIENDSHIP,
 } from './life';
 import { generateVillage } from './map';
 import { L } from './moments/kit';
@@ -12,11 +12,36 @@ import type { VillageRequest } from './requests';
 import { FRIEND_MILESTONE_TPL, makeEnv, MOMENT_FRIEND_SCALE, recentGossip, recordFriendMilestone, resolveScene, sceneOfTemplate } from './social';
 import type { Actor } from './social';
 import { villageSummary } from './summary';
+import { applyEvent, emptyTrainer, XP } from '../trainer';
 
 const map = generateVillage(20261014);
 const fresh = () => emptyVillage(20261014, map.spawn);
 const DAY = '2026-10-14';
 const dayN = (n: number) => `2026-10-${String(14 + n).padStart(2, '0')}`;
+
+describe('recompensa da primeira conversa do dia', () => {
+  it('continua sendo a primeira do dia com a amizade cheia, sem amizade a ganhar', () => {
+    const s = fresh();
+    friendOf(s, 'p').points = 100;
+    expect(talk(s, 'p', 'P', [], DAY, 12, () => 0.9)).toMatchObject({ first: true, gained: 0 });
+    expect(talk(s, 'p', 'P', [], DAY, 13, () => 0.9).first).toBe(false);
+  });
+
+  it('as moedas vêm de duas fontes declaradas: bônus fixo da conversa e XP que vira moeda, este com teto diário', () => {
+    expect(TALK_COINS).toBe(5);
+    expect(XP.villageTalk).toBe(5);
+    let trainer = emptyTrainer();
+    const xpByTalk: number[] = [];
+    for (let i = 0; i < XP.villagePerDay + 2; i++) {
+      const before = trainer.xp;
+      trainer = applyEvent(trainer, { type: 'village', action: 'talk' }, DAY).state;
+      xpByTalk.push(trainer.xp - before);
+    }
+    expect(xpByTalk.slice(0, XP.villagePerDay).every((xp) => xp >= XP.villageTalk)).toBe(true);
+    // Passado o teto, sobra só o bônus fixo (missões e conquistas à parte, que têm XP próprio).
+    expect(xpByTalk.at(-1)).toBe(0);
+  });
+});
 
 describe('nível de amizade e caminho até o próximo marco', () => {
   it('mostra quanto falta para o próximo nível e, depois de «Melhor amigo», para a amizade máxima', () => {

@@ -1201,6 +1201,11 @@ export interface ChoiceView {
   options: { label: string; needs?: { item: ItemId; qty: number } }[];
 }
 
+/** A opção paga com item: o que o Conselho reservou não conta, igual a `resolveScene`, que recusaria o gasto. */
+export function sceneOptionLacks(state: VillageState, needs: { item: ItemId; qty: number } | undefined): boolean {
+  return !!needs && availableCount(state, needs.item) < needs.qty;
+}
+
 export function sceneChoice(scene: Scene): ChoiceView | null {
   const ch = scene.tpl.choice;
   if (!ch) return null;

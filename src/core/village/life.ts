@@ -734,6 +734,8 @@ const AGAIN_LINES: Record<number, (name: string) => string> = {
 
 export interface Talk {
   text: string;
+  /** É a primeira conversa de hoje? Vale mesmo com a amizade no máximo, quando `gained` é 0. */
+  first: boolean;
   gained: number;
   /** Amizade perdida antes da conversa de hoje (pedido sem resposta, muito tempo sem aparecer). */
   lost: number;
@@ -801,7 +803,7 @@ export function talk(s: VillageState, id: string, name: string, types: readonly 
   const req = f.request && f.request.day === day && !f.request.done ? f.request : null;
   if (req) text += ` Ah... você teria ${req.qty} ${itemName(req.item)}? Eu ia adorar!`;
   else if (!first && !remembers) text = AGAIN_LINES[level]!(name);
-  return { text, gained, lost, request: req };
+  return { text, first, gained, lost, request: req };
 }
 
 export interface Gift {

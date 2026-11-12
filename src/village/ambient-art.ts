@@ -178,6 +178,43 @@ export function drawRainbow(ctx: CanvasRenderingContext2D, width: number, height
   ctx.restore();
 }
 
+/** Bando de pássaros em V, com a sombra correndo pelo chão bem abaixo deles. */
+export function drawFlock(ctx: CanvasRenderingContext2D, birds: readonly { x: number; y: number; flap: number }[], width: number, height: number, scale: number, alpha: number): void {
+  if (alpha <= 0.01 || birds.length === 0) return;
+  const size = 4 * scale;
+  ctx.save();
+  ctx.lineCap = 'round';
+  ctx.lineWidth = Math.max(1, scale * 0.7);
+  ctx.strokeStyle = `rgba(34,40,62,${(0.85 * alpha).toFixed(3)})`;
+  ctx.fillStyle = `rgba(18,24,42,${(0.18 * alpha).toFixed(3)})`;
+  for (const bird of birds) {
+    const x = bird.x * width;
+    const y = bird.y * height;
+    ctx.beginPath();
+    ctx.ellipse(x + size, y + height * 0.14, size * 0.9, size * 0.32, 0, 0, Math.PI * 2);
+    ctx.fill();
+    const wing = size * (0.22 + bird.flap * 0.38);
+    ctx.beginPath();
+    ctx.moveTo(x - size, y - wing);
+    ctx.lineTo(x, y);
+    ctx.lineTo(x + size, y - wing);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+/** Mariposas em volta de um poste aceso: três pontinhos sem nenhum estado guardado. */
+export function drawLampMoths(ctx: CanvasRenderingContext2D, x: number, y: number, now: number, scale: number, power: number, seed: number): void {
+  if (power <= 0.05) return;
+  const size = Math.max(1, Math.round(scale * 0.6));
+  ctx.fillStyle = `rgba(255,236,186,${(0.7 * Math.min(1, power * 1.8)).toFixed(3)})`;
+  for (let i = 0; i < 3; i++) {
+    const angle = now / (380 + i * 140) + seed * 2.3 + i * 2.1;
+    const radius = (5 + i * 2.5 + Math.sin(now / 600 + seed + i) * 1.5) * scale;
+    ctx.fillRect(Math.round(x + Math.cos(angle) * radius), Math.round(y + Math.sin(angle * 1.4) * radius * 0.55), size, size);
+  }
+}
+
 /** Brilho em cruz de quatro pontas, que pisca (estrelinhas de magia, orvalho e reflexos). */
 export function drawSparkle(ctx: CanvasRenderingContext2D, x: number, y: number, size: number, alpha: number, rgb = '255,248,210'): void {
   if (alpha <= 0.01) return;

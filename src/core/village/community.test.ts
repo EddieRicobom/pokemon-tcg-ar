@@ -1,13 +1,44 @@
 import { describe, expect, it } from 'vitest';
 import { add, cook, emptyVillage, giveGift, normalizeVillage, sell } from './life';
-import { advanceCommunity, communityForecast, COMMUNITY_RULES, decideCommunityProject, normalizeCommunity, socialOpportunityFromMemories } from './community';
+import { advanceCommunity, communityDayDigest, communityForecast, COMMUNITY_RULES, decideCommunityProject, describeConsumedFood, normalizeCommunity, socialOpportunityFromMemories } from './community';
 import { scoreActivity } from './vocations';
 import type { CommunityResident } from './community';
 const population = (actors: CommunityResident[], min: number): CommunityResident[] => [...actors, ...Array.from({ length: Math.max(0, min - actors.length) }, (_, i) => ({ id: `vizinho-${i}` }))];
 
 const fresh = () => emptyVillage(9, { x: 10, y: 10 });
 
+describe('aviso do que a virada do dia gastou', () => {
+  it('diz a comida que saiu da mochila e a manutenção paga, somando os dias', () => {
+    const cycles = [
+      { consumed: [{ item: 'oran', qty: 2 }], maintenancePaid: 14 },
+      { consumed: [{ item: 'oran', qty: 1 }, { item: 'salada', qty: 1 }], maintenancePaid: 14 },
+    ];
+    expect(communityDayDigest(cycles.slice(0, 1))).toBe('Ao virar o dia, os moradores comeram 2 Fruta Oran da sua mochila e a manutenção custou 14 moedas.');
+    expect(communityDayDigest(cycles)).toBe('Nos 2 dias em que você esteve fora, os moradores comeram 3 Fruta Oran e 1 Salada fresquinha da sua mochila e a manutenção custou 28 moedas.');
+  });
+
+  it('não inventa aviso quando nada foi gasto', () => {
+    expect(communityDayDigest([])).toBe('');
+    expect(communityDayDigest([{ consumed: [], maintenancePaid: 0 }])).toBe('');
+    expect(communityDayDigest([{ consumed: [], maintenancePaid: 5 }])).toBe('Ao virar o dia, a manutenção custou 5 moedas.');
+  });
+
+  it('resume listas longas sem esconder que há mais', () => {
+    const consumed = ['oran', 'pecha', 'salada', 'pipoca', 'torta'].map((item, i) => ({ item, qty: 5 - i }));
+    expect(describeConsumedFood(consumed)).toMatch(/ e mais 1 tipo\(s\)$/);
+  });
+});
+
 describe('economia diária da comunidade', () => {
+  it('a previsão de dias não conta a comida reservada para o Conselho', () => {
+    const state = fresh();
+    add(state, 'oran', 6);
+    const council = state.community.council as unknown[];
+    council.push({ id: 'p', kind: 'cozinha-reforco', status: 'apoiado', ingredients: [{ item: 'oran', qty: 3 }] });
+    const forecast = communityForecast(state, ['a', 'b']);
+    expect(forecast).toMatchObject({ foodTarget: 3, foodAvailable: 3, foodReservedForCouncil: 3, reserveDaysAtCurrentStock: 1, mealsAtCurrentStock: 1 });
+  });
+
   it('estima a população ativa por ID, sem contar duplicatas nem acervo fora da Vila', () => {
     const state = fresh();
     const estimate = communityForecast(state, ['carta:1', 'digital:1', 'carta:1']);
