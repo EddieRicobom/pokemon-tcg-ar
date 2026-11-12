@@ -5,7 +5,8 @@ import { attackProfile, moveFor } from './survivor-moves';
 import { chooseSurvivorSpecial, chooseSurvivorSpecialBranch } from './survivor-specials';
 import type { BaseStats } from './pokemon-data';
 import {
-  FRIEND_HELP_MS, FRIEND_OFFER_MS, ORB_RAIN_DROPS, orbRainValue, SURGE_EVERY_MS, SURGE_FIRST_MS, surgeHudText, surgeKindAt,
+  FRIEND_APPROACH_SPEED, FRIEND_HELP_MS, FRIEND_OFFER_MS, ORB_RAIN_CLOSE_MAX_DIST, ORB_RAIN_CLOSE_MIN_DIST, ORB_RAIN_CROWD, ORB_RAIN_MAX_DIST, ORB_RAIN_MIN_DIST, orbRainReach,
+  SWARM_LANE_HALF, SWARM_LANE_OFFSET, TRIAL_DRIFT_SPEED, TRIAL_TOUCH_RADIUS, ORB_RAIN_DROPS, orbRainValue, SURGE_EVERY_MS, SURGE_FIRST_MS, surgeHudText, surgeKindAt,
   SURVIVOR_SURGE_KINDS, SWARM_DAMAGE_FACTOR, SWARM_HP_FACTOR, SWARM_MIN_MS, SWARM_SIZE, SWARM_WARN_MS, TRIAL_MAX_TARGET,
   TRIAL_MIN_TARGET, TRIAL_MS, TRIAL_OFFER_MS, TRIAL_REWARD_ORB_VALUE, trialTarget,
 } from './survivor-surges';
@@ -132,6 +133,17 @@ describe('Chuva de orbes', () => {
     expect(s.surge).toBeNull();
   });
 
+  it('cercado, a chuva cai perto de você; livre, ela se espalha', () => {
+    const free = quiet();
+    expect(orbRainReach(free)).toEqual([ORB_RAIN_MIN_DIST, ORB_RAIN_MAX_DIST]);
+    for (let i = 0; i < ORB_RAIN_CROWD; i++) target(free, free.player.x + 60, free.player.y + i * 10);
+    expect(orbRainReach(free)).toEqual([ORB_RAIN_CLOSE_MIN_DIST, ORB_RAIN_CLOSE_MAX_DIST]);
+    const { s } = startKind('orb-rain');
+    for (let i = 0; i < 6; i++) target(s, s.player.x + 50, s.player.y + i * 8, 1e9).speed = 0;
+    step(s, 2000);
+    for (const drop of s.surge!.drops!) expect(Math.hypot(drop.x - s.player.x, drop.y - s.player.y)).toBeLessThanOrEqual(ORB_RAIN_CLOSE_MAX_DIST + 1);
+  });
+
   it('valor de cada orbe é par, cresce devagar e tem teto (orçamento de XP limitado)', () => {
     for (let min = 0; min <= 40; min++) {
       const value = orbRainValue(min * 60_000);
@@ -160,6 +172,11 @@ describe('Revoada', () => {
     for (const e of members) {
       expect(Math.hypot(e.swarm!.vx, e.swarm!.vy)).toBeGreaterThan(0);
       expect(e.swarm!.vx * lane.dx + e.swarm!.vy * lane.dy).toBeGreaterThan(0);
+    }
+    // A faixa passa ao lado: nenhum membro voa por cima de onde você estava no aviso.
+    for (const e of members) {
+      const across = Math.abs((e.x - s.player.x) * lane.dy - (e.y - s.player.y) * lane.dx);
+      expect(across).toBeGreaterThanOrEqual(SWARM_LANE_OFFSET - SWARM_LANE_HALF + 10);
     }
     const leader = members[0]!;
     const from = { x: leader.x, y: leader.y };
@@ -195,11 +212,22 @@ describe('Revoada', () => {
 });
 
 describe('Amigo selvagem', () => {
-  it('espera 12 s; se ninguém encostar, vai embora sem efeito', () => {
+  it('vem até quem está parado lutando: ninguém precisa sair da multidão para buscá-lo', () => {
     const { s, events } = startKind('wild-friend');
     expect(surgeEvents(events)[0]).toMatchObject({ kind: 'wild-friend', phase: 'offer' });
+    const friend = s.surge!.friend!;
+    const d0 = Math.hypot(friend.x - s.player.x, friend.y - s.player.y);
+    const out = surgeEvents(step(s, Math.ceil((d0 / FRIEND_APPROACH_SPEED) * 1000) + 200));
+    expect(out.at(-1)).toMatchObject({ kind: 'wild-friend', phase: 'start' });
+  });
+
+  it('quem foge dele por 12 s fica sem ajuda: ele volta para o mato sem efeito', () => {
+    const { s } = startKind('wild-friend');
+    const friend = s.surge!.friend!;
+    const away = { dx: s.player.x - friend.x, dy: s.player.y - friend.y };
     const enemy = target(s, s.player.x + 100, s.player.y, 1e6);
-    const out = surgeEvents(step(s, FRIEND_OFFER_MS + 100));
+    enemy.speed = 0;
+    const out = surgeEvents(step(s, FRIEND_OFFER_MS + 100, away));
     expect(out.at(-1)).toMatchObject({ kind: 'wild-friend', phase: 'fail' });
     expect(enemy.hp).toBe(1e6);
   });
@@ -233,9 +261,17 @@ describe('Desafio relâmpago', () => {
     for (let k = 0; k < 200; k += 7) expect(trialTarget(k + 7)).toBeGreaterThanOrEqual(trialTarget(k));
   });
 
-  it('sem aceitar, a baliza some e nada muda', () => {
+  it('a baliza vem até quem está lutando e o desafio começa quando ela encosta', () => {
     const { s } = startKind('trial');
-    const out = surgeEvents(step(s, TRIAL_OFFER_MS + 100));
+    const d0 = Math.hypot(s.surge!.x! - s.player.x, s.surge!.y! - s.player.y);
+    const out = surgeEvents(step(s, Math.ceil(((d0 - TRIAL_TOUCH_RADIUS) / TRIAL_DRIFT_SPEED) * 1000) + 200));
+    expect(out.at(-1)).toMatchObject({ kind: 'trial', phase: 'start' });
+  });
+
+  it('quem foge da baliza recusa: ela some e nada muda', () => {
+    const { s } = startKind('trial');
+    const away = { dx: s.player.x - s.surge!.x!, dy: s.player.y - s.surge!.y! };
+    const out = surgeEvents(step(s, TRIAL_OFFER_MS + 100, away));
     expect(out.at(-1)).toMatchObject({ kind: 'trial', phase: 'fail' });
     expect(s.keyDrops ?? []).toHaveLength(0);
   });

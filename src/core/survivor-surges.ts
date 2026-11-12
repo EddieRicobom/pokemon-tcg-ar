@@ -4,11 +4,12 @@ import { ARENA_H, ARENA_W, PLAYER_RADIUS } from './survivor-types';
 /**
  * Eventos-relâmpago da Torre: momentos curtos que quebram o ritmo da corrida sem pausar o jogo.
  *
- *  - **Chuva de orbes**: orbes de XP de verdade caem do céu em volta de você, cada um com a sombra marcando onde vai cair.
- *  - **Revoada**: uma coluna de Pokémon frágeis e rápidos atravessa a arena em linha reta, com a faixa avisada antes.
+ *  - **Chuva de orbes**: orbes de XP de verdade caem do céu em volta de você, cada um com a sombra marcando onde vai cair
+ *    (perto de você quando está cercado).
+ *  - **Revoada**: uma coluna de Pokémon frágeis e rápidos atravessa a arena em linha reta, numa faixa avisada ao seu lado.
  *    Derrubar a revoada inteira deixa um artefato.
- *  - **Amigo selvagem**: um Pokémon da região aparece sem atacar; encoste nele e ele luta do seu lado por um tempo.
- *  - **Desafio relâmpago**: uma baliza opcional; encostar aceita "derrote N em 20 s", com N medido pelo seu próprio
+ *  - **Amigo selvagem**: um Pokémon da região aparece sem atacar e vem até você; ao encostar, luta do seu lado por um tempo.
+ *  - **Desafio relâmpago**: uma baliza opcional que vem até você (fuja dela para recusar); encostar aceita "derrote N em 20 s", com N medido pelo seu próprio
  *    ritmo do último minuto. Cumprir dá uma chave de baú e orbes; falhar não tira nada.
  *
  * Lógica pura: o motor (`survivor.ts`) chama `stepSurvivorSurge` e entrega o que só ele sabe fazer pelos `SurgeHooks`.
@@ -38,11 +39,25 @@ export const ORB_RAIN_EVERY_MS = 450;
 export const ORB_RAIN_FALL_MS = 700;
 export const ORB_RAIN_MIN_DIST = 50;
 export const ORB_RAIN_MAX_DIST = 230;
+/**
+ * Cercado (`ORB_RAIN_CROWD` inimigos a até `ORB_RAIN_CROWD_RADIUS`), a chuva cai perto: quem luta de perto não pode sair da
+ * multidão para colher. Medido em 12/11/2026: Aura e Trilha perdiam sobrevivência indo atrás dos eventos.
+ */
+export const ORB_RAIN_CROWD = 4;
+export const ORB_RAIN_CROWD_RADIUS = 150;
+export const ORB_RAIN_CLOSE_MIN_DIST = 24;
+export const ORB_RAIN_CLOSE_MAX_DIST = 100;
 /** Valor de cada orbe da chuva: começa em 6 e sobe 2 a cada 4 min, até 14 (sempre par). */
 export function orbRainValue(elapsedMs: number): number {
   return Math.min(14, 6 + 2 * Math.floor(Math.max(0, elapsedMs) / 240_000));
 }
 
+/**
+ * Revoada: a faixa passa ao lado de você (`SWARM_LANE_OFFSET`), não por cima. Quem ataca de longe colhe dali; quem luta de
+ * perto escolhe entrar. Antes ela cortava o jogador ao meio e as formas de contato pagavam sem escolher.
+ */
+export const SWARM_LANE_OFFSET = 130;
+export const SWARM_LANE_HALF = 80;
 /** Revoada: só depois de 4 min, quando a pessoa já tem build para responder. */
 export const SWARM_MIN_MS = 240_000;
 export const SWARM_WARN_MS = 1800;
@@ -65,11 +80,19 @@ export const FRIEND_ZAP_RANGE = 260;
 /** Fração do dano do golpe principal: o amigo ajuda, não joga por você. */
 export const FRIEND_DAMAGE_FACTOR = 0.55;
 export const FRIEND_TOUCH_RADIUS = 46;
+/** O amigo vem até você (mais devagar que um Pokémon médio): ninguém precisa largar a luta para buscá-lo. */
+export const FRIEND_APPROACH_SPEED = 95;
 
 /** Desafio relâmpago: 15 s para aceitar, 20 s para cumprir. */
 export const TRIAL_OFFER_MS = 15_000;
 export const TRIAL_MS = 20_000;
 export const TRIAL_TOUCH_RADIUS = 58;
+/**
+ * A baliza do desafio vem até você e o desafio começa quando ela encosta: falhar não tira nada, então não há por que
+ * largar a luta para buscá-la. Quem não quiser foge dela até ela se apagar. Medido em 12/11/2026: buscar a baliza custava
+ * p10 à Trilha (morria indo até lá, com 40 a 70 de dano tomado no caminho).
+ */
+export const TRIAL_DRIFT_SPEED = 70;
 export const TRIAL_MIN_TARGET = 8;
 export const TRIAL_MAX_TARGET = 40;
 /** Pede 30% acima do ritmo do último minuto, para 20 s: exige ir atrás da multidão, sem ser impossível. */
@@ -215,8 +238,11 @@ function startSurge(state: SurvivorState, track: SurvivorSurgeTrack, events: Sur
     const sign = surgeRoll(seed, index, 2) < 0.5 ? -1 : 1;
     const dx = horizontal ? sign : 0;
     const dy = horizontal ? 0 : sign;
-    // A faixa passa por onde você está no aviso: dá tempo de sair dela ou de se posicionar para colher.
-    const lane = { x: p.x - dx * SWARM_TRAVEL / 2, y: p.y - dy * SWARM_TRAVEL / 2, dx, dy, half: 70 };
+    // A faixa passa ao lado de onde você está no aviso, de um lado sorteado: dá para colher sem ser atropelado.
+    const side = surgeRoll(seed, index, 7) < 0.5 ? -1 : 1;
+    const ox = -dy * SWARM_LANE_OFFSET * side;
+    const oy = dx * SWARM_LANE_OFFSET * side;
+    const lane = { x: p.x + ox - dx * SWARM_TRAVEL / 2, y: p.y + oy - dy * SWARM_TRAVEL / 2, dx, dy, half: SWARM_LANE_HALF };
     state.surge = { kind, phase: 'warn', index, leftMs: SWARM_WARN_MS, lane, memberIds: [], escaped: 0 };
   } else if (kind === 'wild-friend') {
     const at = pointAround(state, surgeRoll(seed, index, 3) * Math.PI * 2, 170 + surgeRoll(seed, index, 4) * 70);
@@ -237,13 +263,32 @@ function finish(state: SurvivorState, track: SurvivorSurgeTrack, events: Survivo
   events.push({ type: 'surge', kind, phase, ...(value !== undefined ? { value } : {}) });
 }
 
+/** Distância da queda: perto de quem está cercado, mais espalhada para quem está livre para correr. */
+export function orbRainReach(state: Pick<SurvivorState, 'enemies' | 'player'>): [number, number] {
+  let near = 0;
+  for (const e of state.enemies) {
+    if (e.hp > 0 && Math.hypot(e.x - state.player.x, e.y - state.player.y) <= ORB_RAIN_CROWD_RADIUS && ++near >= ORB_RAIN_CROWD) break;
+  }
+  return near >= ORB_RAIN_CROWD ? [ORB_RAIN_CLOSE_MIN_DIST, ORB_RAIN_CLOSE_MAX_DIST] : [ORB_RAIN_MIN_DIST, ORB_RAIN_MAX_DIST];
+}
+
+/** Anda `speed * dt` de `from` na direção de `to`, sem passar de `stopAt` dele. */
+function approach(from: { x: number; y: number }, to: { x: number; y: number }, speed: number, dtMs: number, stopAt: number): void {
+  const d = Math.hypot(to.x - from.x, to.y - from.y);
+  const step = Math.min(Math.max(0, d - stopAt), speed * (dtMs / 1000));
+  if (d <= 0.01 || step <= 0) return;
+  from.x += ((to.x - from.x) / d) * step;
+  from.y += ((to.y - from.y) / d) * step;
+}
+
 function stepOrbRain(state: SurvivorState, surge: SurvivorSurge, dtMs: number): void {
   surge.drops ??= [];
   surge.dropTimerMs = (surge.dropTimerMs ?? 0) - dtMs;
   while ((surge.dropsLeft ?? 0) > 0 && surge.dropTimerMs <= 0) {
     const n = ORB_RAIN_DROPS - (surge.dropsLeft ?? 0);
     const angle = surgeRoll(state.runSeed, surge.index, 200 + n) * Math.PI * 2;
-    const distance = ORB_RAIN_MIN_DIST + surgeRoll(state.runSeed, surge.index, 300 + n) * (ORB_RAIN_MAX_DIST - ORB_RAIN_MIN_DIST);
+    const [min, max] = orbRainReach(state);
+    const distance = min + surgeRoll(state.runSeed, surge.index, 300 + n) * (max - min);
     surge.drops.push({ ...pointAround(state, angle, distance), landInMs: ORB_RAIN_FALL_MS });
     surge.dropsLeft = (surge.dropsLeft ?? 0) - 1;
     surge.dropTimerMs += ORB_RAIN_EVERY_MS;
@@ -267,7 +312,7 @@ function launchSwarm(surge: SurvivorSurge, hooks: SurgeHooks): void {
     // Cunha: o líder na frente, os outros alternando de lado e um pouco atrás.
     const side = i === 0 ? 0 : (i % 2 === 0 ? 1 : -1) * Math.ceil(i / 2);
     const back = Math.ceil(i / 2) * 30;
-    const across = side * 22;
+    const across = side * 14;
     e.x = clamp(lane.x - lane.dx * back - lane.dy * across, 0, ARENA_W);
     e.y = clamp(lane.y - lane.dy * back + lane.dx * across, 0, ARENA_H);
     e.hp = e.maxHp = Math.max(1, Math.round(e.maxHp * SWARM_HP_FACTOR));
@@ -324,6 +369,7 @@ function stepFriend(state: SurvivorState, track: SurvivorSurgeTrack, surge: Surv
   const p = state.player;
   surge.leftMs -= dtMs;
   if (surge.phase === 'offer') {
+    approach(friend, p, FRIEND_APPROACH_SPEED, dtMs, 0);
     if (Math.hypot(friend.x - p.x, friend.y - p.y) <= FRIEND_TOUCH_RADIUS + PLAYER_RADIUS) {
       surge.phase = 'active';
       surge.leftMs = FRIEND_HELP_MS;
@@ -365,7 +411,11 @@ function stepTrial(state: SurvivorState, track: SurvivorSurgeTrack, surge: Survi
   const p = state.player;
   surge.leftMs -= dtMs;
   if (surge.phase === 'offer') {
-    if (Math.hypot((surge.x ?? 0) - p.x, (surge.y ?? 0) - p.y) <= TRIAL_TOUCH_RADIUS) {
+    const beacon = { x: surge.x ?? p.x, y: surge.y ?? p.y };
+    approach(beacon, p, TRIAL_DRIFT_SPEED, dtMs, 0);
+    surge.x = beacon.x;
+    surge.y = beacon.y;
+    if (Math.hypot(beacon.x - p.x, beacon.y - p.y) <= TRIAL_TOUCH_RADIUS) {
       const pace = killsLastMinute(track, state.kills);
       surge.phase = 'active';
       surge.leftMs = TRIAL_MS;

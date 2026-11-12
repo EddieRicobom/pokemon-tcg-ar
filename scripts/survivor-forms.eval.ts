@@ -9,6 +9,9 @@
 // FORMS_RUN_MIN (teto da corrida, min), FORMS_TYPES=0 para pular a matriz de tipos, FORMS_ONLY=orbit,foco para medir só
 // algumas formas (com as mesmas sementes, dá para paralelizar um processo por forma), FORMS_SUPREME=1 para usar o Golpe Supremo
 // e FORMS_SURGES=0 para desligar os eventos-relâmpago (`survivor-surges.ts`), que ficam ligados como no jogo.
+// Diagnóstico dos eventos: FORMS_SURGE_KINDS=orb-rain,swarm,wild-friend,trial deixa só esses tipos (os outros são cancelados
+// no começo, sem prêmio), FORMS_SURGE_DETOUR=1 faz o robô ir ao encontro do amigo e da baliza, FORMS_POLICIES=alcance mede só uma
+// política e FORMS_SKIP_CONTROLLED=1 pula o cenário controlado.
 //
 // O que cada cenário mede (ver `docs/SURVIVOR_BALANCE_PRINCIPLES.md`):
 //  - alvo único: dano útil por segundo contra um alvo parado (sem sobra de dano em quem já morreu);
@@ -44,7 +47,12 @@ const FORMS: readonly MoveCategory[] = ONLY.length ? ALL_FORMS.filter((form) => 
 const STANDARD: BaseStats = { hp: 75, attack: 75, defense: 75, spAttack: 75, spDefense: 75, speed: 75 };
 
 type Policy = 'evasiva' | 'alcance';
-const POLICIES: readonly Policy[] = ['evasiva', 'alcance'];
+const POLICY_FILTER = (process.env.FORMS_POLICIES ?? '').split(',').map((policy) => policy.trim()).filter(Boolean);
+const POLICIES: readonly Policy[] = (['evasiva', 'alcance'] as const).filter((policy) => POLICY_FILTER.length === 0 || POLICY_FILTER.includes(policy));
+const SURGE_KINDS = (process.env.FORMS_SURGE_KINDS ?? '').split(',').map((kind) => kind.trim()).filter(Boolean);
+const SURGE_DETOUR = process.env.FORMS_SURGE_DETOUR === '1';
+/** Primeira semente das corridas (FORMS_SEED_BASE); trocar mede o ruído entre amostras. */
+const SEED_BASE = Number(process.env.FORMS_SEED_BASE ?? 2000);
 
 /** Quem joga: stats e tipo iguais (`controlada`, forma forçada) ou uma espécie real com a forma que a classificação dá. */
 interface Spec {
@@ -266,15 +274,21 @@ function smartPick(s: SurvivorState): string {
     if (id === 'power' || id.startsWith('damage-') || id === 'resonance' || id === 'haste') return 1;
     if (id.startsWith('charge-')) return 1;
     if (id.startsWith('guard-') || id === 'vigor' || id === 'second-wind') return 2;
+    // Dificuldade é escolha voluntária de quem quer mais pressão: sem isto, o robô a pegava no empate e cada nível a mais
+    // (por exemplo, XP dos eventos) virava mais inimigos. FORMS_PICK_DIFFICULTY=1 volta ao comportamento antigo.
+    if (id === 'difficulty' && process.env.FORMS_PICK_DIFFICULTY !== '1') return 9;
     return 3;
   };
   return [...options].sort((a, b) => rank(a.id) - rank(b.id))[0]?.id ?? options[0]?.id ?? '';
 }
 
-/** Amigo selvagem ou baliza de desafio esperando: com o entorno calmo, a pessoa vai até lá (é opcional, como no jogo). */
+/**
+ * Amigo selvagem ou baliza de desafio esperando. Os dois vêm até você; com FORMS_SURGE_DETOUR=1 o robô ainda vai ao encontro
+ * deles quando o entorno está calmo (a medição de 12/11/2026 mostrou que isso custava p10 à Trilha).
+ */
 function surgeDetour(s: SurvivorState): { dx: number; dy: number } | null {
   const surge = s.surge;
-  if (!surge || surge.phase !== 'offer' || crowdSize(s, 120) >= 2) return null;
+  if (!SURGE_DETOUR || !surge || surge.phase !== 'offer' || crowdSize(s, 120) >= 2) return null;
   const at = surge.friend ?? { x: surge.x ?? s.player.x, y: surge.y ?? s.player.y };
   return { dx: at.x - s.player.x, dy: at.y - s.player.y };
 }
@@ -346,20 +360,43 @@ function fixedScenario(spec: Spec, policy: Policy, crowd: boolean): Fixed {
   return { dps: ledger.useful / SECONDS, kills: (kills * 60) / SECONDS };
 }
 
-interface RunResult { survivedMs: number; kills: number; level: number; taken: number; protectedMs: number; capped: boolean }
+interface RunResult {
+  survivedMs: number; kills: number; level: number; taken: number; protectedMs: number; capped: boolean;
+  /** Evento-relâmpago em curso na hora da morte (diagnóstico) e dano recebido durante eventos. */
+  deathSurge?: string;
+  /** Diagnóstico (FORMS_DUMP=1): eventos vividos e o dano recebido em cada tipo de evento. */
+  surgeLog: string[];
+  takenByKind: Record<string, number>;
+  difficulty: number;
+  surgeTaken: number;
+}
 
 function realRun(seed: number, spec: Spec, policy: Policy): RunResult {
   const s = newState(seed, spec, true);
   const ledger = new Ledger(s);
   const memory: ChargeMemory = { holdMs: 0, wantMs: 0 };
   let steps = 0;
+  let surgeTaken = 0;
+  let deathSurge: string | undefined;
+  const surgeLog: string[] = [];
+  const takenByKind: Record<string, number> = {};
   while (!s.over && s.elapsedMs < RUN_CAP_MS) {
     if (++steps > (RUN_CAP_MS / DT) * 4) throw new Error(`Relógio parado em ${s.elapsedMs} ms (${spec.label}, ${policy})`);
     if (resolvePause(s, smartPick)) continue;
+    const surgeBefore = s.surge?.kind;
+    const takenBefore = ledger.taken;
     stepSurvivor(s, control(s, policy, memory), DT);
     ledger.settle(s, DT);
+    if (surgeBefore) {
+      surgeTaken += ledger.taken - takenBefore;
+      const key = `${surgeBefore}:${s.surge?.phase ?? 'fim'}`;
+      takenByKind[key] = (takenByKind[key] ?? 0) + ledger.taken - takenBefore;
+    }
+    if (s.surge && s.surge.kind !== surgeBefore) surgeLog.push(`${Math.round(s.elapsedMs / 1000)}s:${s.surge.kind}`);
+    if (s.over && surgeBefore) deathSurge = surgeBefore;
+    if (s.surge && SURGE_KINDS.length > 0 && !SURGE_KINDS.includes(s.surge.kind)) s.surge = null;
   }
-  return { survivedMs: s.elapsedMs, kills: s.kills, level: s.player.level, taken: ledger.taken, protectedMs: ledger.protectedMs, capped: !s.over };
+  return { survivedMs: s.elapsedMs, kills: s.kills, level: s.player.level, taken: ledger.taken, protectedMs: ledger.protectedMs, capped: !s.over, surgeTaken, surgeLog, takenByKind, difficulty: s.player.difficultyStacks ?? 0, ...(deathSurge ? { deathSurge } : {}) };
 }
 
 const median = (values: number[]): number => {
@@ -383,6 +420,9 @@ function summarize(runs: RunResult[]): Record<string, unknown> {
     danoRecebido: round(median(runs.map((r) => r.taken)), 0),
     protegidoS: round(median(runs.map((r) => r.protectedMs / 1000))),
     noTeto: `${Math.round((runs.filter((r) => r.capped).length / runs.length) * 100)}%`,
+    danoEmEventos: round(median(runs.map((r) => r.surgeTaken)), 0),
+    dificuldadeMedia: round(runs.reduce((a, r) => a + r.difficulty, 0) / runs.length),
+    mortesEmEvento: runs.reduce<Record<string, number>>((acc, r) => { if (r.deathSurge) acc[r.deathSurge] = (acc[r.deathSurge] ?? 0) + 1; return acc; }, {}),
   };
 }
 
@@ -395,15 +435,16 @@ function formRows(specsOf: (form: MoveCategory) => Spec[]): Record<string, unkno
     row['multidaoDps'] = round(median(fixed.map((f) => f.crowd.dps)));
     row['multidaoAbatesMin'] = round(median(fixed.map((f) => f.crowd.kills)), 0);
     for (const policy of POLICIES) {
-      const runs = specs.flatMap((spec) => Array.from({ length: RUNS }, (_, i) => realRun(2000 + i, spec, policy)));
+      const runs = specs.flatMap((spec) => Array.from({ length: RUNS }, (_, i) => realRun(SEED_BASE + i, spec, policy)));
       row[`corrida:${policy}`] = summarize(runs);
+      if (process.env.FORMS_DUMP === '1') row[`dump:${policy}`] = runs.map((r, i) => ({ seed: SEED_BASE + (i % RUNS), esp: specs[Math.floor(i / RUNS)]?.label, s: Math.round(r.survivedMs / 1000), lv: r.level, dif: r.difficulty, morte: r.deathSurge, ev: r.surgeLog.join(' '), dano: Object.fromEntries(Object.entries(r.takenByKind).map(([k, v]) => [k, Math.round(v)])) }));
     }
     return row;
   });
 }
 
 describe('justiça entre as formas de ataque (motor real)', () => {
-  it('controlada: stats e tipo iguais, forma forçada', () => {
+  it.skipIf(process.env.FORMS_SKIP_CONTROLLED === '1')('controlada: stats e tipo iguais, forma forçada', () => {
     const rows = formRows((form) => [controlled(form)]);
     console.log(`FORMAS-CONTROLADA dt=${DT} s=${SECONDS} runs=${RUNS} tetoMin=${RUN_CAP_MS / 60000} ${JSON.stringify(rows)}`);
   }, 3_600_000);

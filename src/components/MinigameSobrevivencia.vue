@@ -707,9 +707,9 @@ const surgeHudTitle = computed(() => {
   const surge = state.value?.surge;
   if (!surge) return '';
   if (surge.kind === 'orb-rain') return 'Orbes de XP caem onde a sombra aparece: corra para pegar.';
-  if (surge.kind === 'swarm') return 'Uma revoada atravessa a faixa marcada em linha reta. Saia dela ou derrube todos para ganhar um artefato.';
-  if (surge.kind === 'wild-friend') return surge.phase === 'offer' ? 'Um Pokémon selvagem amigável: encoste nele para ele lutar do seu lado.' : 'O amigo selvagem ataca quem chega perto até o tempo acabar.';
-  return surge.phase === 'offer' ? 'Desafio opcional: encoste na baliza para aceitar. Falhar não tira nada.' : 'Derrote a quantidade marcada antes do tempo acabar para ganhar uma chave de baú e orbes.';
+  if (surge.kind === 'swarm') return 'Uma revoada cruza a faixa marcada ao seu lado, em linha reta. Derrube todos para ganhar um artefato.';
+  if (surge.kind === 'wild-friend') return surge.phase === 'offer' ? 'Um Pokémon selvagem amigável vem até você: quando ele encostar, luta do seu lado. Fugir dele por 12 s faz ele ir embora.' : 'O amigo selvagem ataca quem chega perto até o tempo acabar.';
+  return surge.phase === 'offer' ? 'Desafio opcional: a baliza vem até você e começa ao encostar. Fuja dela para recusar; falhar não tira nada.' : 'Derrote a quantidade marcada antes do tempo acabar para ganhar uma chave de baú e orbes.';
 });
 const thiefHud = computed(() => {
   const s = state.value;
@@ -1394,15 +1394,15 @@ function announceSurge(ev: Extract<SurvivorEvent, { type: 'surge' }>): void {
     if (ev.phase === 'start') { playSound('survivor-level'); say(`${tag}! Orbes de XP caem onde a sombra aparece.`, 4200); }
     else if (ev.phase === 'end') say(`${tag} acabou.`, 2200);
   } else if (ev.kind === 'swarm') {
-    if (ev.phase === 'warn') { playSound('survivor-boss'); say(`${tag} chegando pela faixa vermelha! Saia dela ou prepare o golpe.`, 3600); }
+    if (ev.phase === 'warn') { playSound('survivor-boss'); say(`${tag} chegando pela faixa vermelha ao seu lado! Derrube todos para ganhar um artefato.`, 3600); }
     else if (ev.phase === 'success') { playSound('success'); say(`${tag} abatida inteira: um artefato caiu perto de você.`, 3800); }
     else if (ev.phase === 'end') say(`${tag} passou${ev.value ? `: ${ev.value} derrubado${ev.value === 1 ? '' : 's'}` : ''}.`, 2600);
   } else if (ev.kind === 'wild-friend') {
-    if (ev.phase === 'offer') { playSound('survivor-pickup'); say(`${tag} apareceu! Encoste nele para ele lutar do seu lado.`, 4200); }
+    if (ev.phase === 'offer') { playSound('survivor-pickup'); say(`${tag} apareceu e vem até você! Quando ele encostar, luta do seu lado.`, 4200); }
     else if (ev.phase === 'start') { playSound('success'); say(`${tag} entrou na luta por 24 s!`, 3200); }
     else if (ev.phase === 'fail') say(`${label.icon} O Pokémon selvagem voltou para o mato.`, 2600);
     else if (ev.phase === 'end') say(`${label.icon} Seu amigo selvagem se despediu.`, 2600);
-  } else if (ev.phase === 'offer') { playSound('survivor-level'); say(`${tag}: encoste na baliza dourada para aceitar. Falhar não tira nada.`, 4600); }
+  } else if (ev.phase === 'offer') { playSound('survivor-level'); say(`${tag}: a baliza dourada vem até você e o desafio começa quando ela encostar. Fuja dela para recusar; falhar não tira nada.`, 4800); }
   else if (ev.phase === 'start') { playSound('survivor-boss'); say(`${tag}: derrote ${ev.value ?? 0} em 20 s!`, 3600); }
   else if (ev.phase === 'success') { playSound('success'); say(`${tag} cumprido: uma chave de baú e orbes para você.`, 4000); }
   else if (ev.phase === 'fail') say(ev.value !== undefined ? `${tag}: faltou pouco (${ev.value} derrotados). Fica para a próxima.` : `${label.icon} A baliza do desafio se apagou.`, 3000);
