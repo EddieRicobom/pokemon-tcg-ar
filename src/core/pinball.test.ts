@@ -1,10 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import { createPinballState, launchPinball, nudgePinball, PINBALL_TARGETS, stepPinball } from './pinball';
+import { createPinballState, launchPinball, nudgePinball, PINBALL_BUMPERS, PINBALL_TARGETS, stepPinball } from './pinball';
 import type { PinballState } from './pinball';
 
 function hitTarget(s: PinballState): void {
   const target = PINBALL_TARGETS[1]!;
   s.ball = { x: target.x, y: target.y, vx: 0, vy: 0 };
+  s.hitCooldown.fill(0);
+  stepPinball(s, { left: false, right: false }, 16);
+}
+function hitBumper(s: PinballState): void {
+  const bumper = PINBALL_BUMPERS[1]!;
+  s.ball = { x: bumper.x, y: bumper.y, vx: 0, vy: 0 };
   s.hitCooldown.fill(0);
   stepPinball(s, { left: false, right: false }, 16);
 }
@@ -39,12 +45,12 @@ describe('pinball da Vila', () => {
     launchPinball(s);
     for (let i = 0; i < 3; i++) hitTarget(s);
     expect(s.mode).toBe('capture');
-    for (let i = 0; i < 5; i++) hitTarget(s);
+    for (let i = 0; i < 3; i++) hitTarget(s);
     expect(s.caught).toBe(1);
     expect(s.mode).toBe('normal');
     for (let i = 0; i < 3; i++) hitTarget(s);
     expect(s.mode).toBe('evolution');
-    for (let i = 0; i < 4; i++) hitTarget(s);
+    for (let i = 0; i < 7; i++) hitBumper(s);
     expect(s.evolved).toBe(1);
     expect(s.ballLevel).toBe(2);
     expect(s.score).toBeGreaterThan(10000);
@@ -90,12 +96,59 @@ describe('pinball da Vila', () => {
     s.caught = 2;
     s.mode = 'capture';
     s.modeMs = 30_000;
-    s.progress = 4;
+    s.progress = 2;
     hitTarget(s);
     expect(s.caught).toBe(3);
     expect(s.mode).toBe('bonus');
-    for (let i = 0; i < 6; i++) hitTarget(s);
+    for (let i = 0; i < 4; i++) hitTarget(s);
     expect(s.multiplier).toBe(2);
     expect(s.mode).toBe('normal');
+  });
+
+  it('lançamento alcança a mesa, faz pontos e não fica preso na canaleta', () => {
+    const s = createPinballState();
+    launchPinball(s);
+    let highest = s.ball.y;
+    for (let i = 0; i < 220; i++) {
+      stepPinball(s, { left: false, right: false }, 16);
+      highest = Math.min(highest, s.ball.y);
+    }
+    expect(highest).toBeLessThan(150);
+    expect(s.score).toBeGreaterThan(0);
+    expect(s.laneHits).toBeGreaterThan(0);
+  });
+
+  it('mantém o progresso da missão depois de perder uma bola', () => {
+    const s = createPinballState();
+    launchPinball(s);
+    for (let i = 0; i < 4; i++) hitTarget(s);
+    expect(s.mode).toBe('capture');
+    expect(s.progress).toBe(1);
+    s.saverMs = 0;
+    s.ball = { x: 180, y: 610, vx: 0, vy: 200 };
+    stepPinball(s, { left: false, right: false }, 16);
+    expect(s.phase).toBe('between');
+    expect(s.mode).toBe('capture');
+    expect(s.progress).toBe(1);
+    launchPinball(s);
+    for (let i = 0; i < 2; i++) hitTarget(s);
+    expect(s.caught).toBe(1);
+  });
+
+  it('partida guiada usa três bolas, alcança captura e evolução sem travar', () => {
+    const s = createPinballState();
+    launchPinball(s);
+    let frames = 0;
+    while (s.phase !== 'over' && frames < 5000) {
+      stepPinball(s, { left: s.ball.x < 180 && s.ball.y > 460, right: s.ball.x >= 180 && s.ball.y > 460 }, 16);
+      if (s.phase === 'between') launchPinball(s);
+      expect(Number.isFinite(s.ball.x) && Number.isFinite(s.ball.y)).toBe(true);
+      frames++;
+    }
+    expect(s.phase).toBe('over');
+    expect(frames).toBeGreaterThan(1000);
+    expect(s.caught).toBeGreaterThanOrEqual(1);
+    expect(s.evolved).toBeGreaterThanOrEqual(1);
+    expect(s.score).toBeGreaterThan(10000);
   });
 });

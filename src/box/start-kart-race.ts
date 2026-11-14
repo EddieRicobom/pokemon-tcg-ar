@@ -1,5 +1,5 @@
 import { pokemonSpriteUrl, pokemonStaticSpriteUrls } from '../ar/sprite-url';
-import { createKartRace, stepKartRace, TRACK_HALF_WIDTH, TRACK_X_RADIUS, TRACK_Z_RADIUS, trackPoint, type KartInput, type KartRaceState } from '../core/kart-race';
+import { createKartRace, stepKartRace, TRACK_HALF_WIDTH, trackPoint, trackTangent, type KartInput, type KartRaceState } from '../core/kart-race';
 
 export interface KartFinish { position: number; elapsedMs: number; total: number; completed: boolean }
 export interface KartRaceHandle {
@@ -18,8 +18,8 @@ export async function startKartRace(
   const THREE = await import('three');
   const state = createKartRace(opponentDexIds.length);
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color('#92d5f5');
-  scene.fog = new THREE.Fog('#92d5f5', 110, 250);
+  scene.background = new THREE.Color('#8ccfed');
+  scene.fog = new THREE.Fog('#8ccfed', 125, 275);
   const camera = new THREE.PerspectiveCamera(62, 1, 0.1, 300);
   const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'low-power' });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
@@ -30,11 +30,11 @@ export async function startKartRace(
   spriteLayer.style.cssText = 'position:absolute;inset:0;overflow:hidden;pointer-events:none';
   host.append(spriteLayer);
 
-  scene.add(new THREE.HemisphereLight('#ffffff', '#6a975f', 2));
-  const sun = new THREE.DirectionalLight('#ffffff', 2);
+  scene.add(new THREE.HemisphereLight('#fff8e4', '#557a60', 2));
+  const sun = new THREE.DirectionalLight('#fff0ca', 2.1);
   sun.position.set(30, 70, -40);
   scene.add(sun);
-  const ground = new THREE.Mesh(new THREE.PlaneGeometry(400, 400), new THREE.MeshLambertMaterial({ color: '#70ad65' }));
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(400, 400), new THREE.MeshLambertMaterial({ color: '#67a75d' }));
   ground.rotation.x = -Math.PI / 2;
   ground.position.y = -0.1;
   scene.add(ground);
@@ -47,8 +47,7 @@ export async function startKartRace(
       const b = (i + 1) / count * Math.PI * 2;
       for (const angle of [a, b]) {
         const center = trackPoint(angle);
-        const tx = -TRACK_X_RADIUS * Math.sin(angle);
-        const tz = TRACK_Z_RADIUS * Math.cos(angle);
+        const { x: tx, z: tz } = trackTangent(angle);
         const len = Math.hypot(tx, tz);
         const nx = tz / len;
         const nz = -tx / len;
@@ -67,8 +66,27 @@ export async function startKartRace(
     geometry.computeVertexNormals();
     scene.add(new THREE.Mesh(geometry, new THREE.MeshLambertMaterial({ color, side: THREE.DoubleSide })));
   };
-  makeStrip(TRACK_HALF_WIDTH + 1.2, '#f2eee2', 0.015);
-  makeStrip(TRACK_HALF_WIDTH, '#434957', 0.025);
+  makeStrip(TRACK_HALF_WIDTH + 2.8, '#9a8d71', 0.005);
+  makeStrip(TRACK_HALF_WIDTH + 1.15, '#eee8d8', 0.015);
+  makeStrip(TRACK_HALF_WIDTH, '#414854', 0.025);
+  // Faixas vermelhas e brancas marcam o limite transitável do asfalto.
+  const dummy = new THREE.Object3D();
+  const kerbGeometry = new THREE.BoxGeometry(1.9, 0.055, 1.2);
+  const kerbMaterials = [new THREE.MeshLambertMaterial({ color: '#f9eee4' }), new THREE.MeshLambertMaterial({ color: '#d94e47' })];
+  const kerbs = kerbMaterials.map((material) => new THREE.InstancedMesh(kerbGeometry, material, 112));
+  for (let i = 0; i < 112; i++) {
+    const angle = i / 112 * Math.PI * 2;
+    const point = trackPoint(angle);
+    const { x: tx, z: tz } = trackTangent(angle);
+    const length = Math.hypot(tx, tz);
+    for (const side of [-1, 1]) {
+      dummy.position.set(point.x + side * tz / length * (TRACK_HALF_WIDTH - 0.55), 0.07, point.z - side * tx / length * (TRACK_HALF_WIDTH - 0.55));
+      dummy.rotation.y = Math.atan2(tx, tz);
+      dummy.updateMatrix();
+      kerbs[i % 2]!.setMatrixAt(Math.floor(i / 2) * 2 + (side === -1 ? 0 : 1), dummy.matrix);
+    }
+  }
+  scene.add(...kerbs);
   const markerGeometry = new THREE.BoxGeometry(0.35, 0.04, 3);
   const markerMaterial = new THREE.MeshBasicMaterial({ color: '#fcebb0' });
   for (let i = 0; i < 64; i++) {
@@ -77,7 +95,8 @@ export async function startKartRace(
     const p = trackPoint(a);
     const marker = new THREE.Mesh(markerGeometry, markerMaterial);
     marker.position.set(p.x, 0.06, p.z);
-    marker.rotation.y = Math.atan2(-TRACK_X_RADIUS * Math.sin(a), TRACK_Z_RADIUS * Math.cos(a));
+    const tangent = trackTangent(a);
+    marker.rotation.y = Math.atan2(tangent.x, tangent.z);
     scene.add(marker);
   }
   const start = trackPoint(0);
@@ -87,20 +106,59 @@ export async function startKartRace(
     scene.add(tile);
   }
   // Muretas baixas e árvores deixam clara a forma da pista sem bloquear os sprites.
-  const postGeometry = new THREE.BoxGeometry(0.75, 1.1, 0.75);
-  const postMaterials = [new THREE.MeshLambertMaterial({ color: '#fff2db' }), new THREE.MeshLambertMaterial({ color: '#f18272' })];
-  for (let i = 0; i < 72; i++) {
-    const a = i / 72 * Math.PI * 2;
+  const postGeometry = new THREE.BoxGeometry(0.6, 0.8, 0.6);
+  const postMaterials = [new THREE.MeshLambertMaterial({ color: '#fff2db' }), new THREE.MeshLambertMaterial({ color: '#e9705e' })];
+  const posts = postMaterials.map((material) => new THREE.InstancedMesh(postGeometry, material, 48));
+  for (let i = 0; i < 48; i++) {
+    const a = i / 48 * Math.PI * 2;
     const p = trackPoint(a);
-    const tx = -TRACK_X_RADIUS * Math.sin(a);
-    const tz = TRACK_Z_RADIUS * Math.cos(a);
+    const { x: tx, z: tz } = trackTangent(a);
     const len = Math.hypot(tx, tz);
     for (const side of [-1, 1]) {
-      const post = new THREE.Mesh(postGeometry, postMaterials[i % 2]!);
-      post.position.set(p.x + side * tz / len * (TRACK_HALF_WIDTH + 1.6), 0.55, p.z - side * tx / len * (TRACK_HALF_WIDTH + 1.6));
-      scene.add(post);
+      dummy.position.set(p.x + side * tz / len * (TRACK_HALF_WIDTH + 3.5), 0.4, p.z - side * tx / len * (TRACK_HALF_WIDTH + 3.5));
+      dummy.rotation.y = 0;
+      dummy.updateMatrix();
+      posts[i % 2]!.setMatrixAt(Math.floor(i / 2) * 2 + (side === -1 ? 0 : 1), dummy.matrix);
     }
   }
+  scene.add(...posts);
+  // Silhuetas de árvores ao redor da pista: instâncias mantêm o custo baixo no celular.
+  const trunk = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.45, 0.65, 3, 5), new THREE.MeshLambertMaterial({ color: '#755e44' }), 46);
+  const foliage = new THREE.InstancedMesh(new THREE.ConeGeometry(2.7, 7, 6), new THREE.MeshLambertMaterial({ color: '#2e815b', flatShading: true }), 46);
+  for (let i = 0; i < 46; i++) {
+    const angle = i / 46 * Math.PI * 2 + 0.025 * Math.sin(i * 17);
+    const point = trackPoint(angle);
+    const radius = i % 3 === 0 ? 25 : 18;
+    const x = point.x + Math.cos(angle) * radius;
+    const z = point.z + Math.sin(angle) * radius;
+    dummy.position.set(x, 1.5, z);
+    dummy.scale.setScalar(0.85 + (i % 5) * 0.09);
+    dummy.updateMatrix();
+    trunk.setMatrixAt(i, dummy.matrix);
+    dummy.position.y = 5.4;
+    dummy.updateMatrix();
+    foliage.setMatrixAt(i, dummy.matrix);
+  }
+  scene.add(trunk, foliage);
+  const archMaterial = new THREE.MeshLambertMaterial({ color: '#f5d283' });
+  const archPostGeometry = new THREE.BoxGeometry(0.8, 7, 0.8);
+  const archGroup = new THREE.Group();
+  const archPoint = trackPoint(0.25);
+  const archTangent = trackTangent(0.25);
+  archGroup.position.set(archPoint.x, 0, archPoint.z);
+  archGroup.rotation.y = Math.atan2(archTangent.x, archTangent.z);
+  for (const x of [-12, 12]) {
+    const post = new THREE.Mesh(archPostGeometry, archMaterial);
+    post.position.set(x, 3.5, 0);
+    archGroup.add(post);
+  }
+  const arch = new THREE.Mesh(new THREE.BoxGeometry(25, 1.3, 1.3), archMaterial);
+  arch.position.set(0, 7.3, 0);
+  archGroup.add(arch);
+  const archBanner = new THREE.Mesh(new THREE.BoxGeometry(22, 0.45, 1.45), new THREE.MeshLambertMaterial({ color: '#cf554e' }));
+  archBanner.position.set(0, 7.25, 0);
+  archGroup.add(archBanner);
+  scene.add(archGroup);
 
   const colors = ['#e8565d', '#4799e5', '#e9bc47', '#9c6dda', '#49b69d'];
   const kartGroups = state.cars.map((car, id) => {
@@ -155,27 +213,37 @@ export async function startKartRace(
   let finished = false;
   let frame = 0;
   let previous = performance.now();
+  let accumulator = 0;
   let hudLast = 0;
   const worldPoint = new THREE.Vector3();
+  const startingPlayer = state.cars[0]!;
+  camera.position.set(startingPlayer.x - Math.sin(startingPlayer.heading) * 9, 6.5, startingPlayer.z - Math.cos(startingPlayer.heading) * 9);
   const loop = (now: number): void => {
     if (disposed) return;
-    const dt = Math.min(0.05, (now - previous) / 1000);
+    const dt = Math.min(0.12, (now - previous) / 1000);
     previous = now;
-    if (!finished) stepKartRace(state, input, dt);
+    if (!finished) {
+      accumulator += dt;
+      while (accumulator >= 1 / 60) {
+        stepKartRace(state, input, 1 / 60);
+        accumulator -= 1 / 60;
+      }
+    }
     state.cars.forEach((car, id) => {
       const group = kartGroups[id]!;
       group.position.set(car.x, 0, car.z);
       group.rotation.y = car.heading;
     });
     const player = state.cars[0]!;
-    const behind = 14;
-    const cameraTarget = new THREE.Vector3(player.x - Math.sin(player.heading) * behind, 9, player.z - Math.cos(player.heading) * behind);
+    const behind = 9;
+    const cameraTarget = new THREE.Vector3(player.x - Math.sin(player.heading) * behind, 6.5, player.z - Math.cos(player.heading) * behind);
     camera.position.lerp(cameraTarget, Math.min(1, dt * 7));
-    camera.lookAt(player.x + Math.sin(player.heading) * 8, 1.6, player.z + Math.cos(player.heading) * 8);
+    camera.lookAt(player.x + Math.sin(player.heading) * 10, 1.6, player.z + Math.cos(player.heading) * 10);
     renderer.render(scene, camera);
     state.cars.forEach((car, id) => {
       const marker = sprites[id]!;
-      worldPoint.set(car.x, 3.7, car.z).project(camera);
+      // A base do GIF fica no assento do kart, acompanhando sua rotação.
+      worldPoint.set(car.x - Math.sin(car.heading) * 0.4, 1.48, car.z - Math.cos(car.heading) * 0.4).project(camera);
       const visible = worldPoint.z > -1 && worldPoint.z < 1 && Math.abs(worldPoint.x) < 1.2 && Math.abs(worldPoint.y) < 1.2;
       marker.style.display = visible ? 'block' : 'none';
       if (visible) {
