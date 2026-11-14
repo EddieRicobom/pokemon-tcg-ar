@@ -1,4 +1,8 @@
 /** Física e regras puras do Kart Racer. Distâncias em unidades de pista, tempo em segundos. */
+import type { PokemonType } from './pokemon-data';
+import { typesOfDex } from './species-filter';
+import type { BaseStats } from './survivor-moves';
+import { statsOfDex } from './survivor-stats';
 export const KART_LAPS = 3;
 export const TRACK_X_RADIUS = 64;
 export const TRACK_Z_RADIUS = 38;
@@ -9,8 +13,28 @@ const ROAD_LIMIT = TRACK_HALF_WIDTH - KART_RADIUS;
 const BARRIER_LIMIT = TRACK_HALF_WIDTH + 3.5 - KART_RADIUS;
 
 export interface KartInput { throttle: number; steer: number; brake: boolean }
+export type KartBodyId = 'leve' | 'equilibrado' | 'pesado' | 'aero';
+export type KartWheelsId = 'asfalto' | 'misto' | 'tracao';
+export interface KartPerformance {
+  acceleration: number;
+  topSpeed: number;
+  handling: number;
+  roadGrip: number;
+  offroadGrip: number;
+  braking: number;
+}
+export interface KartProfile {
+  dexId: number;
+  types: readonly PokemonType[];
+  stats: BaseStats;
+  body: { id: KartBodyId; label: string };
+  wheels: { id: KartWheelsId; label: string };
+  performance: KartPerformance;
+}
 export interface KartCar {
   id: number;
+  /** Null quando faltam tipos ou stats reais para o Pokémon. */
+  profile: KartProfile | null;
   x: number;
   z: number;
   heading: number;
@@ -20,6 +44,56 @@ export interface KartCar {
   finishedAt: number | null;
 }
 export interface KartRaceState { cars: KartCar[]; elapsed: number; laps: number }
+
+const BODY_LABELS: Record<KartBodyId, string> = {
+  leve: 'Leve', equilibrado: 'Equilibrado', pesado: 'Pesado', aero: 'Aerodinâmico',
+};
+const WHEEL_LABELS: Record<KartWheelsId, string> = {
+  asfalto: 'Asfalto', misto: 'Mistas', tracao: 'Tração',
+};
+const NEUTRAL_PERFORMANCE: KartPerformance = {
+  acceleration: 24, topSpeed: 32, handling: 2.35, roadGrip: 1, offroadGrip: 1, braking: 20,
+};
+const clamp = (value: number, low: number, high: number): number => Math.max(low, Math.min(high, value));
+
+/** As peças vêm dos tipos; os ajustes finos vêm dos seis stats base reais. */
+export function kartProfileOfDex(dexId: number): KartProfile | null {
+  const types = typesOfDex(dexId);
+  const stats = statsOfDex(dexId);
+  if (!types.length || !stats) return null;
+  const bodyId: KartBodyId = types.some((type) => type === 'rock' || type === 'steel' || type === 'ground') ? 'pesado'
+    : types.some((type) => type === 'flying' || type === 'dragon' || type === 'psychic' || type === 'ghost') ? 'aero'
+      : types.some((type) => type === 'electric' || type === 'bug') ? 'leve' : 'equilibrado';
+  const wheelsId: KartWheelsId = types.some((type) => type === 'ground' || type === 'rock' || type === 'steel') ? 'tracao'
+    : types.some((type) => type === 'water' || type === 'grass' || type === 'ice' || type === 'poison') ? 'misto' : 'asfalto';
+  const pace = clamp((stats.speed - 80) / 100, -1, 1);
+  const power = clamp(((stats.attack + stats.spAttack) / 2 - 85) / 110, -1, 1);
+  const bulk = clamp(((stats.hp + stats.defense + stats.spDefense) / 3 - 85) / 120, -1, 1);
+  const body = {
+    leve: { acceleration: 1.5, topSpeed: 0.1, handling: 0.12 },
+    equilibrado: { acceleration: 0, topSpeed: 0, handling: 0 },
+    pesado: { acceleration: -1.3, topSpeed: 0.7, handling: -0.12 },
+    aero: { acceleration: -0.3, topSpeed: 1.3, handling: -0.025 },
+  }[bodyId];
+  const wheels = {
+    asfalto: { roadGrip: 1.04, offroadGrip: 0.91, braking: 0 },
+    misto: { roadGrip: 1, offroadGrip: 1.12, braking: 0.5 },
+    tracao: { roadGrip: 0.97, offroadGrip: 1.22, braking: 1.5 },
+  }[wheelsId];
+  return {
+    dexId, types, stats,
+    body: { id: bodyId, label: BODY_LABELS[bodyId] },
+    wheels: { id: wheelsId, label: WHEEL_LABELS[wheelsId] },
+    performance: {
+      acceleration: clamp(24 + 1.5 * power + body.acceleration, 20.5, 27.5),
+      topSpeed: clamp(32 + 1.5 * pace + body.topSpeed, 29, 35),
+      handling: clamp(2.35 + 0.13 * pace - 0.04 * bulk + body.handling, 2.05, 2.65),
+      roadGrip: wheels.roadGrip,
+      offroadGrip: wheels.offroadGrip,
+      braking: clamp(20 + 1.3 * bulk + wheels.braking, 18, 23),
+    },
+  };
+}
 
 export function trackPoint(angle: number): { x: number; z: number } {
   return {
@@ -63,7 +137,7 @@ function nearestTrack(x: number, z: number): { angle: number; distance: number }
 export function trackAngle(x: number, z: number): number { return nearestTrack(x, z).angle; }
 export function trackDistance(x: number, z: number): number { return nearestTrack(x, z).distance; }
 
-export function createKartRace(opponents = 3): KartRaceState {
+export function createKartRace(opponents = 3, dexIds: readonly number[] = []): KartRaceState {
   const cars: KartCar[] = Array.from({ length: opponents + 1 }, (_, id) => {
     const angle = -0.25 * Math.floor(id / 2);
     const point = trackPoint(angle);
@@ -72,6 +146,7 @@ export function createKartRace(opponents = 3): KartRaceState {
     const tangentLength = Math.hypot(tangentX, tangentZ);
     return {
       id,
+      profile: dexIds[id] === undefined ? null : kartProfileOfDex(dexIds[id]!),
       x: point.x + tangentZ / tangentLength * laneOffset,
       z: point.z - tangentX / tangentLength * laneOffset,
       heading: Math.atan2(tangentX, tangentZ),
@@ -110,13 +185,15 @@ export function opponentInput(car: KartCar, id: number): KartInput {
 
 function advanceCar(car: KartCar, input: KartInput, dt: number, elapsed: number, laps: number): void {
   if (car.finishedAt !== null) return;
+  const performance = car.profile?.performance ?? NEUTRAL_PERFORMANCE;
   const throttle = Math.max(-1, Math.min(1, input.throttle));
   const offroad = Math.max(0, Math.min(1, (trackDistance(car.x, car.z) - ROAD_LIMIT) / 4));
-  car.speed += (throttle >= 0 ? 24 - 9 * offroad : 14) * throttle * dt;
-  const drag = 3.2 + 9 * offroad + (input.brake ? 20 : 0);
+  car.speed += (throttle >= 0 ? performance.acceleration - 9 * offroad / performance.offroadGrip : 14) * throttle * dt;
+  const drag = 3.2 + 9 * offroad / performance.offroadGrip + (input.brake ? performance.braking : 0);
   car.speed = Math.sign(car.speed) * Math.max(0, Math.abs(car.speed) - drag * dt);
-  car.speed = Math.max(-10, Math.min(32 - 14 * offroad, car.speed));
-  car.heading -= Math.max(-1, Math.min(1, input.steer)) * 2.35 * dt * Math.min(1, Math.abs(car.speed) / 7) * Math.sign(car.speed || 1);
+  car.speed = Math.max(-10, Math.min(performance.topSpeed - 14 * offroad / performance.offroadGrip, car.speed));
+  const grip = offroad > 0 ? performance.offroadGrip : performance.roadGrip;
+  car.heading -= Math.max(-1, Math.min(1, input.steer)) * performance.handling * grip * dt * Math.min(1, Math.abs(car.speed) / 7) * Math.sign(car.speed || 1);
   car.x += Math.sin(car.heading) * car.speed * dt;
   car.z += Math.cos(car.heading) * car.speed * dt;
   // O acostamento é transitável. Atrito e velocidade máxima no gramado dão

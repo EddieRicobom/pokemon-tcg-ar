@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref, shallowRef, triggerRef } from 'vue';
-import { createPinballState, launchPinball, nudgePinball, pinballMissionGoal, PINBALL_BUMPERS, PINBALL_H, PINBALL_TARGETS, PINBALL_W, stepPinball } from '../core/pinball';
+import { createPinballState, launchPinball, nudgePinball, pinballMissionGoal, PINBALL_BUMPERS, PINBALL_FLIPPERS, PINBALL_H, PINBALL_STAGES, PINBALL_TARGETS, PINBALL_W, stepPinball } from '../core/pinball';
 import type { PinballEvent } from '../core/pinball';
 
 const emit = defineEmits<{ close: [] }>();
@@ -93,8 +93,8 @@ function paint(): void {
     ctx.lineWidth = 12; ctx.strokeStyle = pressed ? '#ffe079' : '#f6a969'; ctx.stroke();
     ctx.lineWidth = 2; ctx.strokeStyle = '#fff6d0'; ctx.stroke();
   }
-  flipper(112, 179, left.value && s.tiltLockMs === 0);
-  flipper(248, 181, right.value && s.tiltLockMs === 0);
+  flipper(PINBALL_FLIPPERS[0].pivotX, PINBALL_FLIPPERS[0].tipX, left.value && s.tiltLockMs === 0);
+  flipper(PINBALL_FLIPPERS[1].pivotX, PINBALL_FLIPPERS[1].tipX, right.value && s.tiltLockMs === 0);
   if (effects.value && s.phase === 'playing') {
     trail.forEach((point, index) => {
       c.beginPath(); c.arc(point.x, point.y, 2 + index * 0.48, 0, Math.PI * 2);
@@ -109,7 +109,7 @@ function paint(): void {
   if (s.phase !== 'playing') {
     c.fillStyle = '#071420cf'; c.fillRect(31, 345, 298, 93);
     c.fillStyle = '#f4f7ff'; c.font = 'bold 17px system-ui';
-    c.fillText(s.phase === 'over' ? 'FIM DA PARTIDA' : 'PRONTA PARA LANÇAR', 180, 383);
+    c.fillText(s.phase === 'won' ? 'AVENTURA CONCLUÍDA!' : s.phase === 'over' ? 'FIM DA AVENTURA' : 'PRONTA PARA LANÇAR', 180, 383);
   }
 }
 
@@ -130,11 +130,21 @@ function tick(time: number): void {
 }
 
 function launch(): void {
-  if (state.value.phase === 'over') state.value = createPinballState(Math.max(savedBest(), state.value.best));
+  if (state.value.phase === 'over' || state.value.phase === 'won') state.value = createPinballState(Math.max(savedBest(), state.value.best));
   if (launchPinball(state.value)) sound(['launch']);
   triggerRef(state);
 }
 function nudge(direction: -1 | 1): void { sound(nudgePinball(state.value, direction)); triggerRef(state); }
+function pressFlipper(event: PointerEvent, side: 'left' | 'right'): void {
+  (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
+  if (side === 'left') left.value = true;
+  else right.value = true;
+}
+function releaseFlipper(side: 'left' | 'right'): void {
+  if (side === 'left') left.value = false;
+  else right.value = false;
+}
+function releaseAllFlippers(): void { left.value = false; right.value = false; }
 function onKeyDown(event: KeyboardEvent): void {
   if (event.key === 'Escape') { event.preventDefault(); emit('close'); return; }
   if (event.key === 'ArrowLeft' || event.key.toLowerCase() === 'a') left.value = true;
@@ -158,12 +168,14 @@ onMounted(() => {
   }
   window.addEventListener('keydown', onKeyDown);
   window.addEventListener('keyup', onKeyUp);
+  window.addEventListener('blur', releaseAllFlippers);
   frame = requestAnimationFrame(tick);
 });
 onBeforeUnmount(() => {
   cancelAnimationFrame(frame);
   window.removeEventListener('keydown', onKeyDown);
   window.removeEventListener('keyup', onKeyUp);
+  window.removeEventListener('blur', releaseAllFlippers);
   void audio?.close();
 });
 </script>
@@ -172,9 +184,14 @@ onBeforeUnmount(() => {
   <section class="pinball-game" aria-label="Poképinball da Vila">
     <header class="pinball-header"><div><small>MINIJOGO DA VILA</small><h2>Poképinball</h2></div><button type="button" @click="emit('close')">Sair</button></header>
     <div class="pinball-stats" role="status"><span>PONTOS <b>{{ state.score.toLocaleString('pt-BR') }}</b></span><span>RECORDE <b>{{ state.best.toLocaleString('pt-BR') }}</b></span><span>BOLAS <b>{{ state.balls }}</b></span><span>COMBO <b>×{{ state.combo || 1 }}</b></span></div>
-    <div class="pinball-board"><canvas ref="canvas" :width="PINBALL_W" :height="PINBALL_H" aria-label="Mesa de pinball: use os flippers esquerdo e direito para manter a Pokébola em jogo" /><button v-if="state.phase !== 'playing'" type="button" class="pinball-board-launch" @click="launch">{{ state.phase === 'over' ? 'Jogar novamente' : 'Lançar bola' }}</button></div>
-    <p class="pinball-message" role="status">{{ state.messageMs > 0 || state.phase !== 'playing' ? state.message : state.mode === 'normal' ? 'Acerte 3 alvos para abrir uma missão.' : `${Math.ceil(state.modeMs / 1000)}s · ${state.mode === 'evolution' ? 'Acerte os bumpers' : 'Acerte os alvos'}` }}</p>
-    <div class="pinball-controls"><button type="button" class="pinball-flip" aria-label="Flipper esquerdo" @pointerdown.prevent="left = true" @pointerup="left = false" @pointercancel="left = false" @pointerleave="left = false">◀ ESQUERDO</button><button type="button" class="pinball-flip" aria-label="Flipper direito" @pointerdown.prevent="right = true" @pointerup="right = false" @pointercancel="right = false" @pointerleave="right = false">DIREITO ▶</button></div>
+    <div class="pinball-adventure" aria-label="Progresso da aventura">
+      <p class="pinball-stage-title">{{ state.phase === 'won' ? 'Vitória! Aventura concluída' : state.phase === 'over' ? 'Derrota · tente novamente' : `Etapa ${state.stage + 1} de ${PINBALL_STAGES.length} · ${PINBALL_STAGES[state.stage]?.title}` }}</p>
+      <div class="pinball-stage-track" aria-hidden="true"><span v-for="(_, index) in PINBALL_STAGES" :key="index" :class="{ done: index < state.stage, current: index === state.stage && state.phase !== 'won' }" /></div>
+      <p v-if="state.phase !== 'won'" class="pinball-objective">{{ PINBALL_STAGES[state.stage]?.objective }} · {{ state.mode === 'normal' ? `${state.charge}/3 alvos para abrir o desafio` : `${state.progress}/${pinballMissionGoal(state.mode)} ${state.mode === 'evolution' ? 'bumpers' : 'alvos'} · ${Math.ceil(state.modeMs / 1000)}s` }}</p>
+    </div>
+    <div class="pinball-board"><canvas ref="canvas" :width="PINBALL_W" :height="PINBALL_H" aria-label="Mesa de pinball: use os flippers esquerdo e direito para manter a Pokébola em jogo" /><button v-if="state.phase !== 'playing'" type="button" class="pinball-board-launch" @click="launch">{{ state.phase === 'over' || state.phase === 'won' ? 'Nova aventura' : 'Lançar bola' }}</button></div>
+    <p class="pinball-message" role="status">{{ state.messageMs > 0 || state.phase !== 'playing' ? state.message : state.mode === 'normal' ? 'Acerte os alvos no topo.' : `${Math.ceil(state.modeMs / 1000)}s · ${state.mode === 'evolution' ? 'Acerte os bumpers' : 'Acerte os alvos'}` }}</p>
+    <div class="pinball-controls"><button type="button" class="pinball-flip" aria-label="Flipper esquerdo" @pointerdown.prevent="pressFlipper($event, 'left')" @pointerup="releaseFlipper('left')" @pointercancel="releaseFlipper('left')" @lostpointercapture="releaseFlipper('left')">◀ ESQUERDO</button><button type="button" class="pinball-flip" aria-label="Flipper direito" @pointerdown.prevent="pressFlipper($event, 'right')" @pointerup="releaseFlipper('right')" @pointercancel="releaseFlipper('right')" @lostpointercapture="releaseFlipper('right')">DIREITO ▶</button></div>
     <div class="pinball-actions"><button type="button" :disabled="state.phase !== 'playing'" @click="nudge(-1)">Sacudir ←</button><button type="button" :disabled="state.phase !== 'playing'" @click="nudge(1)">Sacudir →</button><button type="button" :aria-pressed="muted" @click="muted = !muted">{{ muted ? 'Som desligado' : 'Som ligado' }}</button><button type="button" :aria-pressed="effects" @click="effects = !effects">{{ effects ? 'Efeitos ligados' : 'Efeitos desligados' }}</button></div>
     <p class="pinball-help">Teclado: A/← e D/→ controlam os flippers; Espaço lança; Q/E sacodem a mesa. Três sacudidas seguidas causam TILT.</p>
     <p class="pinball-progress">Capturas: {{ state.caught }} · Evoluções: {{ state.evolved }} · Multiplicador: ×{{ state.multiplier }} · Bola: nível {{ state.ballLevel }} <span v-if="state.saverMs > 0">· Proteção {{ Math.ceil(state.saverMs / 1000) }}s</span><span v-if="state.kickback"> · Resgate pronto</span></p>
@@ -186,7 +203,8 @@ onBeforeUnmount(() => {
 .pinball-game{box-sizing:border-box;min-height:100%;padding:12px 12px 24px;background:radial-gradient(circle at 50% 5%,#18583d,#102b29 60%,#0a2022);color:#fff7dc;font-family:system-ui,sans-serif;text-align:center;touch-action:manipulation}
 .pinball-header{max-width:620px;margin:0 auto 9px;display:flex;justify-content:space-between;align-items:center;text-align:left}.pinball-header small{font-size:.65rem;letter-spacing:.18em;color:#f7d777;font-weight:800}.pinball-header h2{margin:2px 0;font-size:1.42rem;color:#fffbe9;text-shadow:0 2px #18402d}.pinball-header button,.pinball-actions button{border:1px solid #d9b664;background:linear-gradient(#245646,#163c36);color:#fff8df;border-radius:11px;padding:9px 13px;font:inherit;font-weight:700;box-shadow:0 2px 0 #08251e}.pinball-header button{min-width:68px}
 .pinball-stats{max-width:620px;margin:0 auto 10px;display:flex;justify-content:space-around;gap:5px;padding:6px 5px;background:#082b29a8;border:1px solid #a88d50;border-radius:13px}.pinball-stats span{font-size:.62rem;letter-spacing:.08em;color:#e2d9a9}.pinball-stats b{display:block;color:#fff;font-size:1rem;letter-spacing:0;font-variant-numeric:tabular-nums}
-.pinball-board{position:relative;width:min(100%,360px,max(235px,calc((100dvh - 255px)*.6)));margin:auto;border-radius:18px;overflow:hidden;box-shadow:0 10px 38px #0009,0 0 0 3px #eabb45;background:#124d33}.pinball-board canvas{display:block;width:100%;height:auto;aspect-ratio:3/5}.pinball-board-launch{position:absolute;left:20%;top:66%;width:60%;min-height:37px;border:2px solid #fff1a0;border-radius:12px;background:linear-gradient(#f9dd63,#ce9025);color:#43240e;font:900 .9rem system-ui;box-shadow:0 3px 0 #753f16;cursor:pointer}
+.pinball-adventure{max-width:620px;margin:0 auto 10px;padding:7px 12px;border:1px solid #a88d50;border-radius:12px;background:#082b29d9}.pinball-stage-title{margin:0 0 5px;color:#ffe39a;font-size:.85rem;font-weight:800}.pinball-stage-track{display:flex;gap:6px;margin:0 auto 5px;max-width:320px}.pinball-stage-track span{height:7px;flex:1;border-radius:9px;background:#395851}.pinball-stage-track span.current{background:#f9c449}.pinball-stage-track span.done{background:#65dca6}.pinball-objective{margin:0;font-size:.75rem;color:#fff3cd;line-height:1.3}
+.pinball-board{position:relative;width:min(100%,360px,max(200px,calc((100dvh - 350px)*.6)));margin:auto;border-radius:18px;overflow:hidden;box-shadow:0 10px 38px #0009,0 0 0 3px #eabb45;background:#124d33}.pinball-board canvas{display:block;width:100%;height:auto;aspect-ratio:3/5}.pinball-board-launch{position:absolute;left:20%;top:66%;width:60%;min-height:37px;border:2px solid #fff1a0;border-radius:12px;background:linear-gradient(#f9dd63,#ce9025);color:#43240e;font:900 .9rem system-ui;box-shadow:0 3px 0 #753f16;cursor:pointer}
 .pinball-message{min-height:1.4em;margin:10px 0;color:#ffe28a;font-size:.92rem;font-weight:800;text-shadow:0 1px #0a2420}.pinball-controls{max-width:440px;margin:0 auto;display:flex;gap:12px}.pinball-flip{flex:1;min-height:64px;border:2px solid #ffe39a;border-radius:17px;background:linear-gradient(#ed7566,#bc3e43);color:white;font:800 1rem system-ui;box-shadow:0 4px 0 #67232b;touch-action:none;user-select:none}.pinball-flip:active{background:#ffa268;transform:translateY(3px);box-shadow:0 1px 0 #67232b}
 .pinball-actions{max-width:620px;margin:12px auto;display:flex;justify-content:center;flex-wrap:wrap;gap:7px}.pinball-actions button:disabled{opacity:.48;box-shadow:none}.pinball-help,.pinball-progress,.pinball-note{max-width:620px;margin:7px auto;color:#c9ddcd;font-size:.76rem;line-height:1.4}.pinball-progress{color:#ffe5a7;font-weight:700}.pinball-note{color:#d7e3d3}
 @media(max-height:780px){.pinball-help{display:none}.pinball-flip{min-height:50px}}

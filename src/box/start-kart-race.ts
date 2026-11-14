@@ -1,4 +1,5 @@
 import { pokemonSpriteUrl, pokemonStaticSpriteUrls } from '../ar/sprite-url';
+import { TYPE_COLORS } from '../core/pokemon-data';
 import { createKartRace, stepKartRace, TRACK_HALF_WIDTH, trackPoint, trackTangent, type KartInput, type KartRaceState } from '../core/kart-race';
 
 export interface KartFinish { position: number; elapsedMs: number; total: number; completed: boolean }
@@ -16,7 +17,7 @@ export async function startKartRace(
   onFinish: (result: KartFinish) => void,
 ): Promise<KartRaceHandle> {
   const THREE = await import('three');
-  const state = createKartRace(opponentDexIds.length);
+  const state = createKartRace(opponentDexIds.length, [playerDexId, ...opponentDexIds]);
   const scene = new THREE.Scene();
   scene.background = new THREE.Color('#8ccfed');
   scene.fog = new THREE.Fog('#8ccfed', 125, 275);
@@ -160,21 +161,81 @@ export async function startKartRace(
   archGroup.add(archBanner);
   scene.add(archGroup);
 
-  const colors = ['#e8565d', '#4799e5', '#e9bc47', '#9c6dda', '#49b69d'];
+  const fallbackColors = ['#e8565d', '#4799e5', '#e9bc47', '#9c6dda', '#49b69d'];
+  const spriteHeights: number[] = [];
   const kartGroups = state.cars.map((car, id) => {
+    const profile = car.profile;
+    const bodyKind = profile?.body.id ?? 'equilibrado';
+    const wheelKind = profile?.wheels.id ?? 'misto';
+    const bodyColor = profile ? TYPE_COLORS[profile.types[0]!] : fallbackColors[id % fallbackColors.length]!;
+    const accentColor = profile?.types[1] ? TYPE_COLORS[profile.types[1]] : '#f5e4bd';
+    const paint = new THREE.MeshLambertMaterial({ color: bodyColor });
+    const accent = new THREE.MeshLambertMaterial({ color: accentColor });
+    const dark = new THREE.MeshLambertMaterial({ color: '#263241' });
+    const metal = new THREE.MeshLambertMaterial({ color: '#c9d3da' });
+    const tire = new THREE.MeshLambertMaterial({ color: '#20232b' });
     const group = new THREE.Group();
-    const body = new THREE.Mesh(new THREE.BoxGeometry(2.8, 0.7, 4.1), new THREE.MeshLambertMaterial({ color: colors[id % colors.length] }));
-    body.position.y = 0.65;
-    group.add(body);
-    const seat = new THREE.Mesh(new THREE.BoxGeometry(2, 0.55, 1.7), new THREE.MeshLambertMaterial({ color: '#273142' }));
-    seat.position.set(0, 1.1, -0.4);
-    group.add(seat);
-    for (const x of [-1.45, 1.45]) for (const z of [-1.25, 1.25]) {
-      const wheel = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.55, 0.4, 10), new THREE.MeshLambertMaterial({ color: '#20232b' }));
-      wheel.rotation.z = Math.PI / 2;
-      wheel.position.set(x, 0.55, z);
-      group.add(wheel);
+    const dimensions = {
+      leve: { width: 2.25, height: 0.48, length: 3.45 },
+      equilibrado: { width: 2.7, height: 0.64, length: 4.05 },
+      pesado: { width: 3.15, height: 0.84, length: 4.25 },
+      aero: { width: 2.48, height: 0.46, length: 4.55 },
+    }[bodyKind];
+    const wheelSize = {
+      asfalto: { radius: 0.46, width: 0.32 },
+      misto: { radius: 0.54, width: 0.43 },
+      tracao: { radius: 0.64, width: 0.52 },
+    }[wheelKind];
+    const bodyY = wheelSize.radius + dimensions.height * 0.3;
+    const addBox = (width: number, height: number, length: number, x: number, y: number, z: number, material: typeof paint): void => {
+      const mesh = new THREE.Mesh(new THREE.BoxGeometry(width, height, length), material);
+      mesh.position.set(x, y, z);
+      group.add(mesh);
+    };
+    addBox(dimensions.width, dimensions.height, dimensions.length, 0, bodyY, 0, paint);
+    addBox(dimensions.width * 0.72, 0.06, dimensions.length * 0.72, 0, bodyY + dimensions.height / 2 + 0.035, 0.16, accent);
+    addBox(dimensions.width * 0.71, 0.4, 1.35, 0, bodyY + dimensions.height / 2 + 0.23, -0.42, dark);
+    addBox(dimensions.width * 0.9, 0.17, 0.28, 0, bodyY - 0.03, dimensions.length / 2 + 0.07, metal);
+    addBox(dimensions.width * 0.78, 0.18, 0.2, 0, bodyY + 0.08, -dimensions.length / 2 - 0.05, dark);
+    if (bodyKind === 'leve') {
+      // Chassi curto, peças expostas e pouca massa visual.
+      for (const x of [-0.75, 0.75]) addBox(0.18, 0.16, 1.15, x, bodyY + 0.28, 0.68, metal);
+    } else if (bodyKind === 'pesado') {
+      // Laterais blindadas e proteção alta atrás do piloto.
+      for (const x of [-1.45, 1.45]) addBox(0.22, 0.58, 2.55, x, bodyY + 0.2, -0.05, dark);
+      addBox(2.35, 0.44, 0.35, 0, bodyY + 0.62, -1.24, metal);
+    } else if (bodyKind === 'aero') {
+      // Nariz comprido e asa traseira distinguem o modelo de velocidade.
+      addBox(1.45, 0.22, 1.25, 0, bodyY + 0.06, 1.95, paint);
+      addBox(2.85, 0.11, 0.48, 0, bodyY + 0.95, -1.76, accent);
+      for (const x of [-0.9, 0.9]) addBox(0.11, 0.76, 0.12, x, bodyY + 0.58, -1.76, metal);
+    } else {
+      // Para-lamas completos marcam o modelo equilibrado.
+      for (const x of [-1.32, 1.32]) addBox(0.19, 0.28, 2.85, x, bodyY + 0.11, 0, paint);
     }
+    const wheelX = dimensions.width / 2 + wheelSize.width * 0.35;
+    const wheelZ = dimensions.length * 0.32;
+    for (const x of [-wheelX, wheelX]) for (const z of [-wheelZ, wheelZ]) {
+      const wheel = new THREE.Mesh(new THREE.CylinderGeometry(wheelSize.radius, wheelSize.radius, wheelSize.width, 12), tire);
+      wheel.rotation.z = Math.PI / 2;
+      wheel.position.set(x, wheelSize.radius, z);
+      group.add(wheel);
+      const hub = new THREE.Mesh(new THREE.CylinderGeometry(wheelSize.radius * 0.38, wheelSize.radius * 0.38, wheelSize.width + 0.025, 10), wheelKind === 'asfalto' ? accent : metal);
+      hub.rotation.z = Math.PI / 2;
+      hub.position.copy(wheel.position);
+      group.add(hub);
+      if (wheelKind === 'tracao') {
+        // Blocos largos na banda de rodagem sinalizam aderência fora do asfalto.
+        for (let tread = 0; tread < 6; tread++) {
+          const angle = tread * Math.PI / 3;
+          const block = new THREE.Mesh(new THREE.BoxGeometry(wheelSize.width * 0.84, 0.11, 0.22), dark);
+          block.position.set(x, wheelSize.radius + Math.sin(angle) * wheelSize.radius, z + Math.cos(angle) * wheelSize.radius);
+          block.rotation.x = -angle;
+          group.add(block);
+        }
+      }
+    }
+    spriteHeights.push(bodyY + dimensions.height / 2 + 0.55);
     group.position.set(car.x, 0, car.z);
     scene.add(group);
     return group;
@@ -243,7 +304,7 @@ export async function startKartRace(
     state.cars.forEach((car, id) => {
       const marker = sprites[id]!;
       // A base do GIF fica no assento do kart, acompanhando sua rotação.
-      worldPoint.set(car.x - Math.sin(car.heading) * 0.4, 1.48, car.z - Math.cos(car.heading) * 0.4).project(camera);
+      worldPoint.set(car.x - Math.sin(car.heading) * 0.4, spriteHeights[id]!, car.z - Math.cos(car.heading) * 0.4).project(camera);
       const visible = worldPoint.z > -1 && worldPoint.z < 1 && Math.abs(worldPoint.x) < 1.2 && Math.abs(worldPoint.y) < 1.2;
       marker.style.display = visible ? 'block' : 'none';
       if (visible) {
