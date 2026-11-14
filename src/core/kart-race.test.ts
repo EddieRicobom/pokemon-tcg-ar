@@ -1,9 +1,68 @@
 import { describe, expect, it } from 'vitest';
-import { createKartRace, kartPosition, stepKartRace, TRACK_HALF_WIDTH, trackDistance, trackPoint } from './kart-race';
+import { createKartRace, kartPosition, kartProfileOfDex, stepKartRace, TRACK_HALF_WIDTH, trackDistance, trackPoint } from './kart-race';
 
 const idle = { throttle: 0, steer: 0, brake: false };
 
 describe('Kart Racer', () => {
+  it('deriva carroceria e rodas dos tipos reais, inclusive o segundo tipo', () => {
+    const charmander = kartProfileOfDex(4)!;
+    const charizard = kartProfileOfDex(6)!;
+    const onix = kartProfileOfDex(95)!;
+    expect(charmander.types).toEqual(['fire']);
+    expect(charmander.body.id).toBe('equilibrado');
+    expect(charizard.types).toEqual(['fire', 'flying']);
+    expect(charizard.body.id).toBe('aero');
+    expect(charizard.performance.topSpeed).toBeGreaterThan(charmander.performance.topSpeed);
+    expect(onix.wheels.id).toBe('tracao');
+    expect(onix.performance.offroadGrip).toBeGreaterThan(charizard.performance.offroadGrip);
+  });
+
+  it('usa stats base reais para diferenciar desempenho e movimento', () => {
+    const pikachu = kartProfileOfDex(25)!;
+    const raichu = kartProfileOfDex(26)!;
+    expect(pikachu.stats.speed).toBe(90);
+    expect(raichu.stats.speed).toBe(110);
+    expect(raichu.performance.topSpeed).toBeGreaterThan(pikachu.performance.topSpeed);
+    const slow = createKartRace(0, [25]);
+    const fast = createKartRace(0, [26]);
+    for (let i = 0; i < 35; i++) {
+      stepKartRace(slow, { throttle: 1, steer: 0, brake: false }, 0.05);
+      stepKartRace(fast, { throttle: 1, steer: 0, brake: false }, 0.05);
+    }
+    expect(fast.cars[0]!.speed).toBeGreaterThan(slow.cars[0]!.speed);
+  });
+
+  it('aplica direção e aderência distintas das peças durante a corrida', () => {
+    const light = createKartRace(0, [25]);
+    const heavy = createKartRace(0, [95]);
+    for (const race of [light, heavy]) race.cars[0]!.speed = 20;
+    stepKartRace(light, { throttle: 0, steer: 1, brake: false }, 0.05);
+    stepKartRace(heavy, { throttle: 0, steer: 1, brake: false }, 0.05);
+    expect(light.cars[0]!.heading).toBeLessThan(heavy.cars[0]!.heading);
+
+    const asphalt = createKartRace(0, [6]);
+    const traction = createKartRace(0, [95]);
+    const point = trackPoint(0);
+    for (const race of [asphalt, traction]) {
+      race.cars[0]!.x = point.x + TRACK_HALF_WIDTH + 0.5;
+      race.cars[0]!.z = point.z;
+      race.cars[0]!.heading = 0;
+      race.cars[0]!.speed = 20;
+      stepKartRace(race, idle, 0.05);
+    }
+    expect(traction.cars[0]!.speed).toBeGreaterThan(asphalt.cars[0]!.speed);
+  });
+
+  it('sinaliza dados ausentes sem atribuir tipo ou stats ao Pokémon', () => {
+    expect(kartProfileOfDex(99999)).toBeNull();
+    expect(kartProfileOfDex(0)).toBeNull();
+    const race = createKartRace(1, [99999, 25]);
+    expect(race.cars[0]!.profile).toBeNull();
+    expect(race.cars[1]!.profile?.dexId).toBe(25);
+    stepKartRace(race, { throttle: 1, steer: 0, brake: false }, 0.05);
+    expect(race.cars[0]!.speed).toBeGreaterThan(0);
+  });
+
   it('acelera, freia e pode voltar à pista após cruzar o acostamento', () => {
     const race = createKartRace(0);
     const player = race.cars[0]!;
@@ -36,7 +95,7 @@ describe('Kart Racer', () => {
   });
 
   it('oponentes completam as voltas sem ficar presos fora da pista', () => {
-    const race = createKartRace(3);
+    const race = createKartRace(3, [25, 6, 95, 7]);
     for (let i = 0; i < 14000 && race.cars.slice(1).some((car) => car.finishedAt === null); i++) {
       stepKartRace(race, idle, 0.05);
     }

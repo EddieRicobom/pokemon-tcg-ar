@@ -6,10 +6,19 @@ const GRAVITY = 820;
 const MAX_SPEED = 1250;
 
 export type PinballMode = 'normal' | 'capture' | 'evolution' | 'bonus';
-export type PinballPhase = 'ready' | 'playing' | 'between' | 'over';
+export type PinballPhase = 'ready' | 'playing' | 'between' | 'over' | 'won';
+export const PINBALL_STAGES = [
+  { title: 'Trilha da Captura', objective: 'Capture acertando os alvos', mode: 'capture' },
+  { title: 'Caverna da Evolução', objective: 'Evolua acertando os bumpers', mode: 'evolution' },
+  { title: 'Cume do Bônus', objective: 'Conclua o desafio dos alvos', mode: 'bonus' },
+] as const;
+export const PINBALL_FLIPPERS = [
+  { pivotX: 108, tipX: 163 }, { pivotX: 252, tipX: 197 },
+] as const;
 export interface PinballBall { x: number; y: number; vx: number; vy: number }
 export interface PinballState {
   phase: PinballPhase;
+  stage: number;
   ball: PinballBall;
   score: number;
   best: number;
@@ -51,10 +60,10 @@ export function pinballMissionGoal(mode: PinballMode): number { return mode === 
 
 export function createPinballState(best = 0): PinballState {
   return {
-    phase: 'ready', ball: { x: 316, y: 515, vx: 0, vy: 0 }, score: 0, best: Math.max(0, best), balls: 3,
+    phase: 'ready', stage: 0, ball: { x: 316, y: 515, vx: 0, vy: 0 }, score: 0, best: Math.max(0, best), balls: 3,
     mode: 'normal', modeMs: 0, progress: 0, charge: 0, caught: 0, evolved: 0,
     multiplier: 1, ballLevel: 1, bumperHits: 0, kickback: false, saverMs: 0,
-    tiltHeat: 0, tiltLockMs: 0, message: 'Lance a Pokébola!', messageMs: 0,
+    tiltHeat: 0, tiltLockMs: 0, message: 'Etapa 1/3: lance a Pokébola!', messageMs: 0,
     hitCooldown: Array(PINBALL_BUMPERS.length + PINBALL_TARGETS.length).fill(0),
     flipperCooldownMs: [0, 0], laneCooldownMs: 0, laneHits: 0, combo: 0, comboMs: 0, skillShot: false,
   };
@@ -133,12 +142,14 @@ function reflectSegment(s: PinballState, ax: number, ay: number, bx: number, by:
 
 function flipper(s: PinballState, left: boolean, pressed: boolean, events: PinballEvent[]): void {
   const index = left ? 0 : 1;
-  const ax = left ? 112 : 248;
-  const bx = left ? 179 : 181;
+  const { pivotX: ax, tipX: bx } = PINBALL_FLIPPERS[index]!;
   const by = pressed ? 497 : 542;
   const beforeVy = s.ball.vy;
+  const projected = Math.max(0, Math.min(1, (s.ball.x - ax) / (bx - ax)));
+  const upperFace = 525 + (by - 525) * projected;
+  const fromAbove = s.ball.y <= upperFace + 1;
   const hit = reflectSegment(s, ax, 525, bx, by, 7, pressed ? 0.9 : 0.42);
-  if (!hit.hit || !pressed || beforeVy < -160 || (s.flipperCooldownMs[index] ?? 0) > 0) return;
+  if (!hit.hit || !pressed || !fromAbove || beforeVy < -160 || (s.flipperCooldownMs[index] ?? 0) > 0) return;
   const aim = hit.position;
   s.ball.y = 525 + (by - 525) * aim - BALL_R - 8;
   s.ball.vy = -690 - 230 * aim;
@@ -149,10 +160,10 @@ function flipper(s: PinballState, left: boolean, pressed: boolean, events: Pinba
 
 function enterMode(s: PinballState, mode: Exclude<PinballMode, 'normal'>, events: PinballEvent[]): void {
   s.mode = mode;
-  s.modeMs = mode === 'bonus' ? 35_000 : 45_000;
+  s.modeMs = mode === 'bonus' ? 50_000 : 60_000;
   s.progress = 0;
   s.charge = 0;
-  announce(s, mode === 'capture' ? 'Captura! Acerte 3 alvos.' : mode === 'evolution' ? 'Evolução! Acerte 7 bumpers.' : 'Bônus! Acerte 4 alvos.');
+  announce(s, mode === 'capture' ? 'Captura! Acerte 3 alvos.' : mode === 'evolution' ? 'Evolução! Acerte 7 bumpers.' : 'Final! Acerte 4 alvos.');
   events.push('mode');
 }
 
@@ -161,10 +172,16 @@ function completeMode(s: PinballState, events: PinballEvent[]): void {
   if (completedMode === 'capture') { s.caught += 1; score(s, 5000); announce(s, 'Captura na mesa concluída!'); }
   else if (completedMode === 'evolution') { s.evolved += 1; score(s, 7000); announce(s, 'Evolução na mesa concluída!'); }
   else if (completedMode === 'bonus') { s.multiplier = Math.min(5, s.multiplier + 1); score(s, 10000); announce(s, `Bônus! Multiplicador ×${s.multiplier}`); }
-  const completed = s.caught + s.evolved;
+  s.stage += 1;
   s.mode = 'normal'; s.modeMs = 0; s.progress = 0; s.charge = 0;
-  if (completedMode !== 'bonus' && completed > 0 && completed % 3 === 0) enterMode(s, 'bonus', events);
-  if (completedMode !== 'bonus' && completed > 0 && completed % 2 === 0) s.ballLevel = Math.min(3, s.ballLevel + 1);
+  if (s.stage === 2) s.ballLevel = 2;
+  if (s.stage >= PINBALL_STAGES.length) {
+    s.phase = 'won';
+    announce(s, 'Aventura concluída! Vitória!');
+  } else {
+    s.saverMs = Math.max(s.saverMs, 5000);
+    announce(s, `Etapa ${s.stage + 1}/3: ${PINBALL_STAGES[s.stage]!.title}!`);
+  }
   events.push('reward');
 }
 
@@ -177,8 +194,8 @@ function onTarget(s: PinballState, events: PinballEvent[]): void {
   score(s, s.mode === 'bonus' ? 1000 : 300);
   if (s.mode === 'normal') {
     s.charge += 1;
-    if (s.charge >= 3) enterMode(s, s.caught > s.evolved ? 'evolution' : 'capture', events);
-    else announce(s, `${s.charge}/3 alvos para ${s.caught > s.evolved ? 'evoluir' : 'capturar'}`);
+    if (s.charge >= 3) enterMode(s, PINBALL_STAGES[s.stage]!.mode, events);
+    else announce(s, `${s.charge}/3 alvos para iniciar ${PINBALL_STAGES[s.stage]!.title}`);
   } else if (s.mode !== 'evolution') {
     s.progress += 1;
     if (s.progress >= pinballMissionGoal(s.mode)) completeMode(s, events);
@@ -194,7 +211,7 @@ function loseBall(s: PinballState, events: PinballEvent[]): void {
   }
   s.balls -= 1;
   events.push('drain');
-  if (s.balls <= 0) { s.phase = 'over'; announce(s, 'Fim da partida!'); return; }
+  if (s.balls <= 0) { s.phase = 'over'; announce(s, `Aventura encerrada na etapa ${s.stage + 1}/3.`); return; }
   s.phase = 'between';
   s.ball = { x: 316, y: 515, vx: 0, vy: 0 };
   s.combo = 0; s.comboMs = 0;
@@ -272,8 +289,10 @@ export function stepPinball(s: PinballState, input: PinballInput, dtMs: number):
         s.hitCooldown[slot] = 150;
         onTarget(s, events);
         events.push('bump');
+        if (s.stage >= PINBALL_STAGES.length) break;
       }
     }
+    if (s.stage >= PINBALL_STAGES.length) break;
     // Passagem no topo: acender três vezes recarrega a proteção lateral.
     if (b.y < 145 && b.vy < 0 && b.x > 294 && s.laneCooldownMs === 0) {
       s.laneCooldownMs = 700;
