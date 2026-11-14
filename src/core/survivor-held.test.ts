@@ -12,7 +12,7 @@ import {
   rollHeldOffer,
 } from './survivor-held';
 import type { HeldItemId } from './survivor-held';
-import { applyUpgrade, CHEST_FIRST_MS, createSurvivorState, rerollSurvivorUpgradeOffer, stepSurvivor } from './survivor';
+import { applyUpgrade, BLACK_CHEST_FIRST_MS, CHEST_FIRST_MS, createSurvivorState, rerollSurvivorUpgradeOffer, resolveBlackChest, stepSurvivor } from './survivor';
 import type { SurvivorEnemy, SurvivorEvent, SurvivorState } from './survivor';
 import { attackProfile, moveFor } from './survivor-moves';
 import type { MoveCategory } from './survivor-moves';
@@ -128,6 +128,90 @@ describe('catálogo de itens segurados', () => {
 });
 
 describe('baús, chaves e efeitos na corrida', () => {
+  it('o baú negro aparece sem substituir o normal, pausa para decisão e abre sem chave com duas penalidades acumuláveis', () => {
+    const s = quiet(createSurvivorState(101, { kindCount: 1 }));
+    s.special.phase = 'ready';
+    s.elapsedMs = BLACK_CHEST_FIRST_MS - 10;
+    const spawned = stepSurvivor(s, { dx: 0, dy: 0 }, 16);
+    expect(spawned.some((ev) => ev.type === 'blackChestSpawn')).toBe(true);
+    expect(s.chests?.filter((chest) => chest.kind !== 'black')).toHaveLength(1);
+    const chest = s.chests!.find((item) => item.kind === 'black')!;
+    chest.x = s.player.x;
+    chest.y = s.player.y;
+    const offered = steps(s, 1);
+    expect(offered.some((ev) => ev.type === 'blackChestOffer')).toBe(true);
+    expect(s.pendingBlackChest).toBe(chest.id);
+    expect(steps(s, 1)).toEqual([]);
+    expect(s.keys).toBe(0);
+    const speed = s.player.speed;
+    const opened = resolveBlackChest(s, true);
+    expect(opened.some((ev) => ev.type === 'blackChestOpened')).toBe(true);
+    expect(s.keys).toBe(0);
+    expect(s.blackChestCurses).toBe(1);
+    expect(s.player.speed).toBeCloseTo(speed * 0.85);
+    expect(s.pendingUpgrade).toHaveLength(2);
+    expect(s.pendingUpgrade!.every((option) => option.id.startsWith(HELD_OFFER_PREFIX) && option.family === 'item')).toBe(true);
+    expect(s.chests?.filter((item) => item.kind !== 'black')).toHaveLength(1);
+    applyUpgrade(s, s.pendingUpgrade![0]!.id);
+    s.chests!.push({ id: 999, x: s.player.x, y: s.player.y, kind: 'black' });
+    steps(s, 1);
+    resolveBlackChest(s, true);
+    expect(s.blackChestCurses).toBe(2);
+    expect(s.player.speed).toBeCloseTo(speed * 0.85 ** 2);
+  });
+
+  it('recusar não aplica penalidades e só oferece de novo depois de sair do alcance', () => {
+    const s = quiet(createSurvivorState(102, { kindCount: 1 }));
+    s.chests = [{ id: 888, x: s.player.x, y: s.player.y, kind: 'black' }];
+    expect(steps(s, 1).some((ev) => ev.type === 'blackChestOffer')).toBe(true);
+    const speed = s.player.speed;
+    expect(resolveBlackChest(s, false)).toEqual([{ type: 'blackChestDeclined' }]);
+    expect(s.blackChestCurses).toBe(0);
+    expect(s.player.speed).toBe(speed);
+    expect(steps(s, 1).some((ev) => ev.type === 'blackChestOffer')).toBe(false);
+    s.chests[0]!.x += 100;
+    steps(s, 1);
+    s.chests[0]!.x = s.player.x;
+    expect(steps(s, 1).some((ev) => ev.type === 'blackChestOffer')).toBe(true);
+  });
+
+  it('baú negro sem itens dá orbes sem chave nem penalidades', () => {
+    const s = quiet(createSurvivorState(103, { kindCount: 1 }));
+    s.player.held ??= {};
+    for (const item of HELD_ITEMS) s.player.held![item.id] = HELD_MAX_COPIES;
+    s.chests = [{ id: 889, x: s.player.x, y: s.player.y, kind: 'black' }];
+    steps(s, 1);
+    const speed = s.player.speed;
+    expect(resolveBlackChest(s, true)).toEqual([{ type: 'blackChestEmpty' }]);
+    expect(s.blackChestCurses).toBe(0);
+    expect(s.player.speed).toBe(speed);
+    expect(s.pendingUpgrade).toBeNull();
+    expect(s.orbs).toHaveLength(6);
+  });
+
+  it('a maldição aumenta permanentemente dano de contato e de projéteis', () => {
+    const hit = (kind: 'contato' | 'projétil', curses: number): number => {
+      const s = quiet(createSurvivorState(104, { kindCount: 1 }));
+      s.player.dexId = 0;
+      s.player.hp = 200;
+      s.player.maxHp = 200;
+      s.blackChestCurses = curses;
+      if (kind === 'contato') {
+        const enemy = dummy(900, s.player.x, s.player.y);
+        enemy.damage = 20;
+        s.enemies.push(enemy);
+      } else s.hostileProjectiles.push({ id: 900, x: s.player.x, y: s.player.y, vx: 0, vy: 0, damage: 20, lifeMs: 1000, size: 5 });
+      steps(s, 1);
+      expect(s.lastHit?.kind).toBe(kind);
+      return s.lastHit!.damage;
+    };
+    for (const kind of ['contato', 'projétil'] as const) {
+      const normal = hit(kind, 0);
+      expect(hit(kind, 1)).toBe(Math.ceil(normal * 1.2));
+      expect(hit(kind, 2)).toBe(Math.ceil(normal * 1.2 ** 2));
+    }
+  });
+
   it('o baú aparece, fica trancado sem chave e abre a escolha de itens com chave', () => {
     const s = quiet(createSurvivorState(3, { kindCount: 1 }));
     s.elapsedMs = CHEST_FIRST_MS - 10;

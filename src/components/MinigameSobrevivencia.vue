@@ -39,6 +39,8 @@ import { combatMotion } from '../core/combat-motion';
 import { seededRng } from '../core/battle';
 import {
   applyUpgrade,
+  resolveBlackChest,
+  BLACK_CHEST_PENALTIES,
   banSurvivorUpgrade,
   survivorBanBlockReason,
   ARENA_H,
@@ -110,7 +112,7 @@ import { bonkGroundEllipse, bonkObstacleDrawables, createBonkArt, drawBonkGround
 import type { BonkArt } from '../village/survivor-bonk-landscape';
 import { PROJECTILE_TIER_NAMES, survivorProjectileTier } from '../core/survivor-projectile-power';
 import { drawConeGuide, drawElementAuraField, drawElementFx, drawElementOrbiter, drawElementProjectile, drawOrbitPath } from '../village/survivor-attack-art';
-import { drawBubblePopFx, drawChainFx, drawChest, drawChestOpenFx, drawDestinyChains, drawDistortFx, drawGravityWell, drawHeldChargeOrb, drawHeldGems, drawHeldHitFx, drawHeldProjectileOverlay, drawImplodeFx, drawKey, drawMirrorOrbiter, drawPortalFx, drawStickyBarb, drawSuctionField, drawTimeBubble } from '../village/survivor-held-art';
+import { drawBubblePopFx, drawChainFx, drawChest, drawBlackChest, drawChestOpenFx, drawDestinyChains, drawDistortFx, drawGravityWell, drawHeldChargeOrb, drawHeldGems, drawHeldHitFx, drawHeldProjectileOverlay, drawImplodeFx, drawKey, drawMirrorOrbiter, drawPortalFx, drawStickyBarb, drawSuctionField, drawTimeBubble } from '../village/survivor-held-art';
 import { HELD_ITEM_BY_ID, HELD_OFFER_PREFIX, heldChargePosition, heldGems, heldItemSpriteUrl, isHeldItemId, mirrorOrbiters } from '../core/survivor-held';
 import type { HeldItemId, HeldStacks } from '../core/survivor-held';
 import type { WorldToScreen } from '../village/survivor-attack-art';
@@ -721,7 +723,7 @@ const thiefHud = computed(() => {
   return `🐾 Ladrão ${direction} · ${Math.ceil((s.thief?.leftMs ?? 0) / 1000)}s`;
 });
 const specialBranchOptions = computed(() => state.value?.special.selected ? SURVIVOR_SPECIAL_BRANCHES[state.value.special.selected] : []);
-const specialBlocked = computed(() => !state.value || state.value.over || paused.value || shadowCutsceneOpen.value || !!pendingUpgrade.value || !!evolving.value || state.value.special.phase !== 'ready');
+const specialBlocked = computed(() => !state.value || state.value.over || paused.value || shadowCutsceneOpen.value || !!pendingUpgrade.value || !!blackChestOffer.value || !!evolving.value || state.value.special.phase !== 'ready');
 const guardianSprite = ref<string | null>(null);
 const shadowBossSprite = ref<string | null>(null);
 let specialQueued = false;
@@ -749,7 +751,7 @@ const chargeLabel = computed(() => {
   return charge.level >= 1 ? 'MÁXIMO' : charge.level > 0 || chargeHeld.value ? `${Math.floor(charge.level * 100)}%` : 'SEGURE';
 });
 function pressCharge(event?: PointerEvent): void {
-  if (!state.value || state.value.over || paused.value || !chargeStyle.value || chargeHeld.value) return;
+  if (!state.value || state.value.over || paused.value || blackChestOffer.value || !chargeStyle.value || chargeHeld.value) return;
   if (event) {
     if (event.button !== 0 || !(event.currentTarget instanceof HTMLElement)) return;
     event.currentTarget.setPointerCapture?.(event.pointerId);
@@ -782,7 +784,7 @@ function cinemaBeat(beat: CinemaBeat): void {
 }
 let supremeQueued = false;
 const supremeDef = computed(() => (state.value ? SURVIVOR_SUPREMES[state.value.supreme.type] : null));
-const supremeBlocked = computed(() => !state.value || state.value.over || paused.value || shadowCutsceneOpen.value || !!pendingUpgrade.value || !!evolving.value || specialModalOpen.value);
+const supremeBlocked = computed(() => !state.value || state.value.over || paused.value || shadowCutsceneOpen.value || !!pendingUpgrade.value || !!blackChestOffer.value || !!evolving.value || specialModalOpen.value);
 function queueSupreme(): void {
   if (supremeBlocked.value || (state.value?.supreme.meter ?? 0) < 1) return;
   unlockSound();
@@ -856,7 +858,7 @@ function openHelp(): void {
   if (paused.value) helpOpen.value = true;
 }
 const leaveConfirm = ref(false);
-const bonkJumpBlocked = computed(() => !bonkRun.value || !state.value || state.value.over || paused.value || !!pendingUpgrade.value || !!evolving.value || specialModalOpen.value);
+const bonkJumpBlocked = computed(() => !bonkRun.value || !state.value || state.value.over || paused.value || !!pendingUpgrade.value || !!blackChestOffer.value || !!evolving.value || specialModalOpen.value);
 /** Saltos disponíveis agora (true) e já usados (false), na ordem; vira as bolinhas do botão Pular. */
 const bonkJumpPips = computed(() => {
   const physics = bonkPhysics.value;
@@ -917,6 +919,17 @@ function minimapX(x: number): number { return ((x - minimap.value.bounds.x) / mi
 function minimapY(y: number): number { return ((y - minimap.value.bounds.y) / minimap.value.bounds.height) * 100; }
 const objectives = ref<ReturnType<typeof survivorObjectives>>([]);
 const pendingUpgrade = ref<SurvivorUpgradeOption[] | null>(null);
+const blackChestOffer = ref(false);
+
+function decideBlackChest(accept: boolean): void {
+  if (!state.value || !blackChestOffer.value) return;
+  const events = resolveBlackChest(toRaw(state.value), accept);
+  blackChestOffer.value = false;
+  pendingUpgrade.value = state.value.pendingUpgrade;
+  triggerRef(state);
+  if (events.some((event) => event.type === 'blackChestOpened')) playSound('success');
+  if (events.some((event) => event.type === 'blackChestEmpty')) say('Seus itens já estão no máximo: o baú negro virou orbes.', 3200);
+}
 const upgradeMenuLocked = ref(false);
 const UPGRADE_OPEN_DELAY_MS = 1000;
 let upgradeMenuLockTimer: ReturnType<typeof setTimeout> | null = null;
@@ -1045,9 +1058,9 @@ const musicUnavailable = ref(false);
 const music = new MusicPlayer(path => `${import.meta.env.BASE_URL}${path}`, () => { musicUnavailable.value = true; });
 function syncMusic(): void {
   const s = state.value;
-  music.update(survivorMusicMix(s?.elapsedMs ?? 0, s?.runSeed ?? 0), !!s && ready.value && !s.over && !paused.value && !leaveConfirm.value && !pendingUpgrade.value && !evolving.value && !document.hidden, survivorAudio.enabled ? survivorAudio.volume / 100 : 0);
+  music.update(survivorMusicMix(s?.elapsedMs ?? 0, s?.runSeed ?? 0), !!s && ready.value && !s.over && !paused.value && !leaveConfirm.value && !pendingUpgrade.value && !blackChestOffer.value && !evolving.value && !document.hidden, survivorAudio.enabled ? survivorAudio.volume / 100 : 0);
 }
-watch([() => survivorAudio.enabled, () => survivorAudio.volume, ready, paused, leaveConfirm, pendingUpgrade, evolving, summary], syncMusic);
+watch([() => survivorAudio.enabled, () => survivorAudio.volume, ready, paused, leaveConfirm, pendingUpgrade, blackChestOffer, evolving, summary], syncMusic);
 function unlockMusic(): void { musicUnavailable.value = false; syncMusic(); music.unlock(); }
 type UiSound = Extract<SoundCue, { kind: 'ui' }>['cue'];
 
@@ -1250,6 +1263,10 @@ function onKey(e: KeyboardEvent): void {
     e.preventDefault();
     return;
   }
+  if (blackChestOffer.value) {
+    if (dir) heldKeys.delete(dir);
+    return;
+  }
   if ((e.key === 'e' || e.key === 'E') && e.type === 'keydown' && !e.repeat) { e.preventDefault(); queueSpecial(); return; }
   if ((e.key === 'f' || e.key === 'F') && e.type === 'keydown' && !e.repeat) { e.preventDefault(); queueSupreme(); return; }
   if (e.key === 'r' || e.key === 'R') {
@@ -1272,7 +1289,7 @@ function onKey(e: KeyboardEvent): void {
 
 function canUseGamepadInRun(): boolean {
   return ready.value && !!state.value && !state.value.over && !paused.value && !shadowCutsceneOpen.value
-    && !summary.value && !pickOptions.value && !pendingUpgrade.value && !evolving.value
+    && !summary.value && !pickOptions.value && !pendingUpgrade.value && !blackChestOffer.value && !evolving.value
     && !specialModalOpen.value && !leaveConfirm.value && !debugOpen.value && !activeSurvivorDialog();
 }
 
@@ -2065,7 +2082,10 @@ function drawBonkPointers(c: CanvasRenderingContext2D, s: SurvivorState, physics
   if (s.fieldEvent) pointAt(s.fieldEvent.x, s.fieldEvent.y, s.fieldEvent.kind === 'hunt' ? '#ff6b72' : '#7be6ff', 10);
   if (s.surge?.friend) pointAt(s.surge.friend.x, s.surge.friend.y, '#7dff9b', 10);
   else if (s.surge?.kind === 'trial' && s.surge.phase === 'offer') pointAt(s.surge.x ?? 0, s.surge.y ?? 0, '#ffd84a', 10);
-  if ((s.keys ?? 0) > 0) for (const chest of s.chests ?? []) pointAt(chest.x, chest.y, '#7ee8a2', 10);
+  for (const chest of s.chests ?? []) {
+    if (chest.kind === 'black') pointAt(chest.x, chest.y, '#c68aff', 10);
+    else if ((s.keys ?? 0) > 0) pointAt(chest.x, chest.y, '#7ee8a2', 10);
+  }
   c.restore();
 }
 
@@ -2154,7 +2174,7 @@ function drawBonkScene(s: SurvivorState, physics: BonkPhysics): void {
   for (const chest of s.chests ?? []) {
     const ground = drawPoint(chest);
     if (!ground) continue;
-    figures.push({ depth: ground.depth, draw: () => drawChest(c, ground.x, ground.y - 10 * ground.scale, ground.scale, animMs, (s.keys ?? 0) > 0) });
+    figures.push({ depth: ground.depth, draw: () => (chest.kind === 'black' ? drawBlackChest : drawChest)(c, ground.x, ground.y - 10 * ground.scale, ground.scale, animMs, chest.kind === 'black' || (s.keys ?? 0) > 0) });
   }
   for (const key of s.keyDrops ?? []) {
     const ground = drawPoint(key);
@@ -2766,7 +2786,7 @@ function draw(): void {
   // Baús e chaves ficam visíveis até no Modo Rotom: são recompensas, não enfeite.
   for (const chest of s.chests ?? []) {
     if (chest.x < left - 40 || chest.x > right + 40 || chest.y < top - 40 || chest.y > bottom + 40) continue;
-    drawChest(ctx, chest.x, chest.y, 1, animMs, (s.keys ?? 0) > 0);
+    (chest.kind === 'black' ? drawBlackChest : drawChest)(ctx, chest.x, chest.y, 1, animMs, chest.kind === 'black' || (s.keys ?? 0) > 0);
   }
   for (const key of s.keyDrops ?? []) {
     if (key.x < left || key.x > right || key.y < top || key.y > bottom) continue;
@@ -3380,7 +3400,7 @@ function loop(ts: number): void {
   // reativas, porque as mudanças fora do laço passam pelo proxy como antes.
   const s = toRaw(state.value!);
   preloadVisibleEnemyRegions(s.elapsedMs, s.runSeed, s.enemies);
-  if (!s.over && !s.pendingUpgrade && !evolving.value) {
+  if (!s.over && !s.pendingUpgrade && s.pendingBlackChest == null && !evolving.value) {
     const projectilesBefore = s.projectiles.length;
     const hpBefore = s.player.hp;
     const xpBefore = s.player.xp;
@@ -3407,7 +3427,7 @@ function loop(ts: number): void {
     const events: SurvivorEvent[] = [];
     let criticalThisFrame = false;
     let attackedThisFrame = false;
-    for (let index = 0; index < steps.count && !s.over && !s.pendingUpgrade; index++) {
+    for (let index = 0; index < steps.count && !s.over && !s.pendingUpgrade && s.pendingBlackChest == null; index++) {
       const timerBeforeStep = s.player.attackTimerMs;
       const first = index === 0;
       events.push(...stepSurvivor(s, { airborne: bonkRun.value && (bonkPhysics.value?.z ?? 0) > 34, dx: move.dx, dy: move.dy, special: first && specialQueued, supreme: first && supremeQueued, charge: chargeHeld.value || (autoCharge.value && !!chargeStyle.value && autoChargeHeld(chargeStyle.value, s.charge)), cancelCharge: first && cancelChargeQueued, visibleEnemies: visibleEnemyCountForDanger(s), ...(bonkRun.value && bonkPhysics.value ? { aimAngle: bonkPhysics.value.cameraYaw } : {}) }, steps.stepMs));
@@ -3426,7 +3446,7 @@ function loop(ts: number): void {
     specialQueued = false;
     supremeQueued = false;
     cancelChargeQueued = false;
-    if (bonkRun.value && bonkPhysics.value && beforeBonkPosition) {
+    if (bonkRun.value && bonkPhysics.value && beforeBonkPosition && s.pendingBlackChest == null) {
       stepBonkPhysics(bonkPhysics.value, s.player, beforeBonkPosition, { dx, dy, jump: bonkJumpQueued }, simulationDt);
       // Inimigos também respeitam rochas e paredes; a altura do jogador não deve abrir a parede para eles.
       const groundPhysics = { ...bonkPhysics.value, z: 0 };
@@ -3513,6 +3533,8 @@ function loop(ts: number): void {
         cinemaBeat(CINEMA_BEATS.supremeRelease);
       }
       else if (ev.type === 'keyPicked') say(`🗝 Chave! Você tem ${ev.keys}. Encoste num baú para abrir.`, 2400);
+      else if (ev.type === 'blackChestOffer') { blackChestOffer.value = true; heldKeys.clear(); joyUp(); cancelCharge(); focusFirstSurvivorAction(); }
+      else if (ev.type === 'blackChestSpawn') say('Um baú negro apareceu no mapa.', 2600);
       else if (ev.type === 'chestSpawn') say('🧰 Um baú apareceu no mapa.', 2400);
       else if (ev.type === 'chestLocked') say('🔒 Baú trancado: derrote elites para ganhar chaves.', 2600);
       else if (ev.type === 'chestOpened') playSound('success');
@@ -3780,6 +3802,7 @@ function confirmLeave(): void {
 function requestBack(): void {
   if (finishRunOutro()) return;
   if (leaveConfirm.value) { cancelLeave(); return; }
+  if (blackChestOffer.value) { decideBlackChest(false); return; }
   if (attackChoice.value) { attackChoice.value = null; return; }
   if (typeChoice.value) { typeChoice.value = null; return; }
   if (helpOpen.value) { helpOpen.value = false; return; }
@@ -3913,6 +3936,7 @@ async function beginRun(dexId: number, name: string, picked?: PokemonType, infin
     resetFeedback();
     runUnlocks.value = [];
     pendingUpgrade.value = null;
+    blackChestOffer.value = false;
     clearTrainerPresentation();
     paused.value = false;
     const { move, profile, secondMove, hypotheticalSecondaryType } = survivorAttackOf(dexId, picked, swapped, omegaCategory);
@@ -4015,7 +4039,7 @@ const omegaAttackChoice = ref(false);
 const typeAffinityOffer = ref<PokemonType[] | null>(null);
 
 watch(
-  [pickOptions, typeChoice, attackChoice, typeAffinityOffer, pendingUpgrade, paused, leaveConfirm, specialModalOpen],
+  [pickOptions, typeChoice, attackChoice, typeAffinityOffer, pendingUpgrade, blackChestOffer, paused, leaveConfirm, specialModalOpen],
   (next, previous) => {
     if (next.some((value, index) => Boolean(value) && !previous[index])) {
       gamepadKeys.clear();
@@ -4114,6 +4138,7 @@ async function openPicker(): Promise<void> {
   // Sem isto, "Jogar de novo" abria o seletor atrás do overlay do resultado.
   summary.value = null;
   pendingUpgrade.value = null;
+  blackChestOffer.value = false;
   typeAffinityOffer.value = null;
   leaveConfirm.value = false;
   clearTrainerPresentation();
@@ -4279,7 +4304,8 @@ onBeforeUnmount(() => {
             <span v-if="(state.player.healBlockMs ?? 0) > 0" class="chip survivor-heal-block" role="status">🚫 CURA BLOQUEADA · {{ Math.ceil((state.player.healBlockMs ?? 0) / 1000) }}s</span>
             <span v-if="bonkRun" class="chip survivor-bonk-chip" title="Câmera em terceira pessoa, terreno físico e salto">💥 BONK</span>
             <span v-if="state.player.mega?.active" class="chip survivor-mega-chip" role="status" title="Stats base da forma Mega (PokéAPI) até o fim da corrida.">💎 {{ state.player.mega.label }}</span>
-            <span v-if="(state.keys ?? 0) > 0 || (state.chests?.length ?? 0) > 0" class="chip survivor-key-chip" role="status" title="Chaves caem dos elites; encoste num baú com chave para escolher um item segurado.">🗝 {{ state.keys ?? 0 }}<template v-if="state.chests?.length"> · 🧰 {{ state.chests.length }} no mapa</template></span>
+            <span v-if="state.blackChestCurses" class="chip survivor-black-curse" :title="`Penalidades permanentes acumuladas ${state.blackChestCurses} vez(es)`">Maldições ×{{ state.blackChestCurses }}</span>
+            <span v-if="(state.keys ?? 0) > 0 || (state.chests?.length ?? 0) > 0" class="chip survivor-key-chip" role="status" title="Chaves caem dos elites e abrem baús comuns. Baús negros dispensam chave e oferecem um pacto com penalidades.">🗝 {{ state.keys ?? 0 }}<template v-if="state.chests?.some((chest) => chest.kind !== 'black')"> · 🧰 {{ state.chests.filter((chest) => chest.kind !== 'black').length }}</template><template v-if="state.chests?.some((chest) => chest.kind === 'black')"> · <b class="survivor-black-count">Baú negro {{ state.chests.filter((chest) => chest.kind === 'black').length }}</b></template></span>
             <span v-if="heldSummary(state.player.held)" class="chip survivor-held-chip" role="status" :title="heldTitle(state.player.held)" :aria-label="`Itens segurados: ${heldTitle(state.player.held)}`">🎒
               <span v-for="item in heldOwned(state.player.held)" :key="item.id" class="survivor-held-entry" :class="{ transformer: HELD_ITEM_BY_ID[item.id].transformer }" :title="HELD_ITEM_BY_ID[item.id].transformer ? `${HELD_ITEM_BY_ID[item.id].name}: transforma o golpe` : HELD_ITEM_BY_ID[item.id].name">
                 <img v-if="!heldSpriteFailed.has(item.id)" class="survivor-held-sprite small" :src="heldItemSpriteUrl(item.id)" alt="" width="20" height="20" @error="onHeldSpriteError(item.id)"><template v-else>{{ HELD_ITEM_BY_ID[item.id].icon }}</template><small v-if="item.copies > 1">×{{ item.copies }}</small>
@@ -4349,7 +4375,7 @@ onBeforeUnmount(() => {
           </section>
         </div>
 
-        <div v-if="ready && state && minimapEnabled" class="survivor-minimap" role="img" aria-label="Mapa local. Círculo azul: você. Quadrados vermelhos: chefes. Losangos amarelos: elites. Estrelas: Pokébolas">
+        <div v-if="ready && state && minimapEnabled" class="survivor-minimap" role="img" aria-label="Mapa local. Círculo azul: você. Quadrados vermelhos: chefes. Losangos amarelos: elites. Estrelas: Pokébolas. Quadrados roxos: baús negros, sem chave e com penalidades.">
           <span class="survivor-minimap-title" aria-hidden="true">Mapa local</span>
           <div class="survivor-minimap-plot" aria-hidden="true">
             <span v-if="!bonkRun" class="survivor-minimap-viewport" :style="{ left: `${minimapX(minimap.viewport.x)}%`, top: `${minimapY(minimap.viewport.y)}%`, width: `${(minimap.viewport.width / minimap.bounds.width) * 100}%`, height: `${(minimap.viewport.height / minimap.bounds.height) * 100}%` }"></span>
@@ -4359,7 +4385,7 @@ onBeforeUnmount(() => {
               <span class="survivor-minimap-view" :style="{ left: `${minimapX(minimap.camera.x)}%`, top: `${minimapY(minimap.camera.y)}%`, transform: `rotate(${minimap.camera.yaw}rad)` }"></span>
             </template>
             <span v-for="marker in minimap.markers" :key="`${marker.kind}-${marker.id}`" class="survivor-minimap-marker"
-              :class="`kind-${marker.kind}`" :style="{ left: `${minimapX(marker.x)}%`, top: `${minimapY(marker.y)}%` }"></span>
+              :class="[`kind-${marker.kind}`, { 'kind-black-chest': marker.kind === 'chest' && state.chests?.some((chest) => chest.id === marker.id && chest.kind === 'black') }]" :style="{ left: `${minimapX(marker.x)}%`, top: `${minimapY(marker.y)}%` }"></span>
           </div>
         </div>
 
@@ -4733,6 +4759,19 @@ onBeforeUnmount(() => {
                 <span class="survivor-upgrade-icon" aria-hidden="true">{{ option.icon }}</span>
                 <span class="survivor-upgrade-text"><strong>{{ option.name }}</strong><small>{{ option.description }}</small></span>
               </button>
+            </div>
+          </div>
+        </div>
+
+        <div v-if="blackChestOffer" class="survivor-overlay survivor-black-overlay" role="alertdialog" aria-modal="true" aria-labelledby="black-chest-title" aria-describedby="black-chest-warning">
+          <div class="card survivor-black-card">
+            <p class="survivor-kicker">Baú negro · sem chave</p>
+            <h2 id="black-chest-title">Abrir o baú negro?</h2>
+            <p id="black-chest-warning">Escolha um item do mesmo conjunto dos baús comuns. Ao receber um item, você aceita as duas penalidades até o fim da corrida; elas se acumulam a cada baú negro. Se todos os itens estiverem no máximo, o baú vira orbes sem penalidade.</p>
+            <ul class="survivor-black-penalties"><li v-for="penalty in BLACK_CHEST_PENALTIES" :key="penalty">{{ penalty }}</li></ul>
+            <div class="survivor-black-actions">
+              <button type="button" @click="decideBlackChest(false)">Deixar o baú</button>
+              <button type="button" class="survivor-black-accept" @click="decideBlackChest(true)">Abrir e aceitar</button>
             </div>
           </div>
         </div>
