@@ -127,7 +127,7 @@ export function drawSurvivorSupreme(ctx: CanvasRenderingContext2D, state: Surviv
 
 export function drawSurvivorSpecial(ctx: CanvasRenderingContext2D, state: SurvivorState, detailed: boolean): void {
   const special = state.special;
-  if (!special.selected || (special.fxMs <= 0 && !special.clone)) return;
+  if (!special.selected || (special.fxMs <= 0 && !special.clone && !(special.selected === 'shield' && special.activeMs > 0))) return;
   const p = state.player;
   const time = state.elapsedMs / 1000;
   ctx.save(); ctx.strokeStyle = p.move.color; ctx.lineWidth = 3;
@@ -140,11 +140,55 @@ export function drawSurvivorSpecial(ctx: CanvasRenderingContext2D, state: Surviv
     // Uma barreira contínua e um arco que se esvazia mostram proteção e tempo restante.
     ctx.beginPath(); ctx.arc(p.x, p.y - 10, 31, 0, Math.PI * 2); ctx.stroke();
     ctx.strokeStyle = '#fff3c9'; ctx.lineWidth = 4;
-    const shieldProgress = Number.isFinite(special.activeMs) ? Math.min(1, special.activeMs / 3000) : 1;
+    const shieldProgress = Number.isFinite(special.activeMs) ? Math.min(1, special.activeMs / (special.branch === 'shield-quick' ? 1500 : 3000)) : 1;
     ctx.beginPath(); ctx.arc(p.x, p.y - 10, 35, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * shieldProgress); ctx.stroke();
     ctx.strokeStyle = p.move.color;
     const count = detailed ? 6 : 2;
     for (let i = 0; i < count; i++) { const a = time * 0.8 + i * Math.PI * 2 / count; drawElementMark(ctx, special.type, p.x + Math.cos(a) * 31, p.y - 10 + Math.sin(a) * 31, 8, time); }
+  } else if (special.selected === 'pulse') {
+    const duration = 650;
+    const progress = Math.min(1, Math.max(0, 1 - special.fxMs / duration));
+    const radius = (special.branch === 'pulse-wide' ? 240 : 170) * progress;
+    const centerX = special.from.x;
+    const centerY = special.from.y - 10;
+    ctx.globalAlpha = (1 - progress) * 0.9;
+    ctx.lineWidth = 7 - progress * 4;
+    ctx.beginPath(); ctx.arc(centerX, centerY, radius, 0, Math.PI * 2); ctx.stroke();
+    ctx.globalAlpha *= 0.65;
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(centerX, centerY, radius * 0.72, 0, Math.PI * 2); ctx.stroke();
+    const count = detailed ? 10 : 4;
+    for (let i = 0; i < count; i++) {
+      const angle = i * Math.PI * 2 / count;
+      drawElementMark(ctx, special.type, centerX + Math.cos(angle) * radius, centerY + Math.sin(angle) * radius, detailed ? 12 : 9, detailed ? time : 0);
+    }
+    if (special.branch === 'pulse-stun') {
+      ctx.strokeStyle = '#fff3c9';
+      for (const target of special.targets) {
+        ctx.beginPath(); ctx.arc(target.x, target.y - 10, 15, -Math.PI / 2, Math.PI * 0.75); ctx.stroke();
+      }
+    }
+  } else if (special.selected === 'mark') {
+    const progress = Math.min(1, Math.max(0, 1 - special.fxMs / 650));
+    ctx.globalAlpha = Math.min(1, special.fxMs / 300);
+    ctx.lineWidth = 3;
+    let from = special.from;
+    for (let i = 0; i < special.targets.length; i++) {
+      const target = special.targets[i]!;
+      const segment = Math.min(1, Math.max(0, progress * special.targets.length - i));
+      if (segment <= 0) break;
+      const x = from.x + (target.x - from.x) * segment;
+      const y = from.y + (target.y - from.y) * segment - 10;
+      ctx.beginPath(); ctx.moveTo(from.x, from.y - 10); ctx.lineTo(x, y); ctx.stroke();
+      if (segment >= 1) {
+        ctx.strokeStyle = special.branch === 'mark-execute' ? '#fff3c9' : p.move.color;
+        ctx.lineWidth = special.branch === 'mark-execute' ? 4 : 3;
+        ctx.beginPath(); ctx.arc(target.x, target.y - 10, 19, 0, Math.PI * 2); ctx.stroke();
+        drawElementMark(ctx, special.type, target.x, target.y - 10, detailed ? 18 : 12, detailed ? time + i : 0);
+        ctx.strokeStyle = p.move.color; ctx.lineWidth = 3;
+      }
+      from = target;
+    }
   } else {
     ctx.globalAlpha = Math.min(1, special.fxMs / 350);
     const count = detailed ? 7 : 2;
@@ -163,6 +207,53 @@ export function drawSurvivorSpecial(ctx: CanvasRenderingContext2D, state: Surviv
       ctx.strokeStyle = '#d9f4ff';
       drawElementMark(ctx, special.type, special.clone.x, special.clone.y - 10, 22, time + 0.5);
       ctx.restore();
+    }
+  }
+  ctx.restore();
+}
+
+/** Pulso e marca usam o mesmo plano do combate BONK, projetado pela câmera. */
+export function drawSurvivorSpecialBonk(ctx: CanvasRenderingContext2D, state: SurvivorState, detailed: boolean, project: WorldToScreen): void {
+  const special = state.special;
+  if (special.fxMs <= 0 || (special.selected !== 'pulse' && special.selected !== 'mark')) return;
+  const progress = Math.min(1, Math.max(0, 1 - special.fxMs / 650));
+  ctx.save();
+  ctx.strokeStyle = state.player.move.color;
+  ctx.globalAlpha = special.selected === 'pulse' ? (1 - progress) * 0.9 : Math.min(1, special.fxMs / 300);
+  if (special.selected === 'pulse') {
+    ctx.lineWidth = 5 - progress * 3;
+    const radius = (special.branch === 'pulse-wide' ? 240 : 170) * progress;
+    strokeProjectedRing(ctx, project, special.from.x, special.from.y, radius, 12, detailed ? 40 : 24);
+    if (special.branch === 'pulse-stun') {
+      ctx.strokeStyle = '#fff3c9';
+      for (const target of special.targets) {
+        const point = project(target.x, target.y, 12);
+        if (!point) continue;
+        ctx.beginPath(); ctx.arc(point.x, point.y, 13 * point.s, 0, Math.PI * 2); ctx.stroke();
+      }
+    }
+  } else {
+    ctx.lineWidth = 3;
+    let from = special.from;
+    for (let i = 0; i < special.targets.length; i++) {
+      const target = special.targets[i]!;
+      const segment = Math.min(1, Math.max(0, progress * special.targets.length - i));
+      if (segment <= 0) break;
+      const origin = project(from.x, from.y, 12);
+      const tip = project(from.x + (target.x - from.x) * segment, from.y + (target.y - from.y) * segment, 12);
+      if (origin && tip) {
+        ctx.beginPath(); ctx.moveTo(origin.x, origin.y); ctx.lineTo(tip.x, tip.y); ctx.stroke();
+      }
+      if (segment >= 1) {
+        const point = project(target.x, target.y, 12);
+        if (point) {
+          ctx.strokeStyle = special.branch === 'mark-execute' ? '#fff3c9' : state.player.move.color;
+          ctx.beginPath(); ctx.arc(point.x, point.y, 18 * point.s, 0, Math.PI * 2); ctx.stroke();
+          drawElementMark(ctx, special.type, point.x, point.y, (detailed ? 16 : 11) * point.s, detailed ? state.elapsedMs / 1000 + i : 0);
+          ctx.strokeStyle = state.player.move.color;
+        }
+      }
+      from = target;
     }
   }
   ctx.restore();

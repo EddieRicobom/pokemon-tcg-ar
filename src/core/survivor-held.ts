@@ -18,7 +18,13 @@ export type HeldItemId =
   | 'pedra-rei' | 'orbe-chama' | 'orbe-toxico' | 'placa-chama'
   | 'placa-zap' | 'placa-gelo' | 'restos' | 'argila-luminosa'
   | 'orbe-adamante' | 'orbe-lustroso' | 'orbe-grisea' | 'laco-destino'
-  | 'bola-ferro' | 'erva-poderosa';
+  | 'bola-ferro' | 'erva-poderosa'
+  | 'ovo-sorte' | 'moeda-amuleto' | 'bola-fumaca' | 'po-brilho'
+  | 'po-metal' | 'casca-metal' | 'cinto-preto' | 'oculos-escuros'
+  | 'colher-torta' | 'carvao' | 'agua-mistica' | 'areia-fina'
+  | 'bico-afiado' | 'presa-dragao'
+  | 'garra-agarrar' | 'presa-afiada' | 'cauda-lenta'
+  | 'faixa-escolha' | 'oculos-escolha' | 'lenco-escolha';
 
 export interface HeldItemDef {
   id: HeldItemId;
@@ -53,6 +59,8 @@ export interface HeldItemDef {
 }
 
 const round2 = (n: number): number => Math.round(n * 100) / 100;
+const HIT_FORMS: Record<MoveCategory, string> = { projetil: 'O impacto', rapido: 'Cada rajada', area: 'A explosão', aura: 'O pulso', cone: 'O leque', orbit: 'O toque orbital', foco: 'O feixe', teleporte: 'O pouso', trilha: 'A faixa' };
+const hitFormText = (effect: string): Record<MoveCategory, string> => Object.fromEntries(Object.entries(HIT_FORMS).map(([category, prefix]) => [category, `${prefix} ${effect}`])) as Record<MoveCategory, string>;
 
 export const HELD_ITEMS: readonly HeldItemDef[] = [
   { id: 'orbe-vida', slug: 'life-orb', generation: 4, name: 'Orbe da Vida', icon: '🔮', color: '#b25cff', rarity: 'raro', description: 'Como nos jogos, força em troca de vida: +30% de dano por cópia, e acertar custa um pouco de vida, no máximo a cada 0,4 s (nunca abaixo de 25%).' },
@@ -91,6 +99,20 @@ export const HELD_ITEMS: readonly HeldItemDef[] = [
   { id: 'placa-gelo', slug: 'icicle-plate', generation: 4, name: 'Placa Pingente', icon: '🟦', color: '#8fe8ff', rarity: 'raro', description: 'Placa de Arceus: golpes de Gelo +20% por cópia, e todo acerto soma +25% de dano de Gelo, com o efeito do Gelo.' },
   { id: 'restos', slug: 'leftovers', generation: 2, name: 'Restos', icon: '🍎', color: '#ff8f8f', rarity: 'normal', description: 'Como nos jogos, recupera vida aos poucos: 0,6 por segundo por cópia.', applyStats: (p) => { p.regenPerSec = round2((p.regenPerSec ?? 0) + 0.6); } },
   { id: 'argila-luminosa', slug: 'light-clay', generation: 4, name: 'Argila Luminosa', icon: '🧱', color: '#ffe9a8', rarity: 'normal', description: 'Nos jogos, faz as barreiras durarem mais; aqui, queimadura, veneno, atordoamento e raízes dos itens duram 40% mais por cópia.' },
+  { id: 'ovo-sorte', slug: 'lucky-egg', generation: 2, name: 'Ovo da Sorte', icon: '🥚', color: '#fff0a8', rarity: 'raro', description: '+15% de experiência por cópia.', applyStats: (p) => { p.xpMultiplier = round2(p.xpMultiplier * 1.15); } },
+  { id: 'moeda-amuleto', slug: 'amulet-coin', generation: 2, name: 'Moeda Amuleto', icon: '🪙', color: '#ffda57', rarity: 'normal', description: '+20 moedas ao concluir a corrida por cópia.', applyStats: (p) => { p.bonusCoins = (p.bonusCoins ?? 0) + 20; } },
+  { id: 'bola-fumaca', slug: 'smoke-ball', generation: 2, name: 'Bola de Fumaça', icon: '💨', color: '#aaa7bc', rarity: 'normal', description: '+10% de velocidade de movimento por cópia.', applyStats: (p) => { p.speed = round2(p.speed * 1.1); } },
+  { id: 'po-brilho', slug: 'bright-powder', generation: 2, name: 'Pó Brilhante', icon: '✨', color: '#fff6a0', rarity: 'normal', description: '+12 de Defesa Especial por cópia.', applyStats: (p) => { p.spDefenseBonus = (p.spDefenseBonus ?? 0) + 12; } },
+  { id: 'po-metal', slug: 'metal-powder', generation: 2, name: 'Pó Metálico', icon: '⚙', color: '#b5c9d8', rarity: 'normal', description: '+12 de Defesa por cópia.', applyStats: (p) => { p.defenseBonus = (p.defenseBonus ?? 0) + 12; } },
+  { id: 'casca-metal', slug: 'metal-coat', generation: 2, name: 'Revestimento Metálico', icon: '🛡', color: '#c3d9e9', rarity: 'raro', description: '+8 de Defesa e Defesa Especial por cópia.', applyStats: (p) => { p.defenseBonus = (p.defenseBonus ?? 0) + 8; p.spDefenseBonus = (p.spDefenseBonus ?? 0) + 8; } },
+  { id: 'cinto-preto', slug: 'black-belt', generation: 2, name: 'Faixa Preta', icon: '🥋', color: '#aaaaaf', rarity: 'normal', description: '+8% de dano e +4 de Defesa por cópia.', applyStats: (p) => { p.attackDamage = round2(p.attackDamage * 1.08); p.defenseBonus = (p.defenseBonus ?? 0) + 4; } },
+  { id: 'oculos-escuros', slug: 'black-glasses', generation: 2, name: 'Óculos Escuros', icon: '🕶', color: '#8583ad', rarity: 'normal', description: '+5% de dano e +3% de chance de crítico por cópia (até 60%).', applyStats: (p) => { p.attackDamage = round2(p.attackDamage * 1.05); p.critChance = round2(Math.min(0.6, (p.critChance ?? 0.05) + 0.03)); } },
+  { id: 'colher-torta', slug: 'twisted-spoon', generation: 2, name: 'Colher Torta', icon: '🥄', color: '#d6b6ff', rarity: 'normal', description: '+10% de alcance do ataque e +4 de Defesa Especial por cópia.', applyStats: (p) => { p.attackRange = round2(p.attackRange * 1.1); p.spDefenseBonus = (p.spDefenseBonus ?? 0) + 4; } },
+  { id: 'carvao', slug: 'charcoal', generation: 2, name: 'Carvão', icon: '🔥', color: '#ff985e', rarity: 'normal', description: '+10% de dano em área e +4% de dano do ataque por cópia.', applyStats: (p) => { p.areaDamageMultiplier = round2(p.areaDamageMultiplier * 1.1); p.attackDamage = round2(p.attackDamage * 1.04); } },
+  { id: 'agua-mistica', slug: 'mystic-water', generation: 2, name: 'Água Mística', icon: '💧', color: '#72caff', rarity: 'normal', description: '+12 de vida máxima e cura 12 de vida por cópia.', applyStats: (p) => { p.maxHp += 12; p.hp = Math.min(p.maxHp, p.hp + 12); } },
+  { id: 'areia-fina', slug: 'soft-sand', generation: 2, name: 'Areia Fina', icon: '⌛', color: '#e6c687', rarity: 'normal', description: '+15% de alcance de coleta de experiência por cópia.', applyStats: (p) => { p.pickupRadius = round2(p.pickupRadius * 1.15); } },
+  { id: 'bico-afiado', slug: 'sharp-beak', generation: 2, name: 'Bico Afiado', icon: '🪶', color: '#e9d79e', rarity: 'raro', appliesTo: ['projetil', 'rapido', 'foco'], description: 'Projéteis atravessam mais um inimigo e voam 8% mais rápido por cópia.', applyStats: (p) => { p.pierce += 1; p.projectileSpeed = round2(p.projectileSpeed * 1.08); } },
+  { id: 'presa-dragao', slug: 'dragon-fang', generation: 2, name: 'Presa de Dragão', icon: '🐉', color: '#bea2ff', rarity: 'raro', description: '+10% de dano e +8 de vida máxima por cópia; cura 8 de vida.', applyStats: (p) => { p.attackDamage = round2(p.attackDamage * 1.1); p.maxHp += 8; p.hp = Math.min(p.maxHp, p.hp + 8); } },
   {
     id: 'orbe-adamante', slug: 'adamant-orb', generation: 4, name: 'Orbe Adamante', icon: '⏳', color: '#7fd4ff', rarity: 'lendario', transformer: true,
     description: 'O orbe de Dialga, senhor do tempo: os golpes deixam bolhas que congelam os inimigos e, ao estourar, repetem o acerto em todos que estão dentro. A segunda cópia aumenta a bolha e repete mais uma vez.',
@@ -181,6 +203,12 @@ export const HELD_ITEMS: readonly HeldItemDef[] = [
       trilha: 'Quando a faixa acaba, ela explode inteira de uma vez.',
     },
   },
+  { id: 'garra-agarrar', slug: 'grip-claw', generation: 4, name: 'Garra de Agarrar', icon: '🪝', color: '#62d4c0', rarity: 'raro', transformer: true, transformerWeight: 2, description: 'Cada acerto fisga inimigos comuns para perto do Pokémon e os desacelera. A segunda cópia aumenta o puxão e a lentidão.', perCategory: hitFormText('fisga e desacelera o alvo atingido.') },
+  { id: 'presa-afiada', slug: 'razor-fang', generation: 4, name: 'Presa Afiada', icon: '🦷', color: '#f2e0c2', rarity: 'raro', transformer: true, transformerWeight: 2, description: 'Acertos espalham estilhaços de presa em leque a partir do alvo, até um disparo por 0,35 s. A segunda cópia acrescenta estilhaços.', perCategory: hitFormText('espalha estilhaços de presa a partir do alvo.') },
+  { id: 'cauda-lenta', slug: 'lagging-tail', generation: 4, name: 'Cauda Lenta', icon: '🪃', color: '#a893d1', rarity: 'raro', transformer: true, transformerWeight: 2, description: 'Um acerto deixa um eco que detona em área 0,5 s depois, no máximo a cada 0,65 s. A segunda cópia aumenta raio e dano.', perCategory: hitFormText('deixa uma detonação atrasada no alvo.') },
+  { id: 'faixa-escolha', slug: 'choice-band', generation: 3, name: 'Faixa da Escolha', icon: '🥊', color: '#ef8b66', rarity: 'lendario', transformer: true, description: 'A cada três acertos, o golpe abre uma onda de impacto no terceiro alvo. A segunda cópia amplia a onda.', perCategory: hitFormText('conta para liberar uma onda a cada três acertos.') },
+  { id: 'oculos-escolha', slug: 'choice-specs', generation: 4, name: 'Óculos da Escolha', icon: '👓', color: '#b9a4ff', rarity: 'lendario', transformer: true, description: 'Um acerto refrata um raio até outro inimigo próximo, no máximo a cada 0,4 s. A segunda cópia fortalece o raio.', perCategory: hitFormText('refrata um raio para outro inimigo próximo.') },
+  { id: 'lenco-escolha', slug: 'choice-scarf', generation: 4, name: 'Lenço da Escolha', icon: '🧣', color: '#f3baec', rarity: 'lendario', transformer: true, description: 'Um acerto se repete rapidamente no mesmo alvo, no máximo a cada 0,45 s. A segunda cópia fortalece a repetição.', perCategory: hitFormText('repete rapidamente um acerto no mesmo alvo.') },
 ];
 
 export const HELD_ITEM_BY_ID: Readonly<Record<HeldItemId, HeldItemDef>> = Object.fromEntries(HELD_ITEMS.map((item) => [item.id, item])) as Record<HeldItemId, HeldItemDef>;
@@ -229,6 +257,12 @@ export interface HeldMods {
   destiny: number;
   gravity: number;
   power: number;
+  grip: number;
+  fang: number;
+  tail: number;
+  band: number;
+  specs: number;
+  scarf: number;
   /** Itens pegos, na ordem do catálogo (para a faísca de cor em cada acerto, sem recalcular a cada golpe). */
   ids: HeldItemId[];
 }
@@ -271,6 +305,12 @@ export function heldMods(stacks: HeldStacks): HeldMods {
     destiny: Math.min(HELD_TRANSFORMER_MAX_COPIES, n('laco-destino')),
     gravity: Math.min(HELD_TRANSFORMER_MAX_COPIES, n('bola-ferro')),
     power: Math.min(HELD_TRANSFORMER_MAX_COPIES, n('erva-poderosa')),
+    grip: Math.min(HELD_TRANSFORMER_MAX_COPIES, n('garra-agarrar')),
+    fang: Math.min(HELD_TRANSFORMER_MAX_COPIES, n('presa-afiada')),
+    tail: Math.min(HELD_TRANSFORMER_MAX_COPIES, n('cauda-lenta')),
+    band: Math.min(HELD_TRANSFORMER_MAX_COPIES, n('faixa-escolha')),
+    specs: Math.min(HELD_TRANSFORMER_MAX_COPIES, n('oculos-escolha')),
+    scarf: Math.min(HELD_TRANSFORMER_MAX_COPIES, n('lenco-escolha')),
     ids: HELD_ITEMS.filter((item) => n(item.id) > 0).map((item) => item.id),
   };
 }
@@ -298,6 +338,12 @@ export interface HeldProjectileLook {
   knot?: boolean;
   /** Bola de Ferro: núcleo escuro com anel de acreção. */
   gravity?: boolean;
+  grip?: boolean;
+  fang?: boolean;
+  tail?: boolean;
+  band?: boolean;
+  specs?: boolean;
+  scarf?: boolean;
 }
 
 export function heldProjectileLook(stacks: HeldStacks): HeldProjectileLook | null {
@@ -319,8 +365,14 @@ export function heldProjectileLook(stacks: HeldStacks): HeldProjectileLook | nul
     ...(has('orbe-grisea') > 0 ? { mirror: true } : {}),
     ...(has('laco-destino') > 0 ? { knot: true } : {}),
     ...(has('bola-ferro') > 0 ? { gravity: true } : {}),
+    ...(has('garra-agarrar') > 0 ? { grip: true } : {}),
+    ...(has('presa-afiada') > 0 ? { fang: true } : {}),
+    ...(has('cauda-lenta') > 0 ? { tail: true } : {}),
+    ...(has('faixa-escolha') > 0 ? { band: true } : {}),
+    ...(has('oculos-escolha') > 0 ? { specs: true } : {}),
+    ...(has('lenco-escolha') > 0 ? { scarf: true } : {}),
   };
-  const any = colors.length > 0 || look.spikes || look.crown || look.sparks || look.star || look.wings || look.heavy > 0 || !!look.time || !!look.portal || !!look.mirror || !!look.knot || !!look.gravity;
+  const any = colors.length > 0 || look.spikes || look.crown || look.sparks || look.star || look.wings || look.heavy > 0 || !!look.time || !!look.portal || !!look.mirror || !!look.knot || !!look.gravity || !!look.grip || !!look.fang || !!look.tail || !!look.band || !!look.specs || !!look.scarf;
   return any ? look : null;
 }
 

@@ -98,7 +98,7 @@ import { availableSurvivorPreparations, SURVIVOR_PREPARATIONS } from '../core/su
 import type { SurvivorPreparationId } from '../core/survivor-preparations';
 import { chooseSurvivorSpecial, chooseSurvivorSpecialBranch, SPECIAL_GUARDIANS, SURVIVOR_SPECIAL_BRANCHES, SURVIVOR_SPECIALS } from '../core/survivor-specials';
 import type { SurvivorSpecialBranchId, SurvivorSpecialId } from '../core/survivor-specials';
-import { drawSurvivorSpecial, drawSurvivorSupreme } from '../village/survivor-special-art';
+import { drawSurvivorSpecial, drawSurvivorSpecialBonk, drawSurvivorSupreme } from '../village/survivor-special-art';
 import { emptySurvivorFeedbackAnswers, encodeSurvivorFeedback } from '../core/survivor-feedback';
 import type { FeedbackRating, FeedbackRatingKey } from '../core/survivor-feedback';
 import { BONK_LANDING_MS, bonkInputToWorld, bonkJumpsRemaining, createBonkPhysics, projectBonkPoint, resolveBonkPosition, stepBonkPhysics } from '../core/survivor-bonk';
@@ -2333,6 +2333,7 @@ function drawBonkScene(s: SurvivorState, physics: BonkPhysics): void {
     }
     c.restore();
   }
+  drawSurvivorSpecialBonk(c, s, detailed, toScreen);
   drawSurvivorSupreme(c, s, animMs, detailed, toScreen);
   if (playerGround && s.special.activeMs > 0) {
     const ring = bonkGroundEllipse(playerGround, Math.max(20, s.player.attackRadius * 0.8));
@@ -4725,8 +4726,8 @@ onBeforeUnmount(() => {
               <span class="guardian-orb">{{ chosenSpecial?.icon }}</span>
             </div>
             <p class="guardian-title">{{ guardian.name }} · segundo presságio</p>
-            <h2>{{ state.special.phase === 'branch-arrival' ? 'O especial encontrou dois novos caminhos…' : 'Escolha uma das duas ramificações' }}</h2>
-            <p role="status">{{ state.special.phase === 'branch-arrival' ? 'Aos 7 minutos, o Especial escolhido aos 3 minutos oferece duas opções próprias.' : 'Escolha uma das duas opções do seu Especial. A batalha está pausada.' }}</p>
+            <h2>{{ state.special.phase === 'branch-arrival' ? 'O especial encontrou novos caminhos…' : 'Escolha uma ramificação' }}</h2>
+            <p role="status">{{ state.special.phase === 'branch-arrival' ? 'Aos 7 minutos, o Especial escolhido aos 3 minutos oferece novas opções.' : 'Escolha uma opção do seu Especial. A batalha está pausada.' }}</p>
             <div v-if="state.special.phase === 'branch-choice'" class="survivor-choice-list">
               <button v-for="option in specialBranchOptions" :key="option.id" type="button" class="survivor-upgrade-btn" @click="chooseSpecialBranch(option.id)">
                 <span class="survivor-upgrade-icon" aria-hidden="true">{{ option.icon }}</span>

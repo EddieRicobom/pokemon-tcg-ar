@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { ARENA_H, ARENA_W, createSurvivorState, PLAYER_RADIUS, stepSurvivor } from './survivor';
 import type { SurvivorEnemy } from './survivor';
-import { chooseSurvivorSpecial, chooseSurvivorSpecialBranch, DASH_CLONE_DURATION_MS, SPECIAL_ARRIVAL_MS, SPECIAL_BRANCH_ARRIVAL_MS, SPECIAL_BRANCH_UNLOCK_MS, SPECIAL_GUARDIANS, SPECIAL_UNLOCK_MS, SURVIVOR_SPECIALS } from './survivor-specials';
-import type { SurvivorSpecialId } from './survivor-specials';
+import { chooseSurvivorSpecial, chooseSurvivorSpecialBranch, DASH_CLONE_DURATION_MS, SPECIAL_ARRIVAL_MS, SPECIAL_BRANCH_ARRIVAL_MS, SPECIAL_BRANCH_UNLOCK_MS, SPECIAL_GUARDIANS, SPECIAL_UNLOCK_MS, SURVIVOR_SPECIAL_BRANCHES, SURVIVOR_SPECIALS } from './survivor-specials';
+import type { SurvivorSpecialBranchId, SurvivorSpecialId } from './survivor-specials';
 import { typesOfDex } from './species-filter';
 
 const idle = { dx: 0, dy: 0 };
-function quiet() {
-  const state = createSurvivorState(42, { kindCount: 1 });
+function quiet(bonk = false) {
+  const state = createSurvivorState(42, { kindCount: 1, bonk });
   state.spawnAccumMs = -1e9;
   state.nextBossAtMs = Infinity;
   state.player.attackTimerMs = Infinity;
@@ -17,6 +17,12 @@ function armed(id: SurvivorSpecialId) {
   const state = quiet();
   state.special.phase = 'choice';
   expect(chooseSurvivorSpecial(state, id)).toBe(true);
+  return state;
+}
+function branched(id: SurvivorSpecialId, branch: SurvivorSpecialBranchId) {
+  const state = armed(id);
+  state.special.phase = 'branch-choice';
+  expect(chooseSurvivorSpecialBranch(state, branch)).toBe(true);
   return state;
 }
 function enemy(id: number, x: number, y: number, extra: Partial<SurvivorEnemy> = {}): SurvivorEnemy {
@@ -219,7 +225,7 @@ describe('orbe e especiais da Torre', () => {
     expect(vacuum.player.xp).toBeGreaterThan(0);
   });
 
-  it('oferece Relógio parado e Núcleo gravitacional, cada um com duas especializações próprias', () => {
+  it('oferece Relógio parado e Núcleo gravitacional, com especializações próprias', () => {
     expect(Object.keys(SURVIVOR_SPECIALS)).toEqual(expect.arrayContaining(['stasis', 'gravity']));
 
     const stasis = armed('stasis');
@@ -238,5 +244,140 @@ describe('orbe e especiais da Torre', () => {
     gravity.enemies = [pushed];
     stepSurvivor(gravity, { ...idle, special: true }, 100);
     expect(pushed.x).toBeGreaterThan(gravity.player.x + 80);
+  });
+
+  it('oferece sete especiais com três ramificações exclusivas cada', () => {
+    expect(Object.keys(SURVIVOR_SPECIALS)).toHaveLength(7);
+    const branchIds = Object.values(SURVIVOR_SPECIAL_BRANCHES).flat().map((entry) => entry.id);
+    expect(new Set(branchIds).size).toBe(21);
+    for (const [id, branches] of Object.entries(SURVIVOR_SPECIAL_BRANCHES)) {
+      expect(branches).toHaveLength(3);
+      const state = armed(id as SurvivorSpecialId);
+      state.special.phase = 'branch-choice';
+      expect(chooseSurvivorSpecialBranch(state, branches[0]!.id)).toBe(true);
+      expect(state.special.branch).toBe(branches[0]!.id);
+    }
+    const invalid = armed('pulse');
+    invalid.special.phase = 'branch-choice';
+    expect(chooseSurvivorSpecialBranch(invalid, 'mark-chain')).toBe(false);
+  });
+
+  it('novos ramos dos cinco especiais alteram duração, recarga ou cura', () => {
+    const dash = branched('dash', 'dash-long');
+    stepSurvivor(dash, { dx: 1, dy: 0, special: true }, 1);
+    expect(dash.special.activeMs).toBe(449);
+
+    const shield = branched('shield', 'shield-quick');
+    stepSurvivor(shield, { ...idle, special: true }, 1);
+    expect(shield.special.activeMs).toBe(1499);
+    expect(shield.special.cooldownMs).toBe(7000);
+
+    const teleport = branched('teleport', 'teleport-mend');
+    teleport.player.hp = 40;
+    stepSurvivor(teleport, { ...idle, special: true }, 1);
+    expect(teleport.player.hp).toBe(55);
+
+    const stasis = branched('stasis', 'stasis-cycle');
+    stepSurvivor(stasis, { ...idle, special: true }, 1);
+    expect(stasis.special.activeMs).toBe(1999);
+    expect(stasis.special.cooldownMs).toBe(10_000);
+
+    const gravity = branched('gravity', 'gravity-long');
+    stepSurvivor(gravity, { ...idle, special: true }, 1);
+    expect(gravity.special.activeMs).toBe(5999);
+  });
+
+  it('pulso atinge alvos próximos, respeita limite e oferece alcance, atordoamento ou cura', () => {
+    const base = armed('pulse');
+    base.player.attackDamage = 10;
+    base.enemies = Array.from({ length: 14 }, (_, i) => enemy(i + 1, base.player.x + 40 + i * 4, base.player.y));
+    const far = enemy(99, base.player.x + 220, base.player.y);
+    base.enemies.push(far);
+    stepSurvivor(base, { ...idle, special: true }, 1);
+    expect(base.enemies.filter((entry) => entry.hp === 80)).toHaveLength(12);
+    expect(far.hp).toBe(100);
+    expect(base.special.targets).toHaveLength(12);
+    expect(base.special.cooldownMs).toBe(14_000);
+
+    const wide = branched('pulse', 'pulse-wide');
+    wide.enemies = [enemy(1, wide.player.x + 220, wide.player.y)];
+    stepSurvivor(wide, { ...idle, special: true }, 1);
+    expect(wide.enemies[0]!.hp).toBeLessThan(100);
+
+    const stun = branched('pulse', 'pulse-stun');
+    const target = enemy(1, stun.player.x + 60, stun.player.y);
+    stun.enemies = [target];
+    stepSurvivor(stun, { ...idle, special: true }, 1);
+    expect(target.stunMs).toBeGreaterThanOrEqual(1499);
+
+    const drain = branched('pulse', 'pulse-drain');
+    drain.player.hp = 40;
+    drain.enemies = [enemy(1, drain.player.x + 40, drain.player.y), enemy(2, drain.player.x + 60, drain.player.y)];
+    stepSurvivor(drain, { ...idle, special: true }, 1);
+    expect(drain.player.hp).toBe(46);
+  });
+
+  it('marca atinge o alvo mais próximo e oferece cadeia, execução ou cura maior', () => {
+    const base = armed('mark');
+    base.player.attackDamage = 10;
+    base.player.hp = 40;
+    const near = enemy(1, base.player.x + 50, base.player.y);
+    const far = enemy(2, base.player.x + 90, base.player.y);
+    base.enemies = [far, near];
+    stepSurvivor(base, { ...idle, special: true }, 1);
+    expect(near.hp).toBe(70);
+    expect(far.hp).toBe(100);
+    expect(base.player.hp).toBe(43);
+    expect(base.special.targets).toHaveLength(1);
+
+    const chain = branched('mark', 'mark-chain');
+    chain.player.attackDamage = 10;
+    chain.enemies = [1, 2, 3, 4].map((i) => enemy(i, chain.player.x + i * 40, chain.player.y));
+    stepSurvivor(chain, { ...idle, special: true }, 1);
+    expect(chain.enemies.map((entry) => entry.hp)).toEqual([80, 80, 80, 100]);
+
+    const execute = branched('mark', 'mark-execute');
+    execute.player.attackDamage = 10;
+    const weak = enemy(1, execute.player.x + 40, execute.player.y, { hp: 40 });
+    execute.enemies = [weak];
+    stepSurvivor(execute, { ...idle, special: true }, 1);
+    expect(weak.hp).toBe(-10);
+
+    const harvest = branched('mark', 'mark-harvest');
+    harvest.player.attackDamage = 10;
+    harvest.player.hp = 40;
+    harvest.enemies = [enemy(1, harvest.player.x + 40, harvest.player.y)];
+    stepSurvivor(harvest, { ...idle, special: true }, 1);
+    expect(harvest.player.hp).toBe(48);
+  });
+
+  it('pulso respeita proteção e limite de chefes, e contabiliza dano, derrota e XP também no BONK', () => {
+    const state = quiet(true);
+    state.special.phase = 'choice';
+    expect(chooseSurvivorSpecial(state, 'pulse')).toBe(true);
+    state.player.attackDamage = 1000;
+    const boss = enemy(1, state.player.x + 80, state.player.y, { boss: true, grade: 'chefao', hp: 1000, maxHp: 1000, protectedMs: 1000 });
+    const common = enemy(2, state.player.x + 140, state.player.y, { hp: 10, maxHp: 10 });
+    state.enemies = [boss, common];
+    stepSurvivor(state, { ...idle, special: true }, 1);
+    expect(boss.hp).toBe(940);
+    expect(state.kills).toBe(1);
+    expect(state.orbs.length + Number(state.player.xp > 0)).toBeGreaterThan(0);
+    expect(state.runStats?.damage['Pulso elemental']?.damage).toBe(70);
+  });
+
+  it('marca limita dano em chefes e encurta atordoamento de chefes do pulso', () => {
+    const mark = branched('mark', 'mark-execute');
+    mark.player.attackDamage = 1000;
+    const boss = enemy(1, mark.player.x + 80, mark.player.y, { boss: true, grade: 'chefao', hp: 400, maxHp: 1000 });
+    mark.enemies = [boss];
+    stepSurvivor(mark, { ...idle, special: true }, 1);
+    expect(boss.hp).toBe(250);
+
+    const pulse = branched('pulse', 'pulse-stun');
+    const stunnedBoss = enemy(2, pulse.player.x + 80, pulse.player.y, { boss: true, grade: 'chefao', hp: 1000, maxHp: 1000 });
+    pulse.enemies = [stunnedBoss];
+    stepSurvivor(pulse, { ...idle, special: true }, 1);
+    expect(stunnedBoss.stunMs).toBe(299);
   });
 });

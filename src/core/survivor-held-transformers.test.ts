@@ -8,6 +8,7 @@ import type { MoveCategory } from './survivor-moves';
 
 const CATEGORIES: MoveCategory[] = ['projetil', 'aura', 'area', 'cone', 'orbit', 'foco', 'rapido', 'teleporte', 'trilha'];
 const TRANSFORMERS: HeldItemId[] = ['orbe-adamante', 'orbe-lustroso', 'orbe-grisea', 'laco-destino', 'bola-ferro', 'erva-poderosa'];
+const NEW_TRANSFORMERS: HeldItemId[] = ['garra-agarrar', 'presa-afiada', 'cauda-lenta', 'faixa-escolha', 'oculos-escolha', 'lenco-escolha'];
 /** Inimigos parados em volta do Pokémon, em várias distâncias e lados, para todas as formas acharem alvo. */
 const LAYOUT: [number, number][] = [[40, 0], [70, 10], [100, -10], [130, 0], [160, 20], [-90, 0], [0, 90], [60, -80], [200, 0], [-150, 30], [119, 5], [-119, 0]];
 
@@ -64,9 +65,9 @@ const SIGNATURE: Partial<Record<HeldItemId, (seen: Seen, category: MoveCategory)
 };
 
 describe('transformadores', () => {
-  it('são 6, raros no baú, com teto de 2 cópias e valendo para todas as formas', () => {
+  it('são 12, raros no baú, com teto de 2 cópias e valendo para todas as formas', () => {
     const transformers = HELD_ITEMS.filter((item) => item.transformer);
-    expect(transformers.map((item) => item.id).sort()).toEqual([...TRANSFORMERS].sort());
+    expect(transformers.map((item) => item.id).sort()).toEqual([...TRANSFORMERS, ...NEW_TRANSFORMERS].sort());
     for (const item of transformers) {
       expect(heldMaxCopies(item.id)).toBe(HELD_TRANSFORMER_MAX_COPIES);
       expect(item.generation).toBeLessThanOrEqual(4);
