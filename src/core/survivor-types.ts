@@ -222,8 +222,8 @@ export const MAX_DIGITAL_POKEBALLS_PER_RUN = 3;
 /** Só uma corrida esmagadoramente fácil depois de 10 min pode atrair o Perigo Digital. */
 export const DIGITAL_DANGER_UNLOCK_MS = 600_000;
 export const DIGITAL_DANGER_MAX = 100;
-/** Depois da convocação, há seis minutos completos para a corrida respirar. */
-export const DIGITAL_DANGER_COOLDOWN_MS = 360_000;
+/** Depois da convocação, há quatro minutos para a corrida respirar. */
+export const DIGITAL_DANGER_COOLDOWN_MS = 240_000;
 export const DIGITAL_DANGER_VISIBLE_RADIUS = 520;
 
 /** Grau do inimigo: `comum` (os de sempre), `elite` (do treinador do minuto 5+) e `chefao` (do 20º minuto e do infinito). */

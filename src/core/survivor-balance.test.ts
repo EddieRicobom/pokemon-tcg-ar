@@ -28,17 +28,18 @@ function simulate(type: PokemonType, seed: number): number {
 
 // Simulação pesada de CPU: com a suíte inteira em paralelo ela passava dos 5 s padrão e falhava só por tempo.
 describe('regressão de dificuldade do Survival', { timeout: 30_000 }, () => {
-  it('mantém os tipos dentro de uma faixa justa nos primeiros quatro minutos', () => {
+  it('mantém os tipos dentro de uma faixa justa com a horda dobrada nos primeiros quatro minutos', () => {
     const averages = new Map<PokemonType, number>();
     for (const type of TYPES) {
       const total = [1, 2, 3, 4, 5, 6, 7, 8].reduce((sum, seed) => sum + simulate(type, seed), 0);
       averages.set(type, total / 8);
     }
     const values = [...averages.values()];
-    expect(Math.min(...values)).toBeGreaterThanOrEqual(160_000);
-    expect(Math.max(...values) - Math.min(...values)).toBeLessThanOrEqual(20_000);
+    expect(Math.min(...values)).toBeGreaterThanOrEqual(150_000);
+    expect(Math.max(...values)).toBeLessThanOrEqual(190_000);
+    expect(Math.max(...values) - Math.min(...values)).toBeLessThanOrEqual(30_000);
     expect(averages.get('bug')).toBeGreaterThanOrEqual(160_000);
     expect(averages.get('fighting')).toBeGreaterThanOrEqual(160_000);
-    expect(averages.get('ice')).toBeGreaterThanOrEqual(160_000);
+    expect(averages.get('ice')).toBeGreaterThanOrEqual(150_000);
   });
 });

@@ -200,7 +200,12 @@ describe('stepSurvivor', () => {
     s.player.level = 12;
     s.kills = 200;
     stepSurvivor(s, { dx: 1, dy: 0, visibleEnemies: 0 }, 1_000);
-    expect(s.digitalDanger).toBeCloseTo(1.2, 5); // andar não pune uma boa corrida
+    expect(s.digitalDanger).toBeCloseTo(2.4, 5); // andar não pune uma boa corrida
+
+    stepSurvivor(s, { dx: 0, dy: 0, visibleEnemies: 4 }, 1_000);
+    expect(s.digitalDanger).toBeCloseTo(4.8, 5); // a tela pode ter o dobro de inimigos visíveis
+    stepSurvivor(s, { dx: 0, dy: 0, visibleEnemies: 5 }, 1_000);
+    expect(s.digitalDanger).toBeLessThan(4.8);
 
     const beforePressure = s.digitalDanger;
     s.player.hp = s.player.maxHp * 0.7;
@@ -208,7 +213,7 @@ describe('stepSurvivor', () => {
     expect(s.digitalDanger).toBeLessThan(beforePressure);
   });
 
-  it('convoca três Pokémon quando o Digital Danger chega ao máximo e entra em recarga', () => {
+  it('convoca seis Pokémon mais fortes quando o Digital Danger chega ao máximo e entra em recarga', () => {
     const s = quiet(createSurvivorState(102, { kindCount: 1 }));
     s.elapsedMs = DIGITAL_DANGER_UNLOCK_MS;
     s.special.phase = 'ready';
@@ -219,15 +224,70 @@ describe('stepSurvivor', () => {
     s.kills = 200;
     s.digitalDanger = DIGITAL_DANGER_MAX - 1;
     const events = stepSurvivor(s, { dx: 0, dy: 0, visibleEnemies: 0 }, 1_000);
-    expect(events).toContainEqual(expect.objectContaining({ type: 'trainerSpawn', count: 3, trigger: 'digital-danger' }));
+    expect(events).toContainEqual(expect.objectContaining({ type: 'trainerSpawn', count: 6, trigger: 'digital-danger' }));
     expect(s.digitalDanger).toBe(0);
     expect(s.digitalDangerCooldownMs).toBe(DIGITAL_DANGER_COOLDOWN_MS);
-    expect(s.enemies.filter((enemy) => enemy.trainerId !== undefined)).toHaveLength(3);
+    expect(s.enemies.filter((enemy) => enemy.trainerId !== undefined)).toHaveLength(6);
     expect(s.enemies.every((enemy) => enemy.digitalThreat)).toBe(true);
 
     const dangerAfterTrigger = s.digitalDanger;
     stepSurvivor(s, { dx: 0, dy: 0, visibleEnemies: 0 }, 10_000);
     expect(s.digitalDanger).toBeLessThanOrEqual(dangerAfterTrigger);
+  });
+
+  it('dobra a taxa e o teto de inimigos comuns sem antecipar treinadores ou chefes', () => {
+    const s = createSurvivorState(104, { kindCount: 1 });
+    s.special.phase = 'ready';
+    s.nextBossAtMs = Number.POSITIVE_INFINITY;
+    s.nextTrainerAtMs = Number.POSITIVE_INFINITY;
+    s.finalBossAtMs = null;
+    s.player.attackDamage = 0;
+    s.player.hp = s.player.maxHp = 1_000_000;
+    const oldInterval = Math.max(BALANCE.spawnFloorMs, BALANCE.spawnStartMs - BALANCE.spawnPerWaveMs)
+      * (1 + BALANCE.earlySpawnIntervalBonus) * 0.90;
+    const currentInterval = oldInterval / 2;
+    stepSurvivor(s, { dx: 0, dy: 0 }, oldInterval);
+    expect(s.enemies.filter((enemy) => enemy.grade === 'comum' && !enemy.boss)).toHaveLength(2);
+    expect(s.nextBossAtMs).toBe(Number.POSITIVE_INFINITY);
+    expect(s.nextTrainerAtMs).toBe(Number.POSITIVE_INFINITY);
+
+    s.enemies = Array.from({ length: ENEMY_BEHAVIOR_LIMITS.maxEnemies - 1 }, (_, i) =>
+      dummy(i + 10_000, ARENA_W - PLAYER_RADIUS, ARENA_H - PLAYER_RADIUS));
+    s.spawnAccumMs = currentInterval * 3;
+    stepSurvivor(s, { dx: 0, dy: 0 }, 16);
+    expect(ENEMY_BEHAVIOR_LIMITS.maxEnemies).toBe(440);
+    expect(s.enemies).toHaveLength(ENEMY_BEHAVIOR_LIMITS.maxEnemies);
+  });
+
+  it('faz o grupo digital ter 2,5× HP, 1,75× dano e 1,3× velocidade dos treinadores comuns', () => {
+    const setup = (seed: number) => {
+      const s = quiet(createSurvivorState(seed, { kindCount: 1 }));
+      s.rng = () => 0.5;
+      s.elapsedMs = DIGITAL_DANGER_UNLOCK_MS;
+      s.special.phase = 'ready';
+      s.finalBossAtMs = null;
+      s.player.hp = s.player.maxHp = 1_000_000;
+      s.player.attackDamage = 0;
+      return s;
+    };
+    const regular = setup(105);
+    regular.nextTrainerAtMs = regular.elapsedMs;
+    stepSurvivor(regular, { dx: 0, dy: 0 }, 1_000);
+    const digital = setup(105);
+    digital.nextTrainerAtMs = Number.POSITIVE_INFINITY;
+    digital.player.level = 12;
+    digital.kills = 200;
+    digital.digitalDanger = DIGITAL_DANGER_MAX - 1;
+    stepSurvivor(digital, { dx: 0, dy: 0, visibleEnemies: 0 }, 1_000);
+    expect(regular.enemies).toHaveLength(3);
+    expect(digital.enemies).toHaveLength(6);
+    for (let i = 0; i < regular.enemies.length; i++) {
+      const base = regular.enemies[i]!;
+      const threat = digital.enemies[i]!;
+      expect(threat.maxHp).toBe(Math.round(base.maxHp * 2.5));
+      expect(threat.damage).toBe(Math.round(base.damage * 1.75));
+      expect(threat.speed).toBeCloseTo(base.speed * 1.3, 5);
+    }
   });
 
   it('oferece a afinidade dupla apenas depois do primeiro treinador derrotado', () => {
