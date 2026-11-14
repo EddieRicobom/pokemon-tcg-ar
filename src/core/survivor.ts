@@ -132,8 +132,8 @@ export const BALANCE = {
   spawnPerSecMs: 4,
   spawnPerWaveMs: 15,
   spawnFloorMs: 450,
-  /** Pequeno aumento de densidade, sem reduzir o piso de segurança da arena. */
-  spawnRateMultiplier: 0.90,
+  /** Metade do intervalo anterior: duas vezes mais inimigos comuns por tempo de jogo. */
+  spawnRateMultiplier: 0.45,
   /** Intervalo de invulnerabilidade após qualquer acerto; dá tempo para reposicionar sem remover o perigo. */
   hitInvulnerabilityMs: 750,
   playerDamage: 10,
@@ -167,7 +167,7 @@ export const BALANCE = {
 
 /** Limites de segurança para comportamentos especiais; são limites do motor, não atributos oficiais. */
 export const ENEMY_BEHAVIOR_LIMITS = {
-  maxEnemies: 220,
+  maxEnemies: 440,
   hostileProjectiles: 48,
   healingTargetsPerPulse: 3,
   maxProtectionTargets: 4,
@@ -583,7 +583,13 @@ function spawnTrainer(state: SurvivorState, count: number, final: boolean, event
     const id = spawnEnemy(state, false, grade, trainerId);
     if (trigger === 'digital-danger') {
       const enemy = state.enemies.find((entry) => entry.id === id);
-      if (enemy) { enemy.digitalThreat = true; enemy.maxHp = Math.round(enemy.maxHp * 1.5); enemy.hp = enemy.maxHp; enemy.damage = Math.round(enemy.damage * 1.25); enemy.speed *= 1.2; }
+      if (enemy) {
+        enemy.digitalThreat = true;
+        enemy.maxHp = Math.round(enemy.maxHp * 2.5);
+        enemy.hp = enemy.maxHp;
+        enemy.damage = Math.round(enemy.damage * 1.75);
+        enemy.speed *= 1.3;
+      }
     }
   }
   events.push({ type: 'trainerSpawn', count, final, trainerId, ...(trigger ? { trigger } : {}) });
@@ -2946,7 +2952,7 @@ function isOverwhelmingRun(state: SurvivorState, visibleEnemies: number): boolea
   const p = state.player;
   const minutes = state.elapsedMs / 60_000;
   const expectedKills = 100 + Math.floor(Math.max(0, minutes - 10) * 12);
-  return p.hp >= p.maxHp * 0.9 && p.level >= 12 && state.kills >= expectedKills && visibleEnemies <= 2;
+  return p.hp >= p.maxHp * 0.9 && p.level >= 12 && state.kills >= expectedKills && visibleEnemies <= 4;
 }
 
 /**
@@ -2968,7 +2974,7 @@ function updateDigitalDanger(state: SurvivorState, input: SurvivorInput, dtMs: n
     return;
   }
   if (isOverwhelmingRun(state, visibleEnemies)) {
-    state.digitalDanger = Math.min(DIGITAL_DANGER_MAX, state.digitalDanger + (dtMs / 1000) * 1.2);
+    state.digitalDanger = Math.min(DIGITAL_DANGER_MAX, state.digitalDanger + (dtMs / 1000) * 2.4);
   } else {
     state.digitalDanger = Math.max(0, state.digitalDanger - (dtMs / 1000) * 2.5);
   }
@@ -2976,7 +2982,7 @@ function updateDigitalDanger(state: SurvivorState, input: SurvivorInput, dtMs: n
 
   state.digitalDanger = 0;
   state.digitalDangerCooldownMs = DIGITAL_DANGER_COOLDOWN_MS;
-  spawnTrainer(state, 3, false, events, 'digital-danger');
+  spawnTrainer(state, 6, false, events, 'digital-danger');
 }
 
 function shadowBallPoint(state: SurvivorState): { x: number; y: number } {
