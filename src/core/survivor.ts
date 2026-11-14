@@ -365,10 +365,13 @@ export function createSurvivorState(seed: number, options: CreateSurvivorOptions
     bonk: options.bonk === true,
     infiniteScale: options.infinite === true ? 1.15 : 1,
     pendingUpgrade: null,
+    pendingBlackChest: null,
+    blackChestCurses: 0,
     keys: 0,
     keyDrops: [],
     chests: [],
     nextChestAtMs: survivorMilestoneMs(CHEST_FIRST_MS, fast),
+    nextBlackChestAtMs: survivorMilestoneMs(BLACK_CHEST_FIRST_MS, fast),
     heldMines: [],
     heldDisabled: options.noHeld === true,
     upgradesOwed: 0,
@@ -1026,6 +1029,9 @@ const hasUpgrade = (player: SurvivorPlayer, id: string): boolean => (player.upgr
 export const CHEST_FIRST_MS = 150_000;
 export const CHEST_EVERY_MS = 150_000;
 export const MAX_CHESTS_ON_FIELD = 2;
+export const BLACK_CHEST_FIRST_MS = 180_000;
+export const BLACK_CHEST_EVERY_MS = 240_000;
+export const BLACK_CHEST_PENALTIES = ['Velocidade de movimento −15% permanentemente', 'Dano recebido +20% permanentemente'] as const;
 /** Chance de um elite solto (fora de time de treinador) derrubar uma chave. */
 export const LOOSE_ELITE_KEY_CHANCE = 0.35;
 const CHEST_OPEN_REACH = PLAYER_RADIUS + 26;
@@ -1989,7 +1995,7 @@ function chestSpawnPoint(state: SurvivorState): { x: number; y: number } {
   return point;
 }
 
-/** Baús surgem com o tempo; chaves são coletadas como orbes; encostar num baú com chave abre a escolha de itens. */
+/** Baús surgem com o tempo; negros oferecem um pacto sem chave e normais mantêm a abertura com chave. */
 function stepChests(state: SurvivorState, events: SurvivorEvent[]): void {
   if (state.debugLaboratory || state.over || state.heldDisabled) return;
   const p = state.player;
@@ -1997,15 +2003,23 @@ function stepChests(state: SurvivorState, events: SurvivorEvent[]): void {
   state.keyDrops ??= [];
   state.keys ??= 0;
   state.nextChestAtMs ??= survivorMilestoneMs(CHEST_FIRST_MS, state.fast);
+  state.nextBlackChestAtMs ??= survivorMilestoneMs(BLACK_CHEST_FIRST_MS, state.fast);
   if (state.elapsedMs >= state.nextChestAtMs) {
     state.nextChestAtMs += survivorMilestoneMs(CHEST_EVERY_MS, state.fast);
     // Campo cheio: o baú mais distante dá lugar ao novo, para dois baús esquecidos não encerrarem a oferta da corrida.
-    if (state.chests.length >= MAX_CHESTS_ON_FIELD) {
-      const farthest = state.chests.reduce((a, b) => (Math.hypot(b.x - p.x, b.y - p.y) > Math.hypot(a.x - p.x, a.y - p.y) ? b : a));
+    const normalChests = state.chests.filter((chest) => chest.kind !== 'black');
+    if (normalChests.length >= MAX_CHESTS_ON_FIELD) {
+      const farthest = normalChests.reduce((a, b) => (Math.hypot(b.x - p.x, b.y - p.y) > Math.hypot(a.x - p.x, a.y - p.y) ? b : a));
       state.chests = state.chests.filter((chest) => chest !== farthest);
     }
     state.chests.push({ id: state.nextId++, ...chestSpawnPoint(state) });
     events.push({ type: 'chestSpawn' });
+  }
+  if (state.elapsedMs >= state.nextBlackChestAtMs) {
+    state.nextBlackChestAtMs += survivorMilestoneMs(BLACK_CHEST_EVERY_MS, state.fast);
+    state.chests = state.chests.filter((chest) => chest.kind !== 'black');
+    state.chests.push({ id: state.nextId++, ...chestSpawnPoint(state), kind: 'black' });
+    events.push({ type: 'blackChestSpawn' });
   }
   const reach = Math.min(MAGNET_PICKUP_RADIUS_CAP, effectivePickupRadius(p) * (p.artifactMagnetMs > 0 ? 1.7 : 1));
   if (state.keyDrops.length > 0) {
@@ -2018,7 +2032,16 @@ function stepChests(state: SurvivorState, events: SurvivorEvent[]): void {
   }
   if (state.pendingUpgrade) return;
   for (const chest of state.chests) {
-    if (Math.hypot(chest.x - p.x, chest.y - p.y) > CHEST_OPEN_REACH) continue;
+    if (Math.hypot(chest.x - p.x, chest.y - p.y) > CHEST_OPEN_REACH) {
+      chest.declined = false;
+      continue;
+    }
+    if (chest.kind === 'black') {
+      if (chest.declined) continue;
+      state.pendingBlackChest = chest.id;
+      events.push({ type: 'blackChestOffer' });
+      break;
+    }
     if (state.keys <= 0) {
       if (!chest.lockedNotified) { chest.lockedNotified = true; events.push({ type: 'chestLocked' }); }
       continue;
@@ -2028,28 +2051,47 @@ function stepChests(state: SurvivorState, events: SurvivorEvent[]): void {
   }
 }
 
+/** Confirma ou recusa o pacto de um baú negro. Aceitar só aplica as penas se houver item disponível. */
+export function resolveBlackChest(state: SurvivorState, accept: boolean): SurvivorEvent[] {
+  const chest = state.chests?.find((item) => item.id === state.pendingBlackChest && item.kind === 'black');
+  if (!chest || state.over) return [];
+  state.pendingBlackChest = null;
+  if (!accept) {
+    chest.declined = true;
+    return [{ type: 'blackChestDeclined' }];
+  }
+  const events: SurvivorEvent[] = [];
+  openChest(state, chest, events);
+  return events;
+}
+
 function openChest(state: SurvivorState, chest: SurvivorChest, events: SurvivorEvent[]): void {
   const p = state.player;
+  const black = chest.kind === 'black';
   const offer = rollHeldOffer(state.rng, p.held ?? {}, 2, p.move.category);
   if (offer.length === 0) {
-    // Todos os itens que servem para o seu golpe já estão no teto: o baú vira orbes e a chave fica com você.
+    // Todos os itens compatíveis estão no teto: o baú vira orbes sem cobrar chave ou penalidade.
     state.chests = (state.chests ?? []).filter((c) => c !== chest);
     for (let index = 0; index < 6; index++) {
       const angle = (Math.PI * 2 * index) / 6;
       state.orbs.push({ id: state.nextId++, x: chest.x + Math.cos(angle) * 24, y: chest.y + Math.sin(angle) * 24, value: 10, doubleXp: false });
     }
-    state.fx.push({ kind: 'chest', x: chest.x, y: chest.y, r: 46, color: '#ffd84a', ageMs: 0, lifeMs: 700 });
-    events.push({ type: 'chestEmpty' });
+    state.fx.push({ kind: 'chest', x: chest.x, y: chest.y, r: 46, color: black ? '#9b62bb' : '#ffd84a', ageMs: 0, lifeMs: 700 });
+    events.push({ type: black ? 'blackChestEmpty' : 'chestEmpty' });
     return;
   }
-  state.keys = Math.max(0, (state.keys ?? 0) - 1);
+  if (black) {
+    state.blackChestCurses = (state.blackChestCurses ?? 0) + 1;
+    p.speed *= 0.85;
+  } else state.keys = Math.max(0, (state.keys ?? 0) - 1);
   state.chests = (state.chests ?? []).filter((c) => c !== chest);
-  state.fx.push({ kind: 'chest', x: chest.x, y: chest.y, r: 46, color: '#ffd84a', ageMs: 0, lifeMs: 700 });
+  state.fx.push({ kind: 'chest', x: chest.x, y: chest.y, r: 46, color: black ? '#9b62bb' : '#ffd84a', ageMs: 0, lifeMs: 700 });
   state.pendingUpgrade = offer.map((id) => {
     const item = HELD_ITEM_BY_ID[id];
     return { id: `${HELD_OFFER_PREFIX}${id}`, name: item.name, icon: item.icon, rarity: item.rarity, family: 'item' as const, description: heldItemText(id, p.move.category, p.held?.[id] ?? 0) };
   });
-  events.push({ type: 'chestOpened', keys: state.keys });
+  if (black) events.push({ type: 'blackChestOpened' });
+  else events.push({ type: 'chestOpened', keys: state.keys ?? 0 });
 }
 
 export function survivorDirectDamageMultiplier(distance: number): number {
@@ -2829,7 +2871,7 @@ function damagePlayer(state: SurvivorState, damage: number, kind: SurvivorFinalH
   const reduction = survivorDefenseReduction(p, kind);
   const contactGuard = kind === 'projétil' ? 0 : (p.upgradeLevels['contact-guard'] ?? 0) * 0.12;
   const projectileGuard = kind === 'projétil' ? (p.upgradeLevels['projectile-guard'] ?? 0) * 0.12 : 0;
-  const effectiveDamage = damage > 0 ? Math.max(1, Math.ceil(damage * (1 - (reduction ?? 0)) * (1 - Math.min(0.5, contactGuard + projectileGuard)))) : 0;
+  const effectiveDamage = damage > 0 ? Math.max(1, Math.ceil(damage * (1 - (reduction ?? 0)) * (1 - Math.min(0.5, contactGuard + projectileGuard)) * 1.2 ** (state.blackChestCurses ?? 0))) : 0;
   state.lastHit = { ...source, kind, damage: effectiveDamage, hpBefore: p.hp };
   p.hp = Math.max(0, p.hp - effectiveDamage);
   gainSupreme(state, (effectiveDamage / Math.max(1, p.maxHp)) * SUPREME_GAIN.damageTakenPerBar);
@@ -3213,7 +3255,7 @@ function updateFieldEvent(state: SurvivorState, dtMs: number, events: SurvivorEv
 export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: number): SurvivorEvent[] {
   const events: SurvivorEvent[] = [];
   state.criticalHits = [];
-  if (state.over || state.pendingUpgrade) return events;
+  if (state.over || state.pendingUpgrade || state.pendingBlackChest != null) return events;
   if (!Number.isFinite(dtMs) || dtMs <= 0) return events;
   if (!state.debugLaboratory && advanceSpecialEncounter(state, dtMs)) return events;
   if (!state.debugLaboratory && advanceShadowEncounter(state, dtMs, events)) return events;

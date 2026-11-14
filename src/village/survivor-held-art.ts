@@ -290,6 +290,72 @@ export function drawChest(c: CanvasRenderingContext2D, x: number, y: number, sca
   c.restore();
 }
 
+/** Baú negro: mesma silhueta em pixels, com aviso visível mesmo sem animação ou brilho. */
+export function drawBlackChest(c: CanvasRenderingContext2D, x: number, y: number, scale: number, timeMs: number, canOpen: boolean): void {
+  const s = Math.max(0.4, scale);
+  const u = 2 * s;
+  const px = (bx: number, by: number, w: number, h: number, color: string): void => {
+    c.fillStyle = color;
+    c.fillRect(bx * u, by * u, w * u, h * u);
+  };
+  const OUTLINE = '#120f1d';
+  const BODY = '#242034';
+  const SHADE = '#3b3152';
+  const LIGHT = '#66547e';
+  const RIM = '#bc72df';
+  const RIM_LIGHT = '#e7abff';
+  const WARNING = '#ff8069';
+  c.save();
+  c.translate(x, y + Math.round(Math.sin(timeMs / 620) * 1.1) * s);
+  c.globalAlpha = 0.38;
+  c.fillStyle = '#12091e';
+  c.beginPath(); c.ellipse(0, 7.5 * u, 10 * u, 2.4 * u, 0, 0, Math.PI * 2); c.fill();
+  c.globalAlpha = 0.16 + (canOpen ? 0.12 : 0.05) * Math.sin(timeMs / 250);
+  c.fillStyle = '#d588fa';
+  c.beginPath(); c.ellipse(0, -2 * u, 12 * u, 10 * u, 0, 0, Math.PI * 2); c.fill();
+  c.globalAlpha = 1;
+  // Tampa e corpo repetem as dimensões do baú comum para manter a leitura no mapa.
+  px(-7, -10, 14, 1, OUTLINE);
+  px(-8, -9, 16, 1, OUTLINE);
+  px(-9, -8, 18, 7, OUTLINE);
+  px(-8, -1, 16, 8, OUTLINE);
+  px(-7, -9, 14, 1, RIM_LIGHT);
+  px(-8, -8, 16, 6, BODY);
+  px(-8, -8, 16, 1, LIGHT);
+  px(-8, -6, 16, 1, SHADE);
+  px(-8, -4, 16, 1, RIM);
+  px(-8, -3, 16, 1, LIGHT);
+  px(-9, -2, 18, 1, RIM_LIGHT);
+  px(-9, -1, 18, 1, RIM);
+  px(-7, 0, 14, 6, BODY);
+  for (const bx of [-6, -3, 2, 5]) px(bx, 0, 1, 6, SHADE);
+  px(-7, 5, 14, 1, OUTLINE);
+  px(-8, -1, 1, 2, RIM); px(7, -1, 1, 2, RIM);
+  // Fecho em forma de aviso: sinal e cor, sem depender só da paleta.
+  px(-2, -4, 4, 6, OUTLINE);
+  px(-1, -3, 2, 4, WARNING);
+  px(-0.5, -2.5, 1, 2, '#fff1dd');
+  px(-0.5, 0.5, 1, 1, '#fff1dd');
+  // Losango de alerta sobre a tampa; permanece nítido em capturas paradas.
+  px(-1, -15, 2, 1, OUTLINE);
+  px(-2, -14, 4, 1, OUTLINE);
+  px(-3, -13, 6, 2, OUTLINE);
+  px(-2, -11, 4, 1, OUTLINE);
+  px(-1, -10, 2, 1, OUTLINE);
+  px(-1, -14, 2, 1, WARNING);
+  px(-2, -13, 4, 2, WARNING);
+  px(-1, -11, 2, 1, WARNING);
+  px(-0.5, -13, 1, 1.5, '#fff1dd');
+  px(-0.5, -11, 1, 0.5, '#fff1dd');
+  if (canOpen) {
+    const pulse = 0.5 + 0.5 * Math.sin(timeMs / 200);
+    c.globalAlpha = 0.45 + pulse * 0.5;
+    px(-8, -8, 1, 2, RIM_LIGHT);
+    px(7, -8, 1, 2, RIM_LIGHT);
+  }
+  c.restore();
+}
+
 /** Chave dourada caída, girando devagar e piscando para chamar atenção. */
 export function drawKey(c: CanvasRenderingContext2D, x: number, y: number, scale: number, timeMs: number): void {
   const s = Math.max(0.4, scale);

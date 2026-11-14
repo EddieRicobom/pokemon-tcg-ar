@@ -437,9 +437,79 @@ export interface GameBuildingArt {
   windows: readonly (readonly [number, number, number, number])[];
 }
 
+/** Oficina de corrida: telhado de asfalto, faixa quadriculada e letreiro de kart. */
+export function paintKartHall(): PixelBuf {
+  const b = createBuf(80, 72);
+  const roof = ramp(0x405571);
+  const wall = ramp(0x4c647e);
+  const trim = ramp(0xf0ad43);
+  const base = ramp(0x9da7b0);
+  slab(b, 2, 12, 76, 36, roof);
+  deck(b, 6, 17, 68, 25, 0x33465d, 0x283a50, 0x243448);
+  for (let x = 11; x < 68; x += 12) rect(b, x, 29, 6, 2, 0xffdf89);
+  // Linha de chegada sobre o telhado, reconhecível na vista 3/4 da Vila.
+  for (let x = 7; x < 73; x += 6) for (let y = 37; y < 43; y += 3)
+    rect(b, x, y, 6, 3, ((x / 6 + y / 3) & 1) ? 0xfaf6ec : 0x1d2a3b);
+  slab(b, 21, 2, 38, 18, trim);
+  rect(b, 24, 5, 32, 12, 0x182a40);
+  // Ícone de kart: rodas, chassi e volante, sem depender de letras pequenas.
+  disc(b, 31, 13, 3, 3, 0x0a1725); disc(b, 49, 13, 3, 3, 0x0a1725);
+  rect(b, 28, 9, 24, 4, 0xf67b4f);
+  rect(b, 35, 7, 12, 3, 0xffbe66);
+  rect(b, 45, 5, 2, 5, 0xdce8ef);
+  rect(b, 20, 46, 40, 2, trim.md);
+  facade(b, 4, 48, 72, 24, wall, base);
+  for (const x of [8, 61]) glassWindow(b, x, 54, 11, 11, { frame: FRAME.mid });
+  // Portão central de garagem com ripas e faixa vermelha de acesso.
+  rect(b, 25, 52, 30, 20, 0x192c41);
+  rect(b, 27, 54, 26, 17, 0x7896ad);
+  for (let y = 56; y < 71; y += 3) rect(b, 27, y, 26, 1, 0x435e76);
+  rect(b, 27, 67, 26, 3, 0xf17d63);
+  rect(b, 24, 70, 32, 2, 0xe4d4b4);
+  inkOutline(b);
+  return b;
+}
+
+/** Salão do Pinball com mesa vista de cima e bolas luminosas no letreiro. */
+export function paintPinballHall(): PixelBuf {
+  const b = createBuf(80, 72);
+  const roof = ramp(0x3e5793);
+  const wall = ramp(0x4c467e);
+  const trim = ramp(0xf1bd55);
+  const base = ramp(0x9d96b1);
+  slab(b, 2, 13, 76, 35, roof);
+  deck(b, 6, 18, 68, 24, 0x30477e, 0x243967, 0x1c2e55);
+  // A mesa no telhado é um painel luminoso, legível mesmo em miniatura.
+  rect(b, 25, 22, 30, 23, 0x171e53);
+  rect(b, 27, 23, 26, 20, 0x63439a);
+  for (const [x, y] of [[31, 27], [47, 27], [39, 33]] as const) {
+    disc(b, x, y, 3, 3, 0xfbe2a5);
+    disc(b, x, y, 1.5, 1.5, 0xff6fa8);
+  }
+  rect(b, 31, 39, 8, 2, 0xffd18b);
+  rect(b, 41, 39, 8, 2, 0xffd18b);
+  disc(b, 40, 29, 2.5, 2.5, 0xe7ffff);
+  slab(b, 17, 3, 46, 17, trim);
+  rect(b, 20, 5, 40, 12, 0x172450);
+  // Uma bola prateada entre dois flippers forma o símbolo da casa.
+  disc(b, 40, 9, 4, 4, 0xeef8ff);
+  put(b, 38, 7, 0xffffff);
+  rect(b, 25, 12, 11, 2, 0xff759c);
+  rect(b, 44, 12, 11, 2, 0xff759c);
+  rect(b, 2, 45, 76, 3, trim.md);
+  facade(b, 4, 48, 72, 24, wall, base);
+  for (const x of [8, 61]) glassWindow(b, x, 54, 11, 11, { frame: FRAME.mid });
+  glassDoor(b, 40, 72, trim);
+  awning(b, 40, 51, 14, 0xf16491);
+  inkOutline(b);
+  return b;
+}
+
 export const GAME_BUILDINGS: Readonly<Record<string, GameBuildingArt>> = {
   arcade: { paint: paintArcadeHall, windows: [[8, 55, 10, 9], [21, 55, 10, 9], [49, 55, 10, 9], [62, 55, 10, 9]] },
   pins: { paint: paintPinsHall, windows: [[9, 54, 8, 9], [63, 54, 8, 9], [27, 54, 7, 3], [45, 54, 7, 3]] },
   masmorra: { paint: paintDungeonGate, windows: [[8, 35, 4, 7], [68, 35, 4, 7], [8, 50, 4, 7], [68, 50, 4, 7]] },
   torre: { paint: paintDigitalTower, windows: [[18, 76, 28, 30], [22, 46, 20, 22], [24, 14, 16, 14]] },
+  kart: { paint: paintKartHall, windows: [[8, 54, 11, 11], [61, 54, 11, 11]] },
+  pinball: { paint: paintPinballHall, windows: [[8, 54, 11, 11], [61, 54, 11, 11]] },
 };

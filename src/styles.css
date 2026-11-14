@@ -8662,3 +8662,21 @@ body.no-scroll .reward-toasts {
   .survivor-stats .survivor-adaptive-chip { top: 105px; text-align: center; }
   .survivor-stats .survivor-action-dock { top: 130px; }
 }
+
+
+/* Baú negro: risco visível no mapa, nos indicadores e antes da escolha. */
+.survivor-minimap-marker.kind-black-chest { background: #462065; border-color: #e1adff; box-shadow: 0 0 3px #b660ec; }
+.survivor-black-count, .survivor-black-curse { color: #eccaff; }
+.survivor-black-overlay { z-index: 35; }
+.survivor-black-card { width: min(92vw, 430px); max-height: min(86vh, 560px); overflow-y: auto; padding: 18px; border: 2px solid #a86ed1; background: #22152d; color: #fff5ff; }
+.survivor-black-card h2 { margin: 4px 0 8px; }
+.survivor-black-card p { margin: 6px 0; }
+.survivor-black-penalties { margin: 12px 0; padding: 10px 10px 10px 30px; border-radius: 8px; background: #43244e; color: #ffd9ed; }
+.survivor-black-actions { display: flex; gap: 8px; }
+.survivor-black-actions button { flex: 1; min-height: 44px; padding: 8px; border: 1px solid #c0a7cb; border-radius: 8px; background: #463550; color: white; font-weight: 700; }
+.survivor-black-actions .survivor-black-accept { background: #7d327e; border-color: #f0a9ff; }
+@media (orientation: landscape) and (max-height: 500px) {
+  .survivor-black-card { max-height: 94vh; padding: 10px 14px; }
+  .survivor-black-card h2, .survivor-black-card p { margin: 2px 0; }
+  .survivor-black-penalties { margin: 5px 0; padding-top: 4px; padding-bottom: 4px; }
+}

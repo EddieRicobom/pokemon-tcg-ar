@@ -40,6 +40,9 @@ import MinigameSobrevivencia from './MinigameSobrevivencia.vue';
 const SurvivalPvp = defineAsyncComponent(() => import('./SurvivalPvp.vue'));
 const towerPvp = ref(false);
 import DungeonGame from './DungeonGame.vue';
+const KartRacer = defineAsyncComponent(() => import('./KartRacer.vue'));
+const PinballGame = defineAsyncComponent(() => import('./PinballGame.vue'));
+const kartPilot = ref<number | null>(null);
 import { SURVIVOR_LOVE_CANDY_MS, SURVIVOR_OMEGA_SHARD_MS, SURVIVOR_TRUST_STONE_MS, survivorProgressMs } from '../core/survivor';
 import { dayKey, levelOf } from '../core/trainer';
 import { personalityOf } from '../core/village/personality';
@@ -155,18 +158,18 @@ const state = reactive(loadVillage());
 const day = ref(dayKey(new Date()));
 pruneHarvest(state, day.value);
 
-type Sheet = null | 'menu' | 'build' | 'home' | 'shop' | 'dress' | 'arcade' | 'masmorra' | 'gallery' | 'card-evolution' | 'farm';
+type Sheet = null | 'menu' | 'build' | 'home' | 'shop' | 'dress' | 'arcade' | 'masmorra' | 'kart' | 'pinball' | 'gallery' | 'card-evolution' | 'farm';
 const sheet = ref<Sheet>(null);
 /** Só saímos da tela cheia que a própria Masmorra abriu; nunca da que o usuário já estava usando. */
 let dungeonFullscreenOwner = false;
 
 /** A Masmorra substitui a Vila visualmente e também interrompe seus dois renderizadores enquanto está aberta. */
 watch(sheet, (next, previous) => {
-  if (next === 'masmorra' && previous !== 'masmorra') {
+  if ((next === 'masmorra' || next === 'kart' || next === 'pinball') && previous !== 'masmorra' && previous !== 'kart' && previous !== 'pinball') {
     game?.stop();
     if (miniTimer) clearInterval(miniTimer);
     miniTimer = null;
-  } else if (previous === 'masmorra' && next !== 'masmorra') {
+  } else if ((previous === 'masmorra' || previous === 'kart' || previous === 'pinball') && next !== 'masmorra' && next !== 'kart' && next !== 'pinball') {
     game?.start();
     if (!miniTimer) startMini();
     void nextTick(() => game?.resize(wrapEl.value?.clientWidth ?? 0, wrapEl.value?.clientHeight ?? 0));
@@ -294,7 +297,7 @@ const MENU_TITLES: Record<Tab, string> = {
   album: 'Álbum de Memórias', colecao: 'Coleção de Móveis', livro: 'Livro dos Pokémon', visual: 'Visual e Acessórios', trabalhos: 'Trabalhos da Vila', dojo: 'Dojô da Torre', lendas: 'Caderno de Lendas',
 };
 /** Um lugar da Vila aberto direto pelo menu (ou trancado, com o nível que falta). */
-function placeTile(kind: 'arcade' | 'arena' | 'torre', icon: string, label: string): MenuTile {
+function placeTile(kind: 'arcade' | 'arena' | 'torre' | 'kart' | 'pinball', icon: string, label: string): MenuTile {
   const b = map.buildings.find((x) => x.kind === kind);
   const open = !!b && level.value >= b.unlock;
   return {
@@ -340,7 +343,7 @@ const menuGroups = computed<{ title: string; desc?: string; tiles: MenuTile[] }[
   },
   {
     title: 'Lugares da Vila',
-    tiles: [{ icon: '📬', label: 'Correio', hint: mailUnread.value > 0 ? `${mailUnread.value} nova(s)` : 'cartas e momentos', badge: mailUnread.value || undefined, run: openMail }, placeTile('arcade', '🕹️', 'Fliperama'), placeTile('arena', '⚔️', 'Arena'), placeTile('torre', '🗼', 'Torre')],
+    tiles: [{ icon: '📬', label: 'Correio', hint: mailUnread.value > 0 ? `${mailUnread.value} nova(s)` : 'cartas e momentos', badge: mailUnread.value || undefined, run: openMail }, placeTile('arcade', '🕹️', 'Fliperama'), placeTile('kart', '🏁', 'Pista de Kart'), placeTile('pinball', '🎱', 'Pinball'), placeTile('arena', '⚔️', 'Arena'), placeTile('torre', '🗼', 'Torre')],
   },
   {
     title: 'Fora da Vila',
@@ -535,7 +538,7 @@ function syncMusic(): void {
   const [id, title] = villageMusicTrack(date.getHours(), game?.weatherKind ?? null, Math.floor(date.getTime() / 360_000));
   musicTransition = advanceMusicTransition(musicTransition, `audio/village/${id}.mp3`, performance.now());
   musicTitle.value = title;
-  const blocked = document.hidden || !!loading.value || sheet.value === 'masmorra' || sheet.value === 'arcade' || !!legendaryScene.value || !!hoOhWishScene.value || cutsceneOpen.value;
+  const blocked = document.hidden || !!loading.value || sheet.value === 'masmorra' || sheet.value === 'kart' || sheet.value === 'pinball' || sheet.value === 'arcade' || !!legendaryScene.value || !!hoOhWishScene.value || cutsceneOpen.value;
   music.update(transitionMusicMix(musicTransition, performance.now()), !blocked, villageAudio.enabled ? villageAudio.volume / 100 : 0);
 }
 watch([() => villageAudio.enabled, () => villageAudio.volume, sheet, () => !!legendaryScene.value, () => !!hoOhWishScene.value, cutsceneOpen, loading], syncMusic);
@@ -1368,7 +1371,7 @@ function releaseHeldKeys(): void {
 
 function onKey(e: KeyboardEvent): void {
   // A Torre e a Masmorra têm teclado próprio; a Vila não deve capturar essas teclas por trás delas.
-  if (sheet.value === 'masmorra') return;
+  if (sheet.value === 'masmorra' || sheet.value === 'kart' || sheet.value === 'pinball') return;
   if (recapScenes.value.length) {
     if (e.type === 'keydown' && e.key === 'Escape') { e.preventDefault(); finishRecap(); }
     return;
@@ -2105,6 +2108,7 @@ function startGuidedTrip(id: string, destination = GUIDED_DESTINATIONS[(state.se
 function closeVillageSheet(): void {
   const leavingDungeon = sheet.value === 'masmorra';
   sheet.value = null;
+  kartPilot.value = null;
   bookDialogId.value = null;
   if (askingMon) game?.clearBubble(askingMon.id);
   askingMon = null;
@@ -2153,7 +2157,7 @@ function openBuilding(b: Building): void {
     say('💠 Altar da Confiança: amizade máxima e 5 Pedras da Confiança evoluem uma carta sem as três provas.', 5200);
     return;
   }
-  if (b.kind === 'arcade' || b.kind === 'pins' || b.kind === 'arena' || b.kind === 'torre' || b.kind === 'masmorra') return openGameBuilding(b);
+  if (b.kind === 'arcade' || b.kind === 'pins' || b.kind === 'arena' || b.kind === 'torre' || b.kind === 'masmorra' || b.kind === 'kart' || b.kind === 'pinball') return openGameBuilding(b);
   if (b.kind === 'dojo') return openDojoBuilding(b);
   if (b.kind === 'mail') return openMail();
   if (b.kind === 'cafe') {
@@ -2267,6 +2271,18 @@ function openGameBuilding(b: Building): void {
         { label: '🤝 PvP com um amigo', run: goToPvp },
         exit,
       ],
+    };
+  } else if (b.kind === 'pinball') {
+    dialog.value = {
+      name: b.name,
+      text: 'Entre para jogar Pinball na Vila.',
+      actions: [{ label: 'Jogar Pinball', run: () => { closeDialog(); sheet.value = 'pinball'; } }, exit],
+    };
+  } else if (b.kind === 'kart') {
+    dialog.value = {
+      name: b.name,
+      text: 'Escolha um dos seus Pokémon para pilotar na corrida de kart.',
+      actions: [{ label: 'Escolher piloto', run: () => { closeDialog(); kartPilot.value = null; sheet.value = 'kart'; } }, exit],
     };
   } else if (b.kind === 'masmorra') {
     dialog.value = {
@@ -3846,6 +3862,28 @@ onBeforeUnmount(() => {
       <div v-if="sheet === 'farm'" class="village-sheet tall" role="dialog" aria-modal="true" aria-label="Caixa de sementes">
         <header><strong>🌱 Caixa de sementes</strong><button type="button" class="link" @click="closeVillageSheet">Fechar</button></header>
         <FarmSeedBox :state="state" :name-of="nameOf" @change="changed" />
+      </div>
+
+      <div v-if="sheet === 'pinball'" class="village-sheet torre-full" role="dialog" aria-modal="true" aria-label="Pinball">
+        <PinballGame @close="closeVillageSheet" />
+      </div>
+
+      <div v-if="sheet === 'kart'" class="village-sheet torre-full" role="dialog" aria-modal="true" aria-label="Pista de Kart">
+        <template v-if="kartPilot === null">
+          <header><strong>Pista de Kart</strong><button type="button" class="link village-sheet-back" @click="closeVillageSheet">Sair</button></header>
+          <div class="card" style="overflow-y: auto; max-height: 75vh">
+            <h2>Escolha seu piloto</h2>
+            <p class="hint">Seus Pokémon da Vila e das cartas podem participar.</p>
+            <ul class="village-list">
+              <li v-for="mon in mons.filter((m) => m.dexId != null)" :key="mon.id">
+                <img v-if="mon.thumb" :src="mon.thumb" alt="" width="40" height="40">
+                <span>{{ mon.name }}</span><button type="button" @click="kartPilot = mon.dexId ?? null">Escolher</button>
+              </li>
+              <li v-if="!mons.some((m) => m.dexId != null)" class="hint">Você ainda não tem um Pokémon disponível. Adicione um Pokémon à Vila para correr.</li>
+            </ul>
+          </div>
+        </template>
+        <KartRacer v-else :player-dex-id="kartPilot" @close="closeVillageSheet" />
       </div>
 
       <div v-if="sheet === 'masmorra'" class="village-sheet torre-full" role="dialog" aria-modal="true" aria-label="Masmorra">

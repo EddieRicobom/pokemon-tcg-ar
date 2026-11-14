@@ -558,12 +558,17 @@ export interface SurvivorState {
   infiniteScale: number;
   /** Não-nulo pausa o avanço (ver `stepSurvivor`): espera `applyUpgrade`. */
   pendingUpgrade: SurvivorUpgradeOption[] | null;
+  /** Baú negro aguardando confirmação antes de aplicar as penalidades. */
+  pendingBlackChest?: number | null;
+  /** Quantos baús negros foram abertos nesta corrida; as duas penalidades se acumulam. */
+  blackChestCurses?: number;
   /** Chaves na mochila (caem dos elites) e as que ainda estão no chão. */
   keys?: number;
   keyDrops?: SurvivorKeyDrop[];
-  /** Baús no mapa: abrem ao encostar com uma chave e oferecem itens segurados. */
+  /** Baús no mapa: normais usam chave; negros oferecem itens com duas penalidades. */
   chests?: SurvivorChest[];
   nextChestAtMs?: number;
+  nextBlackChestAtMs?: number;
   /** Farpas grudadas em inimigos, esperando para explodir. */
   heldMines?: SurvivorHeldMine[];
   /** Sem baús, chaves e itens (runs do PvP). */
@@ -752,6 +757,11 @@ export type SurvivorEvent =
   | { type: 'chestLocked' }
   | { type: 'chestOpened'; keys: number }
   | { type: 'chestEmpty' }
+  | { type: 'blackChestSpawn' }
+  | { type: 'blackChestOffer' }
+  | { type: 'blackChestOpened' }
+  | { type: 'blackChestDeclined' }
+  | { type: 'blackChestEmpty' }
   | { type: 'heldItem'; id: HeldItemId; name: string; copies: number }
   | { type: 'milestone'; id: 'ten-minutes' | 'fifteen-minutes' | 'twenty-minutes'; reward: 'love-candy' | 'trust-stone' | 'omega-shard' }
   | { type: 'bossSpawn' }
@@ -827,8 +837,12 @@ export interface SurvivorChest {
   id: number;
   x: number;
   y: number;
+  /** Ausente nos baús normais já existentes. */
+  kind?: 'black';
   /** Já avisou que está trancado (sem chave), para não repetir o aviso a cada quadro. */
   lockedNotified?: boolean;
+  /** Após recusar, só volta a oferecer quando o jogador se afasta e retorna. */
+  declined?: boolean;
 }
 
 export interface SurvivorHeldMine {

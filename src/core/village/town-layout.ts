@@ -12,7 +12,7 @@ import { WEST, west } from './west';
 
 export { WEST };
 
-export type BuildingKind = 'home' | 'cafe' | 'mail' | 'museum' | 'arcade' | 'pins' | 'arena' | 'torre' | 'dojo' | 'fountain' | 'altar' | 'masmorra';
+export type BuildingKind = 'home' | 'cafe' | 'mail' | 'museum' | 'arcade' | 'pins' | 'arena' | 'torre' | 'dojo' | 'fountain' | 'altar' | 'masmorra' | 'kart' | 'pinball';
 
 export interface Building {
   id: string;
@@ -82,6 +82,8 @@ export const HOME_H = 2;
 export const BASE_CIVIC: readonly { kind: Exclude<BuildingKind, 'home' | 'fountain'>; name: string; x: number; y: number; w: number; h: number; unlock: number }[] = [
   { kind: 'cafe', name: 'Café da Vila', x: 63, y: 22, w: 8, h: 2, unlock: 3 },
   { kind: 'mail', name: 'Correio', x: 72, y: 22, w: 5, h: 2, unlock: 5 },
+  { kind: 'kart', name: 'Pista de Kart', x: 78, y: 22, w: 5, h: 2, unlock: 1 },
+  { kind: 'pinball', name: 'Casa do Pinball', x: 84, y: 22, w: 5, h: 2, unlock: 1 },
   { kind: 'museum', name: 'Museu', x: 51, y: 22, w: 10, h: 2, unlock: 8 },
   { kind: 'arcade', name: 'Fliperama', x: 26, y: 22, w: 5, h: 2, unlock: 2 },
   { kind: 'pins', name: 'Pista de Pins', x: 32, y: 22, w: 5, h: 2, unlock: 4 },
