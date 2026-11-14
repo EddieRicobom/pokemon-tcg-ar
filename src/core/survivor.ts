@@ -15,7 +15,7 @@ import { LUNCH_HEAL_CAP_FRACTION, TRAINING_DEFENSE_CAP, TRAINING_SPEED_CAP } fro
 import { endSurvivorMega, startSurvivorMega, survivorPlayerStats } from './survivor-mega';
 import type { SurvivorMegaForm } from './survivor-mega';
 import type { SurvivorPreparationId } from './survivor-preparations';
-import { advanceSpecialEncounter, breakSurvivorShield, createSurvivorSpecial, DASH_DAMAGE_MULTIPLIER, DASH_TRIPLE_DAMAGE_MULTIPLIER, SPECIAL_GUARDIANS, specialProtects, stepSurvivorSpecial } from './survivor-specials';
+import { advanceSpecialEncounter, breakSurvivorShield, createSurvivorSpecial, DASH_DAMAGE_MULTIPLIER, DASH_TRIPLE_DAMAGE_MULTIPLIER, SPECIAL_GUARDIANS, SURVIVOR_SPECIALS, specialProtects, stepSurvivorSpecial } from './survivor-specials';
 import { inSurvivorCone, SURVIVOR_CONE_HALF_ANGLE, SURVIVOR_ORBIT_BASE, SURVIVOR_ORBIT_MAX, survivorAimAngle, survivorOrbitAngularSpeed, survivorOrbiterHitRadius, survivorOrbiters, survivorOrbitHitIntervalMs } from './survivor-shapes';
 import type { PokemonType } from './pokemon-data';
 import { creditSupremeKill, createSurvivorSupreme, gainSupreme, stepSurvivorSupreme, SUPREME_GAIN } from './survivor-supreme';
@@ -1126,6 +1126,18 @@ function heldNeighbors(state: SurvivorState, origin: SurvivorEnemy, range: numbe
   return near.slice(0, count).map((entry) => entry.e);
 }
 
+interface HeldTransformerPulse { gripAt: number; fangAt: number; tailAt: number; specsAt: number; scarfAt: number; bandHits: number }
+const heldTransformerPulses = new WeakMap<SurvivorState, HeldTransformerPulse>();
+
+function transformerPulse(state: SurvivorState): HeldTransformerPulse {
+  let pulse = heldTransformerPulses.get(state);
+  if (!pulse) {
+    pulse = { gripAt: -Infinity, fangAt: -Infinity, tailAt: -Infinity, specsAt: -Infinity, scarfAt: -Infinity, bandHits: 0 };
+    heldTransformerPulses.set(state, pulse);
+  }
+  return pulse;
+}
+
 const PLATE_ITEM: Partial<Record<string, HeldItemId>> = { fire: 'placa-chama', electric: 'placa-zap', ice: 'placa-gelo' };
 
 /** Efeitos de cada acerto do golpe de quem joga, somando todos os itens. Os acertos extras não disparam itens de novo. */
@@ -1190,6 +1202,49 @@ function applyHeldOnHit(state: SurvivorState, e: SurvivorEnemy, damage: number, 
     if (mods.time > 0) maybeTimeBubble(state, e, damage, from, mods.time);
     if (mods.gravity > 0) maybeImpactWell(state, e, damage, mods.gravity);
     if (mods.destiny > 0) applyDestinyKnot(state, e, damage, mods.destiny, duration);
+    if (mods.grip || mods.fang || mods.tail || mods.band || mods.specs || mods.scarf) {
+      const pulse = transformerPulse(state);
+      const now = state.elapsedMs;
+      if (mods.grip > 0 && e.hp > 0 && now - pulse.gripAt >= 100) {
+        pulse.gripAt = now;
+        pullEnemy(e, p.x, p.y, 24 + 12 * (mods.grip - 1));
+        e.slowMs = Math.max(e.slowMs ?? 0, 350 + 250 * (mods.grip - 1));
+        state.fx.push({ kind: 'chain', x: e.x, y: e.y, r: 4, color: HELD_ITEM_BY_ID['garra-agarrar'].color, ageMs: 0, lifeMs: 250, fromX: p.x, fromY: p.y, toX: e.x, toY: e.y });
+      }
+      if (mods.fang > 0 && now - pulse.fangAt >= 350) {
+        pulse.fangAt = now;
+        queueHeldShards(state, e, damage * 0.75, from, 2 + mods.fang, 'presa-afiada');
+        state.fx.push({ kind: 'echo', x: e.x, y: e.y, r: e.radius * 1.5, color: HELD_ITEM_BY_ID['presa-afiada'].color, ageMs: 0, lifeMs: 260 });
+      }
+      if (mods.tail > 0 && now - pulse.tailAt >= 650) {
+        pulse.tailAt = now;
+        const radius = 48 + 18 * (mods.tail - 1);
+        queueHeldStrike(state, { kind: 'blast', atMs: now + 500, x: e.x, y: e.y, radius, damage: damage * (0.45 + 0.2 * (mods.tail - 1)), width: 0, tier: 1 });
+        state.fx.push({ kind: 'echo', x: e.x, y: e.y, r: radius * 0.55, color: HELD_ITEM_BY_ID['cauda-lenta'].color, ageMs: 0, lifeMs: 500 });
+      }
+      if (mods.band > 0) {
+        pulse.bandHits++;
+        if (pulse.bandHits >= 3) {
+          pulse.bandHits = 0;
+          const radius = 52 + 20 * (mods.band - 1);
+          heldAreaStrike(state, e.x, e.y, radius, damage * (0.4 + 0.15 * (mods.band - 1)));
+          state.fx.push({ kind: 'blast', x: e.x, y: e.y, r: radius, color: HELD_ITEM_BY_ID['faixa-escolha'].color, ageMs: 0, lifeMs: 340 });
+        }
+      }
+      if (mods.specs > 0 && now - pulse.specsAt >= 400) {
+        const other = heldNeighbors(state, e, 180, 1)[0];
+        if (other) {
+          pulse.specsAt = now;
+          hitEnemy(state, other, damage * (0.5 + 0.2 * (mods.specs - 1)), { x: e.x, y: e.y }, p.move, false, 0);
+          state.fx.push({ kind: 'chain', x: other.x, y: other.y, r: 6, color: HELD_ITEM_BY_ID['oculos-escolha'].color, ageMs: 0, lifeMs: 300, fromX: e.x, fromY: e.y, toX: other.x, toY: other.y });
+        }
+      }
+      if (mods.scarf > 0 && e.hp > 0 && now - pulse.scarfAt >= 450) {
+        pulse.scarfAt = now;
+        hitEnemy(state, e, damage * (0.35 + 0.15 * (mods.scarf - 1)), from, p.move, false, 0);
+        state.fx.push({ kind: 'echo', x: e.x, y: e.y, r: e.radius * 1.4, color: HELD_ITEM_BY_ID['lenco-escolha'].color, ageMs: 0, lifeMs: 220 });
+      }
+    }
     // Faísca da cor de um dos itens em todo acerto: toda forma de ataque mostra que está carregando itens.
     if (state.fx.length < 160 && mods.ids.length > 0) {
       const pick = mods.ids[state.nextId % mods.ids.length]!;
@@ -1201,7 +1256,7 @@ function applyHeldOnHit(state: SurvivorState, e: SurvivorEnemy, damage: number, 
 }
 
 /** Fragmento de Estrela: estilhaços saem do alvo para longe de onde veio o golpe, num leque. */
-function queueHeldShards(state: SurvivorState, e: SurvivorEnemy, damage: number, from: { x: number; y: number }, count: number): void {
+function queueHeldShards(state: SurvivorState, e: SurvivorEnemy, damage: number, from: { x: number; y: number }, count: number, itemId: 'po-prateado' | 'presa-afiada' = 'po-prateado'): void {
   const queue = heldShardQueues.get(state) ?? [];
   if (state.projectiles.length + queue.length + count > MAX_PROJECTILES_FOR_SHARDS) return;
   const p = state.player;
@@ -1215,7 +1270,7 @@ function queueHeldShards(state: SurvivorState, e: SurvivorEnemy, damage: number,
       id: state.nextId++, x: e.x, y: e.y, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed,
       damage: round1(damage * 0.35), pierce: 0, lifeMs: 420, hit: [e.id], size: Math.max(3, p.projectileSize * 0.7), collisionRadius: 6,
       move: p.move, distanceFromPlayer: 0, noHeld: true,
-      look: { tier: 0, piercing: false, critical: false, held: { colors: [HELD_ITEM_BY_ID['po-prateado'].color], spikes: false, crown: false, sparks: false, star: true, wings: false, heavy: 0 } },
+      look: { tier: 0, piercing: false, critical: false, held: { colors: [HELD_ITEM_BY_ID[itemId].color], spikes: false, crown: false, sparks: false, star: itemId === 'po-prateado', wings: false, heavy: 0, ...(itemId === 'presa-afiada' ? { fang: true } : {}) } },
     });
   }
   heldShardQueues.set(state, queue);
@@ -3198,7 +3253,10 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
   p.artifactShieldMs = Math.max(0, p.artifactShieldMs - dtMs);
   p.artifactMagnetMs = Math.max(0, p.artifactMagnetMs - dtMs);
   p.artifactFocusMs = Math.max(0, p.artifactFocusMs - dtMs);
-  const dashPath = stepSurvivorSpecial(state, input, dtMs, ARENA_W, ARENA_H, PLAYER_RADIUS);
+  const dashPath = stepSurvivorSpecial(state, input, dtMs, ARENA_W, ARENA_H, PLAYER_RADIUS, (id, damage, target) => {
+    gainSupreme(state, (damage / Math.max(1, target.maxHp)) * SUPREME_GAIN.damageDealtPerBar);
+    if (state.runStats) recordDamage(state.runStats, SURVIVOR_SPECIALS[id].name, p.move.color, damage);
+  });
   if (dashPath) hitDashPath(state, dashPath);
   stepSurvivorSupreme(state, input, dtMs, events, {
     attackDamage: playerAttackDamage(state),

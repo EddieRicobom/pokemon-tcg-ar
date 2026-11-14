@@ -140,6 +140,31 @@ export function drawHeldProjectileOverlay(c: CanvasRenderingContext2D, head: Scr
     c.ellipse(r * 0.7, -r * 1.3, r * 0.6, r * 0.35, 0.5, 0, Math.PI * 2);
     c.fill();
   }
+  // Seis transformadores novos: marcas compactas que seguem também os golpes de área pelo brilho do acerto.
+  if (held.grip) {
+    c.strokeStyle = '#62d4c0'; c.lineWidth = 1.6; c.globalAlpha = 0.9;
+    c.beginPath(); c.arc(0, 0, r * 1.65, -0.8, 0.8); c.lineTo(r * 1.15, r * 0.45); c.stroke();
+  }
+  if (held.fang) {
+    c.strokeStyle = '#f2e0c2'; c.lineWidth = 1.4; c.globalAlpha = 0.9;
+    for (const side of [-1, 1]) { c.beginPath(); c.moveTo(side * r * 0.5, -r); c.lineTo(side * r * 1.5, -r * 1.9); c.lineTo(side * r, -r * 0.2); c.stroke(); }
+  }
+  if (held.tail) {
+    c.strokeStyle = '#a893d1'; c.lineWidth = 1.5; c.globalAlpha = 0.8;
+    c.beginPath(); c.arc(-r * 0.8, 0, r * 1.5, 0.4, Math.PI * 1.65); c.stroke();
+  }
+  if (held.band) {
+    c.strokeStyle = '#ef8b66'; c.lineWidth = 2; c.globalAlpha = 0.8;
+    c.beginPath(); c.arc(0, 0, r * 1.8, 0, Math.PI * 2); c.stroke();
+  }
+  if (held.specs) {
+    c.strokeStyle = '#b9a4ff'; c.lineWidth = 1.5; c.globalAlpha = 0.9;
+    c.beginPath(); c.moveTo(-r * 1.5, -r * 0.7); c.lineTo(0, r * 1.5); c.lineTo(r * 1.5, -r * 0.7); c.stroke();
+  }
+  if (held.scarf) {
+    c.strokeStyle = '#f3baec'; c.lineWidth = 1.5; c.globalAlpha = 0.9;
+    c.beginPath(); c.moveTo(-r, 0); c.quadraticCurveTo(-r * 2, r, -r * 2.5, -r * 0.6); c.stroke();
+  }
   if (held.sparks && detailed) {
     c.strokeStyle = '#fff27a';
     c.lineWidth = 1.2;
