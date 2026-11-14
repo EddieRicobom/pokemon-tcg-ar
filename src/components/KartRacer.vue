@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import type { KartFinish, KartRaceHandle } from '../box/start-kart-race';
-import { kartPosition, KART_LAPS, type KartRaceState } from '../core/kart-race';
+import { kartPosition, KART_LAPS, TRACK_HALF_WIDTH, trackDistance, type KartRaceState } from '../core/kart-race';
 
 const props = withDefaults(defineProps<{ playerDexId: number; opponentDexIds?: number[] }>(), { opponentDexIds: () => [25, 133, 4] });
 const emit = defineEmits<{ close: []; finish: [result: KartFinish] }>();
@@ -16,6 +16,11 @@ const touch = { left: false, right: false, accelerate: false, brake: false };
 const lap = computed(() => Math.min(KART_LAPS, (race.value?.cars[0]?.lap ?? 0) + 1));
 const position = computed(() => race.value ? kartPosition(race.value, 0) : 1);
 const elapsed = computed(() => (race.value?.elapsed ?? 0).toFixed(1));
+const speed = computed(() => Math.round(Math.abs(race.value?.cars[0]?.speed ?? 0) * 4));
+const offroad = computed(() => {
+  const car = race.value?.cars[0];
+  return car ? trackDistance(car.x, car.z) > TRACK_HALF_WIDTH : false;
+});
 
 function syncInput(): void {
   handle?.setInput({
@@ -73,8 +78,10 @@ onBeforeUnmount(() => {
       <span>Volta {{ lap }}/{{ KART_LAPS }}</span>
       <span>{{ position }}º de {{ race?.cars.length ?? 4 }}</span>
       <span>{{ elapsed }} s</span>
+      <span>{{ speed }} km/h</span>
       <button type="button" class="kart-racer-close" aria-label="Sair da corrida" @click="emit('close')">✕</button>
     </div>
+    <p v-if="offroad && !result" class="kart-racer-offroad">Fora da pista · volte ao asfalto!</p>
     <p v-if="error" class="kart-racer-message">{{ error }}</p>
     <div v-if="result" class="kart-racer-result" role="status">
       <strong>{{ result.completed ? 'Chegada!' : 'Prova encerrada' }}</strong>
@@ -103,9 +110,9 @@ onBeforeUnmount(() => {
 .kart-racer-close { margin-left: auto; }
 .kart-racer button { border: 1px solid #ffffff7a; border-radius: 12px; background: #182235df; color: #fff; font: inherit; font-weight: 800; cursor: pointer; }
 .kart-racer-close { min-width: 40px; min-height: 38px; }
-.kart-racer-controls { position: absolute; bottom: max(38px, env(safe-area-inset-bottom)); left: 15px; right: 15px; display: flex; justify-content: space-between; pointer-events: none; }
-.kart-racer-steering, .kart-racer-pedals { display: flex; align-items: end; gap: 10px; pointer-events: auto; }
-.kart-racer-controls button { width: clamp(58px, 15vw, 84px); height: clamp(58px, 15vw, 84px); font-size: 18px; user-select: none; -webkit-user-select: none; }
+.kart-racer-controls { position: absolute; bottom: max(38px, env(safe-area-inset-bottom)); left: clamp(8px, 3vw, 15px); right: clamp(8px, 3vw, 15px); display: flex; justify-content: space-between; pointer-events: none; }
+.kart-racer-steering, .kart-racer-pedals { display: flex; align-items: end; gap: clamp(4px, 1.5vw, 10px); pointer-events: auto; }
+.kart-racer-controls button { width: clamp(64px, 16vw, 84px); height: clamp(58px, 15vw, 84px); padding: 0 3px; font-size: 13px; white-space: nowrap; user-select: none; -webkit-user-select: none; }
 .kart-racer-controls button:active { background: #e8a941; color: #172033; }
 .kart-racer-controls .accelerate { background: #278e63e8; }
 .kart-racer-controls .brake { background: #b95656e8; }
@@ -114,4 +121,5 @@ onBeforeUnmount(() => {
 .kart-racer-result { display: grid; gap: 14px; }
 .kart-racer-result strong { font-size: 25px; }
 .kart-racer-result button { padding: 12px; }
+.kart-racer-offroad { position: absolute; top: max(65px, calc(env(safe-area-inset-top) + 53px)); left: 50%; transform: translateX(-50%); margin: 0; padding: 6px 10px; border-radius: 9px; background: #a64036de; font-size: 13px; font-weight: 800; white-space: nowrap; }
 </style>
