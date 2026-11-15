@@ -352,7 +352,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="afight" role="dialog" aria-modal="true" aria-label="Luta da Arena">
+  <div class="afight" :class="{ fighting: phase === 'arena' }" role="dialog" aria-modal="true" aria-label="Luta da Arena">
     <header class="afight-top">
       <strong>{{ setup.kind === 'liga' ? `Liga · ${rivalName}` : setup.kind === 'corrida' ? ENDLESS_ARENA_LABELS[setup.mode].title : setup.kind === 'pvp' ? 'Contra um amigo' : 'Luta 6×6' }}</strong>
       <span v-if="run && phase === 'arena'">{{ run.wins }} vitórias · {{ run.score }} pts</span>
@@ -417,6 +417,7 @@ onBeforeUnmount(() => {
 
     <SurvivalPvpArena
       v-else-if="phase === 'arena' && link"
+      class="fit-screen"
       :key="fightKey"
       :link="link"
       :friend-name="rivalName"
@@ -453,6 +454,15 @@ onBeforeUnmount(() => {
   width: 100%;
   max-width: 460px;
   margin-inline: auto;
+}
+
+.afight.fighting {
+  overflow: hidden;
+}
+
+.afight.fighting > .fit-screen {
+  flex: 1 1 0;
+  min-height: 0;
 }
 
 .afight-top {

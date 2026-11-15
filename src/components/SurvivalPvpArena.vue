@@ -1489,6 +1489,7 @@ onBeforeUnmount(() => {
       <p class="svp-summary" role="status">{{ hud.summary }}</p>
     </header>
 
+    <div class="svp-arena-space">
     <div
       ref="arenaEl"
       class="svp-arena"
@@ -1561,6 +1562,7 @@ onBeforeUnmount(() => {
         <li v-for="t in toasts" :key="t.id" :class="t.tone">{{ t.text }}</li>
       </ul>
       <p class="svp-legend" aria-hidden="true">Seus golpes: borda branca · do rival: borda vermelha</p>
+    </div>
     </div>
 
     <footer class="svp-bottom">
@@ -1691,6 +1693,31 @@ onBeforeUnmount(() => {
   width: 100%;
   user-select: none;
   -webkit-user-select: none;
+}
+
+.svp-arena-space {
+  display: contents;
+}
+
+.svp.fit-screen {
+  grid-template-rows: auto minmax(0, 1fr) auto;
+}
+
+.svp.fit-screen .svp-arena-space {
+  display: grid;
+  min-height: 0;
+  place-items: center;
+  container-type: size;
+}
+
+.svp.fit-screen .svp-arena {
+  width: min(100cqw, 66.6667cqh, 430px);
+  min-width: 0;
+}
+
+.svp.fit-screen .svp-result {
+  overflow-y: auto;
+  place-items: safe center;
 }
 
 .svp-top {
