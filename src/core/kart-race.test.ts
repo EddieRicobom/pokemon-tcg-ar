@@ -1,9 +1,50 @@
 import { describe, expect, it } from 'vitest';
-import { createKartRace, kartPosition, kartProfileOfDex, stepKartRace, TRACK_HALF_WIDTH, trackDistance, trackPoint } from './kart-race';
+import { activateKartAbility, createKartRace, kartAbilityOfTypes, kartCupScores, kartPosition, kartProfileOfDex, KART_CUP_ROUNDS, stepKartRace, TRACK_HALF_WIDTH, trackDistance, trackPoint } from './kart-race';
 
 const idle = { throttle: 0, steer: 0, brake: false };
 
 describe('Kart Racer', () => {
+  it('liga habilidades aos tipos reais e respeita recarga curta', () => {
+    expect(kartAbilityOfTypes(kartProfileOfDex(25)!.types)?.kind).toBe('boost');
+    expect(kartAbilityOfTypes(kartProfileOfDex(7)!.types)?.kind).toBe('pulse');
+    expect(kartAbilityOfTypes(kartProfileOfDex(95)!.types)?.kind).toBe('shield');
+    expect(kartAbilityOfTypes([])).toBeNull();
+    const race = createKartRace(0, [25]);
+    expect(activateKartAbility(race, 0)).toBe(false);
+    race.elapsed = 3;
+    expect(activateKartAbility(race, 0)).toBe(true);
+    expect(race.cars[0]!.boostUntil).toBeGreaterThan(race.elapsed);
+    expect(activateKartAbility(race, 0)).toBe(false);
+    race.elapsed = race.cars[0]!.abilityReadyAt;
+    expect(activateKartAbility(race, 0)).toBe(true);
+  });
+
+  it('pulso atinge apenas rivais próximos à frente e escudo bloqueia', () => {
+    const race = createKartRace(3, [7, 25, 25, 95]);
+    const [water, front, back, shield] = race.cars;
+    race.elapsed = 3;
+    water!.x = 0; water!.z = 0; water!.heading = 0;
+    front!.x = 0; front!.z = 10;
+    back!.x = 0; back!.z = -8;
+    shield!.x = 1; shield!.z = 8;
+    expect(activateKartAbility(race, 3)).toBe(true);
+    expect(activateKartAbility(race, 0)).toBe(true);
+    expect(front!.slowUntil).toBeGreaterThan(race.elapsed);
+    expect(back!.slowUntil).toBe(0);
+    expect(shield!.slowUntil).toBe(0);
+    race.elapsed += 1.3;
+    expect(front!.slowUntil).toBeLessThan(race.elapsed);
+    expect(shield!.shieldUntil).toBeGreaterThan(race.elapsed);
+  });
+
+  it('copa acumula pontos em três etapas e reserva Blue para o duelo final', () => {
+    expect(KART_CUP_ROUNDS.map((round) => round.opponents[0])).toEqual([7, 8, 9]);
+    let scores = [0, 0, 0, 0];
+    scores = kartCupScores(scores, [0, 1, 2, 3]);
+    scores = kartCupScores(scores, [1, 0, 3, 2]);
+    expect(scores).toEqual([16, 16, 4, 4]);
+    expect(createKartRace(3, [25, 9, 160, 257], 1).rivalId).toBe(1);
+  });
   it('deriva carroceria e rodas dos tipos reais, inclusive o segundo tipo', () => {
     const charmander = kartProfileOfDex(4)!;
     const charizard = kartProfileOfDex(6)!;

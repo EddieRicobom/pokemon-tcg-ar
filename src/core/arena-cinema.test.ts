@@ -44,6 +44,8 @@ describe('direção de cena da luta', () => {
     expect(beat?.final).toBe(true);
     expect(rest).toEqual([]);
     expect(d.camera(200)!.scale).toBeGreaterThan(1.25);
+    expect(d.camera(1000)).not.toBeNull();
+    expect(d.camera(1250)).toBeNull();
   });
 
   it('o Especial pede cut-in e um feixe não interrompe um plano mais forte', () => {

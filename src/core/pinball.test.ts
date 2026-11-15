@@ -1,11 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import { createPinballState, launchPinball, nudgePinball, PINBALL_BUMPERS, PINBALL_TARGETS, stepPinball } from './pinball';
+import { activatePinballAbility, createPinballState, launchPinball, nudgePinball, pinballPartnerSkill, PINBALL_BOSS_CORE, PINBALL_BUMPERS, PINBALL_TARGETS, stepPinball } from './pinball';
 import type { PinballState } from './pinball';
 
-function hitTarget(s: PinballState): void {
-  const target = PINBALL_TARGETS[1]!;
+function hitTarget(s: PinballState, index = 1): void {
+  const target = PINBALL_TARGETS[index]!;
   s.ball = { x: target.x, y: target.y, vx: 0, vy: 0 };
   s.hitCooldown.fill(0);
+  stepPinball(s, { left: false, right: false }, 16);
+}
+function hitCore(s: PinballState): void {
+  s.ball = { x: PINBALL_BOSS_CORE.x, y: PINBALL_BOSS_CORE.y, vx: 0, vy: 0 };
+  s.bossCooldownMs = 0;
   stepPinball(s, { left: false, right: false }, 16);
 }
 function hitBumper(s: PinballState): void {
@@ -102,7 +107,16 @@ describe('pinball da Vila', () => {
     expect(s.evolved).toBe(1);
     for (let i = 0; i < 3; i++) hitTarget(s);
     expect(s.mode).toBe('bonus');
-    for (let i = 0; i < 4; i++) hitTarget(s);
+    for (let i = 0; i < 5; i++) hitBumper(s);
+    expect(s.bossPhase).toBe(1);
+    hitTarget(s, 0);
+    hitTarget(s, 0);
+    expect(s.progress).toBe(1);
+    hitTarget(s, 1);
+    expect(s.bossPhase).toBe(2);
+    hitCore(s);
+    expect(s.phase).toBe('playing');
+    hitCore(s);
     expect(s.phase).toBe('won');
     expect(s.stage).toBe(3);
     expect(s.multiplier).toBe(2);
@@ -120,6 +134,66 @@ describe('pinball da Vila', () => {
     expect(s.mode).toBe('normal');
     expect(s.stage).toBe(1);
     expect(s.balls).toBe(3);
+  });
+
+  it('o tipo real define a habilidade e ausência de dado não cria tipo', () => {
+    expect(pinballPartnerSkill(25)).toMatchObject({ type: 'electric', ability: 'impulse', label: 'Impulso' });
+    expect(pinballPartnerSkill(7)).toMatchObject({ type: 'water', ability: 'guard' });
+    expect(pinballPartnerSkill(445)).toMatchObject({ type: 'dragon', ability: 'power' });
+    expect(pinballPartnerSkill(133)).toMatchObject({ type: 'normal', ability: 'focus' });
+    expect(pinballPartnerSkill(-1)).toBeNull();
+  });
+
+  it('habilidade usa uma carga por bola e a proteção não gasta bola salva', () => {
+    const s = createPinballState();
+    expect(activatePinballAbility(s, 'guard')).toBe(false);
+    launchPinball(s);
+    expect(activatePinballAbility(s, 'guard')).toBe(true);
+    expect(s.kickback).toBe(true);
+    expect(s.saverMs).toBeGreaterThanOrEqual(7000);
+    expect(activatePinballAbility(s, 'guard')).toBe(false);
+    s.ball = { x: 180, y: 610, vx: 0, vy: 200 };
+    stepPinball(s, { left: false, right: false }, 16);
+    expect(s.phase).toBe('playing');
+    expect(s.abilityUses).toBe(0);
+    s.saverMs = 0;
+    s.ball = { x: 180, y: 610, vx: 0, vy: 200 };
+    stepPinball(s, { left: false, right: false }, 16);
+    expect(s.phase).toBe('between');
+    launchPinball(s);
+    expect(s.abilityUses).toBe(1);
+  });
+
+  it('precisão acelera captura, mas não pula os alvos distintos do chefe', () => {
+    const s = createPinballState();
+    launchPinball(s);
+    for (let i = 0; i < 3; i++) hitTarget(s);
+    expect(activatePinballAbility(s, 'focus')).toBe(true);
+    hitTarget(s);
+    expect(s.progress).toBe(2);
+    hitTarget(s);
+    expect(s.caught).toBe(1);
+    s.stage = 2; s.mode = 'bonus'; s.modeMs = 100_000; s.bossPhase = 1; s.bossMask = 0; s.progress = 0;
+    hitTarget(s, 0);
+    hitTarget(s, 0);
+    expect(s.progress).toBe(1);
+  });
+
+  it('impulso direciona a bola; impacto dobra os pontos dos bumpers', () => {
+    const baseline = createPinballState();
+    const powered = createPinballState();
+    launchPinball(baseline); launchPinball(powered);
+    powered.ball = { x: 270, y: 410, vx: 80, vy: 240 };
+    expect(activatePinballAbility(powered, 'impulse')).toBe(true);
+    expect(powered.ball.vy).toBe(-880);
+    expect(powered.ball.vx).toBeLessThan(0);
+    expect(activatePinballAbility(powered, 'power')).toBe(false);
+    powered.abilityUses = 1;
+    expect(activatePinballAbility(powered, 'power')).toBe(true);
+    hitBumper(baseline); hitBumper(powered);
+    expect(powered.score).toBe(baseline.score * 2);
+    stepPinball(powered, { left: false, right: false }, 50);
+    expect(powered.abilityMs).toBeLessThan(12_000);
   });
 
   it('deixa a bola cair pelo vão central com os dois flippers pressionados', () => {
@@ -166,7 +240,7 @@ describe('pinball da Vila', () => {
     expect(s.caught).toBe(1);
   });
 
-  it('partida guiada usa três bolas, alcança captura e evolução sem travar', () => {
+  it('partida guiada atravessa os encontros e vence as três fases do chefe', () => {
     const s = createPinballState();
     launchPinball(s);
     let frames = 0;
@@ -176,10 +250,11 @@ describe('pinball da Vila', () => {
       expect(Number.isFinite(s.ball.x) && Number.isFinite(s.ball.y)).toBe(true);
       frames++;
     }
-    expect(['over', 'won']).toContain(s.phase);
+    expect(s.phase).toBe('won');
     expect(frames).toBeGreaterThan(1000);
     expect(s.caught).toBeGreaterThanOrEqual(1);
     expect(s.evolved).toBeGreaterThanOrEqual(1);
+    expect(s.bossPhase).toBe(2);
     expect(s.score).toBeGreaterThan(10000);
   });
 });

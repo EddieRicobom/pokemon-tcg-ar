@@ -1,5 +1,5 @@
 /** Física e regras puras do Kart Racer. Distâncias em unidades de pista, tempo em segundos. */
-import type { PokemonType } from './pokemon-data';
+import { TYPE_LABELS_PT, type PokemonType } from './pokemon-data';
 import { typesOfDex } from './species-filter';
 import type { BaseStats } from './survivor-moves';
 import { statsOfDex } from './survivor-stats';
@@ -13,6 +13,8 @@ const ROAD_LIMIT = TRACK_HALF_WIDTH - KART_RADIUS;
 const BARRIER_LIMIT = TRACK_HALF_WIDTH + 3.5 - KART_RADIUS;
 
 export interface KartInput { throttle: number; steer: number; brake: boolean }
+export type KartAbilityKind = 'boost' | 'pulse' | 'shield';
+export interface KartAbility { kind: KartAbilityKind; label: string; description: string; cooldown: number }
 export type KartBodyId = 'leve' | 'equilibrado' | 'pesado' | 'aero';
 export type KartWheelsId = 'asfalto' | 'misto' | 'tracao';
 export interface KartPerformance {
@@ -35,6 +37,11 @@ export interface KartCar {
   id: number;
   /** Null quando faltam tipos ou stats reais para o Pokémon. */
   profile: KartProfile | null;
+  ability: KartAbility | null;
+  abilityReadyAt: number;
+  boostUntil: number;
+  slowUntil: number;
+  shieldUntil: number;
   x: number;
   z: number;
   heading: number;
@@ -43,7 +50,20 @@ export interface KartCar {
   checkpoint: number;
   finishedAt: number | null;
 }
-export interface KartRaceState { cars: KartCar[]; elapsed: number; laps: number }
+export interface KartRaceState { cars: KartCar[]; elapsed: number; laps: number; rivalId: number | null }
+
+export const KART_CUP_ROUNDS = [
+  { title: 'Abertura da Copa', opponents: [7, 158, 255], accent: '#71cda9' },
+  { title: 'Disputa dos treinadores', opponents: [8, 159, 256], accent: '#e8bf68' },
+  { title: 'Duelo com o rival Blue', opponents: [9, 160, 257], accent: '#76a9eb' },
+] as const;
+export const KART_CUP_TRAINERS = [
+  { id: 'player', name: 'Você', portrait: '' },
+  { id: 'blue', name: 'Blue', portrait: 'blue' },
+  { id: 'silver', name: 'Silver', portrait: 'silver' },
+  { id: 'may', name: 'May', portrait: 'may' },
+] as const;
+export const KART_CUP_POINTS = [10, 6, 3, 1] as const;
 
 const BODY_LABELS: Record<KartBodyId, string> = {
   leve: 'Leve', equilibrado: 'Equilibrado', pesado: 'Pesado', aero: 'Aerodinâmico',
@@ -55,6 +75,19 @@ const NEUTRAL_PERFORMANCE: KartPerformance = {
   acceleration: 24, topSpeed: 32, handling: 2.35, roadGrip: 1, offroadGrip: 1, braking: 20,
 };
 const clamp = (value: number, low: number, high: number): number => Math.max(low, Math.min(high, value));
+
+export function kartAbilityOfTypes(types: readonly PokemonType[]): KartAbility | null {
+  const type = types[0];
+  if (!type) return null;
+  const name = TYPE_LABELS_PT[type];
+  if (['electric', 'fire', 'flying', 'dragon', 'fighting', 'normal'].includes(type)) {
+    return { kind: 'boost', label: `Impulso ${name}`, description: 'Acelera por 1,6 s. Curvas e pulsos ainda exigem controle.', cooldown: 10 };
+  }
+  if (['water', 'ice', 'psychic', 'ghost', 'poison', 'dark'].includes(type)) {
+    return { kind: 'pulse', label: `Pulso ${name}`, description: 'Desacelera rivais à frente por 1,2 s; distância e escudo protegem.', cooldown: 11 };
+  }
+  return { kind: 'shield', label: `Escudo ${name}`, description: 'Protege de pulsos e colisões por 2 s.', cooldown: 12 };
+}
 
 /** As peças vêm dos tipos; os ajustes finos vêm dos seis stats base reais. */
 export function kartProfileOfDex(dexId: number): KartProfile | null {
@@ -137,16 +170,22 @@ function nearestTrack(x: number, z: number): { angle: number; distance: number }
 export function trackAngle(x: number, z: number): number { return nearestTrack(x, z).angle; }
 export function trackDistance(x: number, z: number): number { return nearestTrack(x, z).distance; }
 
-export function createKartRace(opponents = 3, dexIds: readonly number[] = []): KartRaceState {
+export function createKartRace(opponents = 3, dexIds: readonly number[] = [], rivalId: number | null = null): KartRaceState {
   const cars: KartCar[] = Array.from({ length: opponents + 1 }, (_, id) => {
     const angle = -0.25 * Math.floor(id / 2);
     const point = trackPoint(angle);
     const { x: tangentX, z: tangentZ } = trackTangent(angle);
     const laneOffset = id % 2 === 0 ? -2.7 : 2.7;
     const tangentLength = Math.hypot(tangentX, tangentZ);
+    const profile = dexIds[id] === undefined ? null : kartProfileOfDex(dexIds[id]!);
     return {
       id,
-      profile: dexIds[id] === undefined ? null : kartProfileOfDex(dexIds[id]!),
+      profile,
+      ability: profile ? kartAbilityOfTypes(profile.types) : null,
+      abilityReadyAt: 3,
+      boostUntil: 0,
+      slowUntil: 0,
+      shieldUntil: 0,
       x: point.x + tangentZ / tangentLength * laneOffset,
       z: point.z - tangentX / tangentLength * laneOffset,
       heading: Math.atan2(tangentX, tangentZ),
@@ -156,20 +195,51 @@ export function createKartRace(opponents = 3, dexIds: readonly number[] = []): K
       finishedAt: null,
     };
   });
-  return { cars, elapsed: 0, laps: KART_LAPS };
+  return { cars, elapsed: 0, laps: KART_LAPS, rivalId };
+}
+
+export function activateKartAbility(state: KartRaceState, id: number): boolean {
+  const car = state.cars[id];
+  if (!car || !car.ability || car.finishedAt !== null || state.elapsed < car.abilityReadyAt) return false;
+  car.abilityReadyAt = state.elapsed + car.ability.cooldown;
+  if (car.ability.kind === 'boost') {
+    car.boostUntil = state.elapsed + 1.6;
+    car.speed = Math.min(car.speed + 5, (car.profile?.performance.topSpeed ?? 32) + 7);
+  } else if (car.ability.kind === 'shield') {
+    car.shieldUntil = state.elapsed + 2;
+  } else {
+    for (const other of state.cars) {
+      if (other.id === id || other.finishedAt !== null || other.shieldUntil > state.elapsed) continue;
+      const dx = other.x - car.x;
+      const dz = other.z - car.z;
+      if (Math.hypot(dx, dz) <= 15 && dx * Math.sin(car.heading) + dz * Math.cos(car.heading) > 0) {
+        other.slowUntil = Math.max(other.slowUntil, state.elapsed + 1.2);
+      }
+    }
+  }
+  return true;
+}
+
+export function kartCupScores(scores: readonly number[], order: readonly number[]): number[] {
+  const next = [...scores];
+  for (let place = 0; place < order.length; place++) {
+    const id = order[place]!;
+    next[id] = (next[id] ?? 0) + (KART_CUP_POINTS[place] ?? 0);
+  }
+  return next;
 }
 
 function angleDifference(a: number, b: number): number {
   return Math.atan2(Math.sin(a - b), Math.cos(a - b));
 }
 
-export function opponentInput(car: KartCar, id: number): KartInput {
+export function opponentInput(car: KartCar, id: number, rival = false): KartInput {
   const angle = trackAngle(car.x, car.z);
-  const ahead = angle + 0.26 + Math.min(0.13, Math.max(0, car.speed) * 0.004);
+  const ahead = angle + (rival ? 0.29 : 0.26) + Math.min(0.13, Math.max(0, car.speed) * 0.004);
   const point = trackPoint(ahead);
   const { x: tangentX, z: tangentZ } = trackTangent(ahead);
   const length = Math.hypot(tangentX, tangentZ);
-  const lane = id % 2 === 0 ? -1.4 : 1.4;
+  const lane = rival ? 0.15 : id % 2 === 0 ? -1.4 : 1.4;
   const targetX = point.x + tangentZ / length * lane;
   const targetZ = point.z - tangentX / length * lane;
   const desired = Math.atan2(targetX - car.x, targetZ - car.z);
@@ -179,7 +249,7 @@ export function opponentInput(car: KartCar, id: number): KartInput {
     throttle: offroad || Math.abs(turn) < 0.48 ? 1 : 0.72,
     // Com a câmera atrás do kart, um comando positivo vira à direita na tela.
     steer: Math.max(-1, Math.min(1, -turn * 2.1)),
-    brake: !offroad && Math.abs(turn) > 0.62 && car.speed > 21,
+    brake: !offroad && Math.abs(turn) > (rival ? 0.72 : 0.62) && car.speed > (rival ? 23 : 21),
   };
 }
 
@@ -188,10 +258,12 @@ function advanceCar(car: KartCar, input: KartInput, dt: number, elapsed: number,
   const performance = car.profile?.performance ?? NEUTRAL_PERFORMANCE;
   const throttle = Math.max(-1, Math.min(1, input.throttle));
   const offroad = Math.max(0, Math.min(1, (trackDistance(car.x, car.z) - ROAD_LIMIT) / 4));
-  car.speed += (throttle >= 0 ? performance.acceleration - 9 * offroad / performance.offroadGrip : 14) * throttle * dt;
-  const drag = 3.2 + 9 * offroad / performance.offroadGrip + (input.brake ? performance.braking : 0);
+  const boosted = car.boostUntil > elapsed;
+  const slowed = car.slowUntil > elapsed && car.shieldUntil <= elapsed;
+  car.speed += (throttle >= 0 ? (performance.acceleration - 9 * offroad / performance.offroadGrip) * (boosted ? 1.55 : 1) : 14) * throttle * dt;
+  const drag = 3.2 + 9 * offroad / performance.offroadGrip + (input.brake ? performance.braking : 0) + (slowed ? 3 : 0);
   car.speed = Math.sign(car.speed) * Math.max(0, Math.abs(car.speed) - drag * dt);
-  car.speed = Math.max(-10, Math.min(performance.topSpeed - 14 * offroad / performance.offroadGrip, car.speed));
+  car.speed = Math.max(-10, Math.min((performance.topSpeed + (boosted ? 7 : 0) - 14 * offroad / performance.offroadGrip) * (slowed ? 0.68 : 1), car.speed));
   const grip = offroad > 0 ? performance.offroadGrip : performance.roadGrip;
   car.heading -= Math.max(-1, Math.min(1, input.steer)) * performance.handling * grip * dt * Math.min(1, Math.abs(car.speed) / 7) * Math.sign(car.speed || 1);
   car.x += Math.sin(car.heading) * car.speed * dt;
@@ -232,7 +304,16 @@ export function stepKartRace(state: KartRaceState, input: KartInput, deltaSecond
   const dt = Math.max(0, Math.min(0.05, deltaSeconds));
   if (dt === 0) return;
   state.elapsed += dt;
-  state.cars.forEach((car, id) => advanceCar(car, id === 0 ? input : opponentInput(car, id), dt, state.elapsed, state.laps));
+  state.cars.forEach((car, id) => {
+    if (id > 0 && state.elapsed > 4 && car.ability && state.elapsed >= car.abilityReadyAt) {
+      const player = state.cars[0]!;
+      const nearPlayer = Math.hypot(player.x - car.x, player.z - car.z) < 17;
+      if (car.ability.kind === 'boost' && car.speed > 12 || car.ability.kind === 'pulse' && nearPlayer || car.ability.kind === 'shield' && nearPlayer) {
+        activateKartAbility(state, id);
+      }
+    }
+    advanceCar(car, id === 0 ? input : opponentInput(car, id, id === state.rivalId), dt, state.elapsed, state.laps);
+  });
   for (let i = 0; i < state.cars.length; i++) {
     for (let j = i + 1; j < state.cars.length; j++) {
       const a = state.cars[i]!;
@@ -248,12 +329,16 @@ export function stepKartRace(state: KartRaceState, input: KartInput, deltaSecond
       b.x += dx / distance * shift;
       b.z += dz / distance * shift;
       const mean = (a.speed + b.speed) / 2;
-      a.speed = a.speed * 0.86 + mean * 0.14;
-      b.speed = b.speed * 0.86 + mean * 0.14;
+      a.speed = a.shieldUntil > state.elapsed ? a.speed : a.speed * 0.86 + mean * 0.14;
+      b.speed = b.shieldUntil > state.elapsed ? b.speed : b.speed * 0.86 + mean * 0.14;
       resolveBarrier(a);
       resolveBarrier(b);
     }
   }
+}
+
+export function kartPlacementOrder(state: KartRaceState): number[] {
+  return state.cars.map((car) => car.id).sort((a, b) => kartPosition(state, a) - kartPosition(state, b));
 }
 
 export function kartPosition(state: KartRaceState, id: number): number {
