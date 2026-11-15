@@ -55,6 +55,15 @@ function setup() {
 }
 
 describe('survival pvp: ligação anfitrião ↔ convidado', () => {
+  it('ignora instantâneo repetido e não duplica eventos de destaque', () => {
+    const guest = new SurvivalGuestLink(pipe().tx, [mon('a')], [mon('x')]);
+    const snap = snapshotArena(createArena([mon('a')], [mon('x')]), 1);
+    const msg: WireMessage = { t: 'sv-snap', snap, events: [{ k: 'faint', side: 1, index: 0 }] };
+    guest.receive(msg, 100);
+    guest.receive(msg, 101);
+    expect(guest.events).toEqual([{ k: 'faint', side: 1, index: 0 }]);
+  });
+
   it('manda instantâneos válidos pelo fio e o convidado os adota', () => {
     const t = setup();
     for (let i = 0; i < 200; i++) t.frame({ dx: 0.5, dy: 0, switchTo: -1 });

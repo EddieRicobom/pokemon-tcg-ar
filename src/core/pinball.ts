@@ -1,4 +1,7 @@
 /** Mesa e física próprias para o minijogo da Vila. Não usa código nem recursos da ROM. */
+import { TYPE_LABELS_PT } from './pokemon-data';
+import type { PokemonType } from './pokemon-data';
+import { typesOfDex } from './species-filter';
 export const PINBALL_W = 360;
 export const PINBALL_H = 600;
 const BALL_R = 7;
@@ -7,10 +10,33 @@ const MAX_SPEED = 1250;
 
 export type PinballMode = 'normal' | 'capture' | 'evolution' | 'bonus';
 export type PinballPhase = 'ready' | 'playing' | 'between' | 'over' | 'won';
+export type PinballAbility = 'impulse' | 'guard' | 'power' | 'focus';
+export interface PinballPartnerSkill { type: PokemonType; typeLabel: string; ability: PinballAbility; label: string; description: string }
+const ABILITIES: Record<PinballAbility, { label: string; description: string }> = {
+  impulse: { label: 'Impulso', description: 'Rebate a bola em direção ao topo.' },
+  guard: { label: 'Proteção', description: 'Ativa resgate lateral e mais 7 s de proteção.' },
+  power: { label: 'Impacto', description: 'Bumpers valem o dobro por 12 s.' },
+  focus: { label: 'Precisão', description: 'Alvos pontuam em dobro; captura avança 2 por 12 s.' },
+};
+/** A habilidade vem do primeiro tipo conhecido da espécie; dados ausentes não recebem tipo inventado. */
+export function pinballPartnerSkill(dexId: number): PinballPartnerSkill | null {
+  const type = typesOfDex(dexId)[0];
+  if (!type) return null;
+  const ability: PinballAbility = ['fire', 'electric', 'fighting'].includes(type) ? 'impulse'
+    : ['water', 'grass', 'ice', 'steel', 'rock'].includes(type) ? 'guard'
+      : ['ground', 'poison', 'bug', 'dragon'].includes(type) ? 'power' : 'focus';
+  return { type, typeLabel: TYPE_LABELS_PT[type], ability, ...ABILITIES[ability] };
+}
 export const PINBALL_STAGES = [
-  { title: 'Trilha da Captura', objective: 'Capture acertando os alvos', mode: 'capture' },
-  { title: 'Caverna da Evolução', objective: 'Evolua acertando os bumpers', mode: 'evolution' },
-  { title: 'Cume do Bônus', objective: 'Conclua o desafio dos alvos', mode: 'bonus' },
+  { title: 'Trilha da Captura', encounter: 'Treinadora Lia · Eevee', objective: 'Acerte 3 alvos para iniciar; depois, 3 para vencer o encontro.', mode: 'capture' },
+  { title: 'Caverna da Evolução', encounter: 'Pesquisador Davi · Riolu', objective: 'Acerte 3 alvos para iniciar; depois, 7 bumpers.', mode: 'evolution' },
+  { title: 'Cume do Bônus', encounter: 'Campeã Selene · Gengar', objective: 'Chefe: escudo, dois alvos e núcleo.', mode: 'bonus' },
+] as const;
+export const PINBALL_BOSS_CORE = { x: 180, y: 366, r: 21 } as const;
+export const PINBALL_BOSS_PHASES = [
+  { label: 'Escudo', objective: 'Acerte 5 bumpers.' },
+  { label: 'Selos', objective: 'Acerte 2 alvos diferentes.' },
+  { label: 'Núcleo', objective: 'Acerte o núcleo 2 vezes.' },
 ] as const;
 export const PINBALL_FLIPPERS = [
   { pivotX: 108, tipX: 163 }, { pivotX: 252, tipX: 197 },
@@ -45,6 +71,12 @@ export interface PinballState {
   combo: number;
   comboMs: number;
   skillShot: boolean;
+  bossPhase: number;
+  bossMask: number;
+  bossCooldownMs: number;
+  abilityUses: number;
+  abilityKind: PinballAbility | null;
+  abilityMs: number;
 }
 export interface PinballInput { left: boolean; right: boolean }
 export type PinballEvent = 'bump' | 'flipper' | 'drain' | 'launch' | 'mode' | 'reward' | 'tilt';
@@ -56,7 +88,7 @@ export const PINBALL_BUMPERS = [
 export const PINBALL_TARGETS = [
   { x: 76, y: 110, r: 12 }, { x: 180, y: 76, r: 12 }, { x: 284, y: 110, r: 12 },
 ] as const;
-export function pinballMissionGoal(mode: PinballMode): number { return mode === 'evolution' ? 7 : mode === 'bonus' ? 4 : 3; }
+export function pinballMissionGoal(mode: PinballMode, bossPhase = 0): number { return mode === 'evolution' ? 7 : mode === 'bonus' ? [5, 2, 2][bossPhase] ?? 2 : 3; }
 
 export function createPinballState(best = 0): PinballState {
   return {
@@ -66,6 +98,7 @@ export function createPinballState(best = 0): PinballState {
     tiltHeat: 0, tiltLockMs: 0, message: 'Etapa 1/3: lance a Pokébola!', messageMs: 0,
     hitCooldown: Array(PINBALL_BUMPERS.length + PINBALL_TARGETS.length).fill(0),
     flipperCooldownMs: [0, 0], laneCooldownMs: 0, laneHits: 0, combo: 0, comboMs: 0, skillShot: false,
+    bossPhase: 0, bossMask: 0, bossCooldownMs: 0, abilityUses: 1, abilityKind: null, abilityMs: 0,
   };
 }
 
@@ -81,7 +114,28 @@ export function launchPinball(s: PinballState): boolean {
   s.ball = { x: 316, y: 515, vx: -24, vy: -960 };
   s.saverMs = 7000;
   s.skillShot = true;
+  s.abilityUses = 1;
+  s.abilityKind = null;
+  s.abilityMs = 0;
   announce(s, 'Bola em jogo!');
+  return true;
+}
+
+/** Uma ativação por bola. A mesma Pokébola salva não recarrega a habilidade. */
+export function activatePinballAbility(s: PinballState, ability: PinballAbility): boolean {
+  if (s.phase !== 'playing' || s.abilityUses <= 0 || s.tiltLockMs > 0) return false;
+  s.abilityUses--;
+  if (ability === 'impulse') {
+    s.ball.vx = (180 - s.ball.x) * 1.3;
+    s.ball.vy = -880;
+  } else if (ability === 'guard') {
+    s.kickback = true;
+    s.saverMs = Math.max(s.saverMs, 7000);
+  } else {
+    s.abilityKind = ability;
+    s.abilityMs = 12_000;
+  }
+  announce(s, `${ABILITIES[ability].label} ativado!`);
   return true;
 }
 
@@ -160,10 +214,12 @@ function flipper(s: PinballState, left: boolean, pressed: boolean, events: Pinba
 
 function enterMode(s: PinballState, mode: Exclude<PinballMode, 'normal'>, events: PinballEvent[]): void {
   s.mode = mode;
-  s.modeMs = mode === 'bonus' ? 50_000 : 60_000;
+  s.modeMs = mode === 'bonus' ? 100_000 : 60_000;
   s.progress = 0;
   s.charge = 0;
-  announce(s, mode === 'capture' ? 'Captura! Acerte 3 alvos.' : mode === 'evolution' ? 'Evolução! Acerte 7 bumpers.' : 'Final! Acerte 4 alvos.');
+  s.bossPhase = 0;
+  s.bossMask = 0;
+  announce(s, mode === 'capture' ? 'Eevee: acerte 3 alvos.' : mode === 'evolution' ? 'Riolu: acerte 7 bumpers.' : 'Gengar: quebre o escudo com 5 bumpers.');
   events.push('mode');
 }
 
@@ -185,20 +241,38 @@ function completeMode(s: PinballState, events: PinballEvent[]): void {
   events.push('reward');
 }
 
-function onTarget(s: PinballState, events: PinballEvent[]): void {
+function bossProgress(s: PinballState, amount: number, events: PinballEvent[]): void {
+  s.progress = Math.min(pinballMissionGoal('bonus', s.bossPhase), s.progress + amount);
+  if (s.progress < pinballMissionGoal('bonus', s.bossPhase)) return;
+  if (s.bossPhase === 2) { completeMode(s, events); return; }
+  s.bossPhase++;
+  s.progress = 0;
+  score(s, 2500);
+  s.saverMs = Math.max(s.saverMs, 12_000);
+  announce(s, s.bossPhase === 1 ? 'Escudo quebrado! Acerte 2 selos diferentes.' : 'Selos abertos! Acerte o núcleo 2 vezes.');
+  events.push('mode');
+}
+
+function onTarget(s: PinballState, index: number, events: PinballEvent[]): void {
   if (s.skillShot) {
     score(s, 2500);
     s.skillShot = false;
     announce(s, 'Tiro de habilidade! +2.500');
   }
-  score(s, s.mode === 'bonus' ? 1000 : 300);
+  score(s, (s.mode === 'bonus' ? 1000 : 300) * (s.abilityKind === 'focus' && s.abilityMs > 0 ? 2 : 1));
   if (s.mode === 'normal') {
     s.charge += 1;
     if (s.charge >= 3) enterMode(s, PINBALL_STAGES[s.stage]!.mode, events);
     else announce(s, `${s.charge}/3 alvos para iniciar ${PINBALL_STAGES[s.stage]!.title}`);
-  } else if (s.mode !== 'evolution') {
-    s.progress += 1;
+  } else if (s.mode === 'capture') {
+    s.progress += s.abilityKind === 'focus' && s.abilityMs > 0 ? 2 : 1;
     if (s.progress >= pinballMissionGoal(s.mode)) completeMode(s, events);
+  } else if (s.mode === 'bonus' && s.bossPhase === 1) {
+    const bit = 1 << index;
+    if ((s.bossMask & bit) === 0) {
+      s.bossMask |= bit;
+      bossProgress(s, 1, events);
+    }
   }
 }
 
@@ -215,6 +289,7 @@ function loseBall(s: PinballState, events: PinballEvent[]): void {
   s.phase = 'between';
   s.ball = { x: 316, y: 515, vx: 0, vy: 0 };
   s.combo = 0; s.comboMs = 0;
+  s.abilityKind = null; s.abilityMs = 0;
   announce(s, 'Bola perdida. Lance a próxima!');
 }
 
@@ -228,13 +303,16 @@ export function stepPinball(s: PinballState, input: PinballInput, dtMs: number):
   s.tiltHeat = Math.max(0, s.tiltHeat - elapsed / 1600);
   s.comboMs = Math.max(0, s.comboMs - elapsed);
   if (s.comboMs === 0) s.combo = 0;
+  s.abilityMs = Math.max(0, s.abilityMs - elapsed);
+  if (s.abilityMs === 0) s.abilityKind = null;
   if (s.mode !== 'normal') {
     s.modeMs = Math.max(0, s.modeMs - elapsed);
-    if (s.modeMs === 0) { s.mode = 'normal'; s.progress = 0; s.charge = 0; announce(s, 'Tempo encerrado.'); }
+    if (s.modeMs === 0) { s.mode = 'normal'; s.progress = 0; s.charge = 0; s.bossPhase = 0; s.bossMask = 0; announce(s, 'Tempo encerrado. Tente abrir o desafio novamente.'); }
   }
   for (let index = 0; index < s.hitCooldown.length; index++) s.hitCooldown[index] = Math.max(0, (s.hitCooldown[index] ?? 0) - elapsed);
   for (let index = 0; index < s.flipperCooldownMs.length; index++) s.flipperCooldownMs[index] = Math.max(0, (s.flipperCooldownMs[index] ?? 0) - elapsed);
   s.laneCooldownMs = Math.max(0, s.laneCooldownMs - elapsed);
+  s.bossCooldownMs = Math.max(0, s.bossCooldownMs - elapsed);
   const count = Math.max(1, Math.ceil(elapsed / 6));
   const dt = elapsed / count / 1000;
   for (let substep = 0; substep < count; substep++) {
@@ -272,12 +350,12 @@ export function stepPinball(s: PinballState, input: PinballInput, dtMs: number):
         s.bumperHits += 1;
         s.combo = s.comboMs > 0 ? Math.min(5, s.combo + 1) : 1;
         s.comboMs = 2200;
-        score(s, (i < 3 ? 150 : 90) * s.combo);
-      if (s.bumperHits % 10 === 0) { s.kickback = true; announce(s, 'Resgate lateral carregado!'); }
-      if (s.mode === 'evolution') {
-        s.progress += 1;
-        if (s.progress >= pinballMissionGoal(s.mode)) completeMode(s, events);
-      }
+        score(s, (i < 3 ? 150 : 90) * s.combo * (s.abilityKind === 'power' && s.abilityMs > 0 ? 2 : 1));
+        if (s.bumperHits % 10 === 0) { s.kickback = true; announce(s, 'Resgate lateral carregado!'); }
+        if (s.mode === 'evolution') {
+          s.progress += 1;
+          if (s.progress >= pinballMissionGoal(s.mode)) completeMode(s, events);
+        } else if (s.mode === 'bonus' && s.bossPhase === 0) bossProgress(s, 1, events);
         events.push('bump');
       }
     }
@@ -287,12 +365,22 @@ export function stepPinball(s: PinballState, input: PinballInput, dtMs: number):
       const hit = reflectCircle(s, target.x, target.y, target.r, 70);
       if ((s.hitCooldown[slot] ?? 0) === 0 && hit) {
         s.hitCooldown[slot] = 150;
-        onTarget(s, events);
+        onTarget(s, i, events);
         events.push('bump');
         if (s.stage >= PINBALL_STAGES.length) break;
       }
     }
     if (s.stage >= PINBALL_STAGES.length) break;
+    if (s.mode === 'bonus' && s.bossPhase === 2) {
+      const hitCore = reflectCircle(s, PINBALL_BOSS_CORE.x, PINBALL_BOSS_CORE.y, PINBALL_BOSS_CORE.r, 105);
+      if (hitCore && s.bossCooldownMs === 0) {
+        s.bossCooldownMs = 220;
+        score(s, 1500);
+        bossProgress(s, 1, events);
+        events.push('bump');
+        if (s.stage >= PINBALL_STAGES.length) break;
+      }
+    }
     // Passagem no topo: acender três vezes recarrega a proteção lateral.
     if (b.y < 145 && b.vy < 0 && b.x > 294 && s.laneCooldownMs === 0) {
       s.laneCooldownMs = 700;

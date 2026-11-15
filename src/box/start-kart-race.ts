@@ -1,10 +1,11 @@
 import { pokemonSpriteUrl, pokemonStaticSpriteUrls } from '../ar/sprite-url';
 import { TYPE_COLORS } from '../core/pokemon-data';
-import { createKartRace, stepKartRace, TRACK_HALF_WIDTH, trackPoint, trackTangent, type KartInput, type KartRaceState } from '../core/kart-race';
+import { activateKartAbility, createKartRace, kartPlacementOrder, KART_CUP_ROUNDS, stepKartRace, TRACK_HALF_WIDTH, trackPoint, trackTangent, type KartInput, type KartRaceState } from '../core/kart-race';
 
-export interface KartFinish { position: number; elapsedMs: number; total: number; completed: boolean }
+export interface KartFinish { position: number; elapsedMs: number; total: number; completed: boolean; order: number[] }
 export interface KartRaceHandle {
   setInput(input: KartInput): void;
+  useAbility(): boolean;
   dispose(): void;
 }
 
@@ -15,12 +16,19 @@ export async function startKartRace(
   opponentDexIds: number[],
   onUpdate: (state: KartRaceState) => void,
   onFinish: (result: KartFinish) => void,
+  rivalId: number | null = null,
+  themeIndex = 0,
 ): Promise<KartRaceHandle> {
   const THREE = await import('three');
-  const state = createKartRace(opponentDexIds.length, [playerDexId, ...opponentDexIds]);
+  const state = createKartRace(opponentDexIds.length, [playerDexId, ...opponentDexIds], rivalId);
+  const palette = [
+    { sky: '#8ccfed', ground: '#67a75d' },
+    { sky: '#ecc593', ground: '#a19a64' },
+    { sky: '#8ba8d9', ground: '#557e70' },
+  ][themeIndex] ?? { sky: '#8ccfed', ground: '#67a75d' };
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color('#8ccfed');
-  scene.fog = new THREE.Fog('#8ccfed', 125, 275);
+  scene.background = new THREE.Color(palette.sky);
+  scene.fog = new THREE.Fog(palette.sky, 125, 275);
   const camera = new THREE.PerspectiveCamera(62, 1, 0.1, 300);
   const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'low-power' });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
@@ -35,7 +43,7 @@ export async function startKartRace(
   const sun = new THREE.DirectionalLight('#fff0ca', 2.1);
   sun.position.set(30, 70, -40);
   scene.add(sun);
-  const ground = new THREE.Mesh(new THREE.PlaneGeometry(400, 400), new THREE.MeshLambertMaterial({ color: '#67a75d' }));
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(400, 400), new THREE.MeshLambertMaterial({ color: palette.ground }));
   ground.rotation.x = -Math.PI / 2;
   ground.position.y = -0.1;
   scene.add(ground);
@@ -58,7 +66,7 @@ export async function startKartRace(
     }
     const triangles: number[] = [];
     for (let i = 0; i < count; i++) {
-      const j = i * 4;
+      const j = i * 12;
       triangles.push(...vertices.slice(j, j + 3), ...vertices.slice(j + 3, j + 6), ...vertices.slice(j + 6, j + 9));
       triangles.push(...vertices.slice(j + 3, j + 6), ...vertices.slice(j + 9, j + 12), ...vertices.slice(j + 6, j + 9));
     }
@@ -156,7 +164,7 @@ export async function startKartRace(
   const arch = new THREE.Mesh(new THREE.BoxGeometry(25, 1.3, 1.3), archMaterial);
   arch.position.set(0, 7.3, 0);
   archGroup.add(arch);
-  const archBanner = new THREE.Mesh(new THREE.BoxGeometry(22, 0.45, 1.45), new THREE.MeshLambertMaterial({ color: '#cf554e' }));
+  const archBanner = new THREE.Mesh(new THREE.BoxGeometry(22, 0.45, 1.45), new THREE.MeshLambertMaterial({ color: KART_CUP_ROUNDS[themeIndex]?.accent ?? '#cf554e' }));
   archBanner.position.set(0, 7.25, 0);
   archGroup.add(archBanner);
   scene.add(archGroup);
@@ -259,6 +267,14 @@ export async function startKartRace(
     spriteLayer.append(container);
     return container;
   });
+  const effectRings = kartGroups.map((group) => {
+    const ring = new THREE.Mesh(new THREE.RingGeometry(2, 2.35, 24), new THREE.MeshBasicMaterial({ color: '#f9d568', transparent: true, opacity: 0.75, side: THREE.DoubleSide }));
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.y = 0.11;
+    ring.visible = false;
+    group.add(ring);
+    return ring;
+  });
   const resize = (): void => {
     const width = Math.max(1, host.clientWidth);
     const height = Math.max(1, host.clientHeight);
@@ -294,6 +310,10 @@ export async function startKartRace(
       const group = kartGroups[id]!;
       group.position.set(car.x, 0, car.z);
       group.rotation.y = car.heading;
+      const ring = effectRings[id]!;
+      const activeColor = car.shieldUntil > state.elapsed ? '#7bd7f4' : car.slowUntil > state.elapsed ? '#bb83d8' : car.boostUntil > state.elapsed ? '#f9d568' : null;
+      ring.visible = activeColor !== null;
+      if (activeColor) (ring.material as InstanceType<typeof THREE.MeshBasicMaterial>).color.set(activeColor);
     });
     const player = state.cars[0]!;
     const behind = 9;
@@ -321,13 +341,14 @@ export async function startKartRace(
       finished = true;
       const completed = player.finishedAt !== null;
       const position = completed ? 1 + state.cars.slice(1).filter((car) => car.finishedAt !== null && car.finishedAt < player.finishedAt!).length : state.cars.length;
-      onFinish({ position, elapsedMs: Math.round((player.finishedAt ?? state.elapsed) * 1000), total: state.cars.length, completed });
+      onFinish({ position, elapsedMs: Math.round((player.finishedAt ?? state.elapsed) * 1000), total: state.cars.length, completed, order: kartPlacementOrder(state) });
     }
     frame = requestAnimationFrame(loop);
   };
   frame = requestAnimationFrame(loop);
   return {
     setInput(value) { input = value; },
+    useAbility() { return !disposed && !finished && activateKartAbility(state, 0); },
     dispose() {
       disposed = true;
       cancelAnimationFrame(frame);

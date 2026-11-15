@@ -2,6 +2,7 @@
 import { computed, nextTick, onMounted, ref, watch } from 'vue';
 import { loadArenaMembers } from '../app/arena-members';
 import { readArenaRecords } from '../app/arena-records';
+import { readArenaHistory } from '../app/arena-history';
 import type { ArenaMember } from '../app/arena-members';
 import { league, pendingChallenge } from '../app/league-store';
 import { routeFlags, routeHref } from '../app/route';
@@ -44,7 +45,17 @@ const leaderLocked = computed(() => !!selectedChallenge.value && statusOf(league
 const fight = ref<ArenaFightSetup | null>(null);
 /** Recordes das corridas, relidos quando a luta fecha. */
 const records = ref(readArenaRecords());
-watch(fight, (open) => { if (!open) records.value = readArenaRecords(); });
+const history = ref(readArenaHistory());
+watch(fight, (open) => {
+  if (!open) {
+    records.value = readArenaRecords();
+    history.value = readArenaHistory();
+  }
+});
+const modeLabel = { treino: 'Treino', liga: 'Liga', corrida: 'Corrida', pvp: 'PvP' } as const;
+const resultLabel = { vitoria: 'Vitória', derrota: 'Derrota', empate: 'Empate' } as const;
+const battleTime = (ms: number): string => `${Math.floor(ms / 60000)}:${String(Math.floor(ms / 1000) % 60).padStart(2, '0')}`;
+const localDate = (at: string): string => new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(at));
 
 const noDex = computed(() => members.value.filter((m) => m.dexId === undefined));
 const plan = computed(() => arenaPlan({
@@ -202,6 +213,23 @@ onMounted(() => {
     </section>
     <a class="arena-stroll" :href="routeHref('caixa', undefined, ['arena'])">Ver os Pokémon passeando no Coliseu</a>
 
+    <section class="arena-history" aria-labelledby="arena-history-title">
+      <h3 id="arena-history-title">Histórico e destaques</h3>
+      <p v-if="history.length === 0" class="hint">As partidas concluídas aparecerão aqui.</p>
+      <ol v-else>
+        <li v-for="(match, index) in history.slice().reverse()" :key="`${match.at}-${index}`">
+          <details>
+            <summary><strong>{{ resultLabel[match.result] }}</strong> · {{ modeLabel[match.mode] }} contra {{ match.rival }} <small>{{ localDate(match.at) }}</small></summary>
+            <p class="hint">Duração: {{ battleTime(match.durationMs) }}</p>
+            <ul v-if="match.highlights.length">
+              <li v-for="(moment, momentIndex) in match.highlights" :key="momentIndex"><time>{{ battleTime(moment.timeMs) }}</time> · {{ moment.text }}</li>
+            </ul>
+            <p v-else class="hint">Nenhum destaque registrado nesta partida.</p>
+          </details>
+        </li>
+      </ol>
+    </section>
+
     <ArenaFight v-if="fight" :setup="fight" :members="members" @close="fight = null" />
   </section>
 </template>
@@ -210,6 +238,15 @@ onMounted(() => {
 .arena-view { display: grid; gap: 1rem; }
 .arena-head { display: flex; align-items: center; justify-content: space-between; gap: .75rem; }
 .arena-head h2 { margin: 0; }
+.arena-history { padding: .9rem 1rem; border: 1px solid var(--line); border-radius: .85rem; }
+.arena-history h3 { margin: 0 0 .6rem; }
+.arena-history ol { list-style: none; padding: 0; margin: 0; }
+.arena-history > ol > li { border-top: 1px solid var(--line); padding: .65rem 0; }
+.arena-history summary { cursor: pointer; line-height: 1.5; }
+.arena-history summary small { display: block; color: var(--muted); }
+.arena-history details ul { list-style: disc; padding-left: 1.3rem; }
+.arena-history details li { margin: .3rem 0; }
+.arena-history time { color: var(--muted); }
 .arena-steps { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .5rem; margin: 0; padding: 0; list-style: none; }
 .arena-steps li { display: grid; justify-items: center; align-content: center; gap: .25rem; min-height: 3.9rem; padding: .5rem .25rem; border: 1px solid var(--line); border-radius: .8rem; font-size: .84rem; font-weight: 600; line-height: 1.15; text-align: center; color: var(--muted); }
 .arena-steps b { display: grid; place-items: center; width: 1.65rem; height: 1.65rem; border-radius: 50%; background: var(--line); color: var(--text); font-size: .85rem; }

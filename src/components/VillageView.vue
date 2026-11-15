@@ -3865,7 +3865,7 @@ onBeforeUnmount(() => {
       </div>
 
       <div v-if="sheet === 'pinball'" class="village-sheet torre-full" role="dialog" aria-modal="true" aria-label="Pinball">
-        <PinballGame @close="closeVillageSheet" />
+        <PinballGame :partners="mons.filter((m) => m.dexId != null).map((m) => ({ id: m.id, name: m.name, dexId: m.dexId!, thumb: m.thumb }))" @close="closeVillageSheet" />
       </div>
 
       <div v-if="sheet === 'kart'" class="village-sheet torre-full" role="dialog" aria-modal="true" aria-label="Pista de Kart">

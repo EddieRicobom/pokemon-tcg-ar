@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref, shallowRef } from 'vue';
 import AttackIcon from './AttackIcon.vue';
+import type { ArenaHighlight } from '../app/arena-history';
 import { pokemonSpriteUrl } from '../ar/sprite-url';
 import type { GamepadDirection } from '../app/gamepad';
 import { vibrate } from '../app/haptics';
@@ -41,7 +42,7 @@ import type { ArenaView } from '../pvp/survival-link';
  * trocar. Quem tem dois ataques ganha o botão de troca. Os avisos são curtos, ficam por cima da arena e nunca bloqueiam o toque.
  */
 const props = withDefaults(defineProps<{ link: SurvivalHostLink | SurvivalGuestLink; friendName: string; friendLeft: boolean; leaveLabel?: string }>(), { leaveLabel: 'Sair do PvP' });
-const emit = defineEmits<{ leave: []; finished: [winner: ArenaWinner, hpLeft: number[]] }>();
+const emit = defineEmits<{ leave: []; finished: [winner: ArenaWinner, hpLeft: number[], recap: { durationMs: number; highlights: ArenaHighlight[]; mySide: ArenaSide }] }>();
 
 const hostLink = props.link instanceof SurvivalHostLink ? props.link : null;
 const guestLink = props.link instanceof SurvivalGuestLink ? props.link : null;
@@ -201,6 +202,13 @@ const director = new ArenaDirector();
 const stageEl = ref<HTMLElement | null>(null);
 const cutIn = shallowRef<{ id: number; name: string; move: string; dexId: number; shiny: boolean; color: string; tint: string; stripe: number; mine: boolean } | null>(null);
 const banner = shallowRef<{ id: number; text: string; tone: 'ko' | 'last' } | null>(null);
+const lethalSlow = ref(false);
+const highlights: ArenaHighlight[] = [];
+let bestHit = 0;
+function rememberHighlight(text: string): void {
+  highlights.push({ timeMs: state.timeMs, text });
+  if (highlights.length > 8) highlights.shift();
+}
 /** Último Pokémon em campo: o seu pesa mais que o do rival. */
 const drama = ref<'mine' | 'foe' | null>(null);
 const pose = shallowRef<{ name: string; dexId: number; shiny: boolean; color: string } | null>(null);
@@ -522,6 +530,7 @@ function handleEvents(events: ArenaEvent[]): void {
   for (const e of events) {
     const mons = state.sides[e.side].mons;
     if (e.k === 'hit') {
+      if (e.side !== mySide && e.damage > bestHit) bestHit = e.damage;
       hitAt[e.side] = clockNow();
       showDamage(e.side, e.damage, e.mult);
       const striker = state.sides[e.side === 0 ? 1 : 0];
@@ -552,6 +561,7 @@ function handleEvents(events: ArenaEvent[]): void {
       if (e.side !== mySide) toast('Área marcada: saia do círculo!', 'bad', 1600, `mark:${e.side}`);
     } else if (e.k === 'faint') {
       const name = mons[e.index]?.name ?? 'Pokémon';
+      rememberHighlight(e.side === mySide ? `${name} ficou fora de combate` : `Você nocauteou ${name}`);
       playSound(e.side === mySide ? 'survivor-gameover' : 'survivor-level');
       vibrate({ kind: 'out', mine: e.side === mySide }, visual.sound);
       playCue({ kind: 'faint' });
@@ -595,6 +605,10 @@ function handleEvents(events: ArenaEvent[]): void {
       addFx('dmg', e.side !== mySide, '#bfefff', { left: `${(p.x / SV_VIEW_W) * 100}%`, top: `${((p.y - 34) / SV_VIEW_H) * 100}%` }, 700, 'Esquivou!');
       playCue({ kind: 'guard' });
     } else if (e.k === 'special') {
+      if (e.side === mySide) {
+        const name = mons[e.index]?.name ?? 'Pokémon';
+        rememberHighlight(`${name} usou o Especial`);
+      }
       playSound(e.side === mySide ? 'survivor-level' : 'survivor-critical');
       if (e.side === mySide) {
         vibrate({ kind: 'bumper' }, visual.sound);
@@ -709,7 +723,7 @@ function buildScene(now: number): void {
     const team = state.sides[side];
     const mon = team.mons[team.active];
     // Quem acabou de desmaiar fica mais um instante na tela, caindo, mesmo que outro já tenha entrado.
-    const ghost = now - faintAt[side] < 650 ? team.mons[faintIndex[side]] : undefined;
+    const ghost = now - faintAt[side] < (fxOn() ? 1200 : 650) ? team.mons[faintIndex[side]] : undefined;
     if (ghost && ghost.hp <= 0) {
       const g = toView(view.sides[side].x, view.sides[side].y);
       out.push({ dodge: false, ready: false, down: true, low: false, kx: '0cqw', ky: '0cqw', hit: false, swap: null, sw: 1, faceRight: false, key: `ghost-${side}`, mine: side === mySide, x: (g.x / SV_VIEW_W) * 100, y: (g.y / SV_VIEW_H) * 100, dexId: ghost.dexId, shiny: ghost.shiny, name: ghost.name, hpPct: 0, shield: false, guard: false, status: '' });
@@ -1162,7 +1176,12 @@ function playBeats(beats: CinemaBeat[]): void {
         if (cutIn.value?.id === id) cutIn.value = null;
       }, 920);
     } else if (beat.kind === 'ko') {
-      if (fxOn()) showBanner(beat.final ? 'Fim de luta!' : 'Nocaute!', 'ko');
+      if (fxOn()) {
+        const name = mons[beat.index]?.name ?? 'Pokémon';
+        showBanner(beat.final ? 'Golpe final!' : `${name} caiu!`, 'ko');
+        lethalSlow.value = true;
+        later(() => (lethalSlow.value = false), beat.final ? 1250 : 1050);
+      }
     } else {
       const mine = beat.side === mySide;
       if (mine || drama.value === null) drama.value = mine ? 'mine' : 'foe';
@@ -1177,7 +1196,7 @@ function showBanner(text: string, tone: 'ko' | 'last'): void {
   banner.value = { id, text, tone };
   later(() => {
     if (banner.value?.id === id) banner.value = null;
-  }, tone === 'ko' ? 800 : 1300);
+  }, tone === 'ko' ? 1250 : 1300);
 }
 
 function buildHud(): void {
@@ -1244,7 +1263,11 @@ function finish(): void {
   if (result.value || resultTimer) return;
   if (state.winner !== null) playCue(state.winner === mySide ? { kind: 'victory', personality: 'equilibrado' } : { kind: 'pin-lose' });
   if (state.winner !== null) vibrate({ kind: state.winner === mySide ? 'win' : 'lose' }, visual.sound);
-  if (state.winner !== null) emit('finished', state.winner, state.sides[mySide].mons.map((m) => Math.max(0, m.hp)));
+  if (state.winner !== null) {
+    const recap = [...highlights];
+    if (bestHit > 0) recap.push({ timeMs: state.timeMs, text: `Maior golpe causado: ${bestHit} de dano` });
+    emit('finished', state.winner, state.sides[mySide].mons.map((m) => Math.max(0, m.hp)), { durationMs: state.timeMs, highlights: recap.slice(-8), mySide });
+  }
   if (hostLink) {
     const mons = state.sides[mySide].mons;
     const best = Math.max(0, ...mons.map((m) => m.dealt ?? 0));
@@ -1258,7 +1281,7 @@ function finish(): void {
   // Com efeitos ligados, espera o plano do nocaute final terminar antes do placar.
   resultTimer = setTimeout(() => {
     if (state.winner !== null) result.value = arenaResultText(state.winner, mySide, props.friendName, aliveCount(state.sides[mySide]), aliveCount(state.sides[foeSide]));
-  }, fxOn() ? 1050 : 700);
+  }, fxOn() ? 1300 : 700);
 }
 
 function frame(ts: number): void {
@@ -1454,7 +1477,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <section class="svp" :class="{ six: hud.mine.length > 3, lite }" :style="{ '--svp-field-scale': SV_ARENA_W / SV_VIEW_W }" aria-label="Arena da luta">
+  <section class="svp" :class="{ six: hud.mine.length > 3, lite, 'lethal-slow': lethalSlow }" :style="{ '--svp-field-scale': SV_ARENA_W / SV_VIEW_W }" aria-label="Arena da luta">
     <header class="svp-top">
       <ul class="svp-team" :aria-label="`Equipe de ${friendName}`">
         <li v-for="r in hud.foe" :key="r.index" class="svp-pip" :class="{ active: r.active, down: r.fainted }" :aria-label="`${r.name}: ${r.fainted ? 'fora de combate' : r.active ? 'em campo' : 'na reserva'}, ${r.hpPct}% de vida`">
@@ -2269,6 +2292,9 @@ onBeforeUnmount(() => {
 .svp-unit.down .svp-sprite {
   animation: svp-faint 0.65s ease-in forwards;
 }
+
+.svp.lethal-slow .svp-unit.down .svp-sprite { animation-duration: 1.2s; }
+.svp.lethal-slow .svp-banner.ko { animation-duration: 1.15s; }
 
 @keyframes svp-faint {
   to { opacity: 0; translate: 0 4cqw; rotate: 90deg; filter: grayscale(1); }

@@ -39,8 +39,8 @@ export const CINEMA_STOP_GAP_MS = 380;
 
 const STOP = { final: CINEMA_MAX_STOP_MS, ko: 130, special: 110, beam: 80, super: 55 } as const;
 const SHOT = {
-  final: { scale: 1.3, durMs: 820, lines: 1 },
-  ko: { scale: 1.18, durMs: 520, lines: 0.8 },
+  final: { scale: 1.3, durMs: 1250, lines: 1 },
+  ko: { scale: 1.18, durMs: 1050, lines: 0.8 },
   special: { scale: 1.12, durMs: 460, lines: 0.75 },
   cast: { scale: 1.07, durMs: 420, lines: 0.5 },
   beam: { scale: 1.06, durMs: 360, lines: 0.45 },

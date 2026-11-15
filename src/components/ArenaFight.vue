@@ -4,6 +4,8 @@ import PvpLobby from './PvpLobby.vue';
 import SurvivalPvpArena from './SurvivalPvpArena.vue';
 import { pokemonSpriteUrl } from '../ar/sprite-url';
 import { finishLeagueFight, finishTeamFight } from '../app/arena-fight-result';
+import { saveArenaMatch } from '../app/arena-history';
+import type { ArenaHighlight } from '../app/arena-history';
 import { readArenaRecords, saveArenaRun } from '../app/arena-records';
 import type { ArenaMember } from '../app/arena-members';
 import { pendingChallenge } from '../app/league-store';
@@ -242,11 +244,19 @@ function maybeStartPvp(): void {
   startPvpLink();
 }
 
-function onFinished(winner: ArenaWinner, hpLeft: number[]): void {
+function onFinished(winner: ArenaWinner, hpLeft: number[], recap: { durationMs: number; highlights: ArenaHighlight[]; mySide: 0 | 1 }): void {
   if (recorded) return;
   recorded = true;
   finished.value = true;
   disarmLeave();
+  saveArenaMatch({
+    at: new Date().toISOString(),
+    mode: props.setup.kind,
+    rival: rivalName.value.slice(0, 80),
+    result: winner === 'draw' ? 'empate' : winner === recap.mySide ? 'vitoria' : 'derrota',
+    durationMs: recap.durationMs,
+    highlights: recap.highlights,
+  });
   if (props.setup.kind === 'pvp') return;
   const won = winner === 0;
   if (league) {
