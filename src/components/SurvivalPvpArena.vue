@@ -1870,6 +1870,35 @@ onBeforeUnmount(() => {
   border-radius: 14px 14px 0 0;
 }
 
+/* Na luta da Arena, o contraste do gramado e das marcações ajuda a
+   acompanhar os sprites mesmo quando a câmera se move. São camadas estáticas. */
+.svp.fit-screen .svp-arena {
+  border-color: #668176;
+  background: #173b30;
+}
+
+.svp.fit-screen .svp-floor {
+  background:
+    radial-gradient(circle at 50% 50%, transparent 0 17.6%, rgba(235, 255, 237, 0.42) 17.6% 18.2%, transparent 18.2%),
+    linear-gradient(to bottom, transparent calc(50% - 1px), rgba(235, 255, 237, 0.42) calc(50% - 1px) calc(50% + 1px), transparent calc(50% + 1px)),
+    radial-gradient(ellipse at 50% 100%, rgba(73, 139, 197, 0.27), transparent 53%),
+    radial-gradient(ellipse at 50% 0%, rgba(196, 87, 77, 0.27), transparent 53%),
+    repeating-linear-gradient(to bottom, rgba(220, 255, 222, 0.045) 0 8.33%, transparent 8.33% 16.66%),
+    linear-gradient(to bottom, #315f48, #204936 50%, #193e32);
+  box-shadow: inset 0 0 0 3px rgba(226, 255, 229, 0.2), inset 0 0 32px rgba(0, 0, 0, 0.36);
+}
+
+.svp.fit-screen .svp-floor::before,
+.svp.fit-screen .svp-floor::after {
+  border-color: rgba(235, 255, 237, 0.34);
+}
+
+.svp.fit-screen .svp-bar.floating {
+  height: 7px;
+  border: 1px solid rgba(255, 255, 255, 0.7);
+  background: rgba(7, 18, 14, 0.85);
+}
+
 /* O palco é o que a câmera aproxima; botões, seta e avisos ficam parados por cima. */
 .svp-stage {
   position: absolute;
