@@ -605,10 +605,25 @@ function addEnemy(state: SurvivorState, enemy: SurvivorEnemy): void {
 }
 
 /** Sorteia raridade primeiro; o tamanho do catálogo não altera a chance de cada faixa. */
-function rollUpgradeRarity(rng: Rng, pool: readonly SurvivorUpgrade[]): SurvivorUpgradeRarity {
+function rollUpgradeRarity(rng: Rng, pool: readonly SurvivorUpgrade[], rareChanceBonus = 0): SurvivorUpgradeRarity {
   const rarities = (Object.keys(SURVIVOR_UPGRADE_RARITIES) as SurvivorUpgradeRarity[])
     .filter((rarity) => pool.some((upgrade) => upgrade.rarity === rarity));
   const total = rarities.reduce((sum, rarity) => sum + SURVIVOR_UPGRADE_RARITIES[rarity].weight, 0);
+  // Só a Arena informa este bônus. A chance adicional vale para qualquer carta rara ou melhor
+  // que esteja liberada neste nível; a proporção entre as raridades superiores é preservada.
+  if (rareChanceBonus > 0 && rarities.includes('normal') && rarities.length > 1) {
+    const rareWeight = total - SURVIVOR_UPGRADE_RARITIES.normal.weight;
+    const rareChance = Math.min(1, rareWeight / total + rareChanceBonus);
+    const roll = rng();
+    if (roll >= rareChance) return 'normal';
+    let rareDraw = roll / rareChance * rareWeight;
+    for (const rarity of rarities) {
+      if (rarity === 'normal') continue;
+      rareDraw -= SURVIVOR_UPGRADE_RARITIES[rarity].weight;
+      if (rareDraw < 0) return rarity;
+    }
+    return rarities[rarities.length - 1]!;
+  }
   let draw = rng() * total;
   for (const rarity of rarities) {
     draw -= SURVIVOR_UPGRADE_RARITIES[rarity].weight;
@@ -623,6 +638,8 @@ export interface SurvivorUpgradeRollOptions {
   excludeIds?: readonly string[];
   /** Raridade mínima da nova carta (usado pelo desejo de Jirachi quando a oferta já é rara). */
   minimumRarity?: SurvivorUpgradeRarity;
+  /** Pontos percentuais adicionais de chance de carta rara ou melhor (usado só na Arena). */
+  rareChanceBonus?: number;
 }
 
 export function rollUpgrades(
@@ -658,7 +675,7 @@ export function rollUpgrades(
   );
   const picked: SurvivorUpgradeOption[] = [];
   for (let i = 0; i < count && pool.length > 0; i++) {
-    const rarity = rollUpgradeRarity(rng, pool);
+    const rarity = rollUpgradeRarity(rng, pool, options?.rareChanceBonus);
     const matching = pool.filter((upgrade) => upgrade.rarity === rarity);
     const u = matching[Math.floor(rng() * matching.length)]!;
     pool.splice(pool.indexOf(u), 1);

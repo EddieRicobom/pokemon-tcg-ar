@@ -23,6 +23,12 @@ export const ARENA_LEVEL_UPS = 10;
  */
 export const ARENA_HP_FACTOR = 2.38;
 const OFFER_SIZE = 3;
+export const ARENA_MAX_FRIEND_RARE_BONUS = 0.15;
+
+/** Cada nível de amizade da Vila acrescenta 3,75 pontos percentuais à chance de carta rara ou melhor. */
+export function arenaFriendRareBonus(bond: number): number {
+  return Math.max(0, Math.min(4, Math.floor(Number.isFinite(bond) ? bond : 0))) / 4 * ARENA_MAX_FRIEND_RARE_BONUS;
+}
 
 export interface ArenaPrepMember {
   id: string;
@@ -37,6 +43,7 @@ export interface ArenaPrep {
   /** Cartas já escolhidas (0 a `ARENA_LEVEL_UPS`). */
   picked: string[];
   offer: SurvivorUpgradeOption[];
+  rareChanceBonus: number;
 }
 
 const clampOf = (n: number, [lo, hi]: readonly [number, number]): number => Math.max(lo, Math.min(hi, n));
@@ -65,18 +72,18 @@ function nextOffer(prep: ArenaPrep): void {
   const { state } = prep;
   let offer: SurvivorUpgradeOption[] = [];
   if (prep.picked.length < ARENA_LEVEL_UPS) {
-    offer = rollUpgrades(state.rng, OFFER_SIZE, state.player.move, state.player, { excludeIds: arenaIdleUpgrades(state.player) });
+    offer = rollUpgrades(state.rng, OFFER_SIZE, state.player.move, state.player, { excludeIds: arenaIdleUpgrades(state.player), rareChanceBonus: prep.rareChanceBonus });
     // Os 10 níveis são garantidos para os dois lados: sem carta útil sobrando, vale qualquer carta da forma do golpe.
-    if (offer.length === 0) offer = rollUpgrades(state.rng, OFFER_SIZE, state.player.move, state.player);
+    if (offer.length === 0) offer = rollUpgrades(state.rng, OFFER_SIZE, state.player.move, state.player, { rareChanceBonus: prep.rareChanceBonus });
   }
   prep.offer = offer;
   state.pendingUpgrade = offer.length > 0 ? offer : null;
 }
 
-export function createArenaPrep(member: ArenaPrepMember, seed: number): ArenaPrep {
+export function createArenaPrep(member: ArenaPrepMember, seed: number, bond = 0): ArenaPrep {
   const { move, profile } = survivorAttackOf(member.dexId);
   const state = createSurvivorState(seed, { kindCount: 1, move, profile, dexId: member.dexId });
-  const prep: ArenaPrep = { member, state, picked: [], offer: [] };
+  const prep: ArenaPrep = { member, state, picked: [], offer: [], rareChanceBonus: arenaFriendRareBonus(bond) };
   nextOffer(prep);
   return prep;
 }

@@ -74,7 +74,7 @@ const freshSeed = (): number => Math.floor(Math.random() * 2 ** 31);
 function beginPrep(): void {
   error.value = '';
   const rng = seededRng(freshSeed());
-  preps.value = props.members.flatMap((m) => (m.dexId === undefined ? [] : [createArenaPrep({ id: m.id, name: m.name, dexId: m.dexId, shiny: m.shiny }, Math.floor(rng() * 2 ** 31))]));
+  preps.value = props.members.flatMap((m) => (m.dexId === undefined ? [] : [createArenaPrep({ id: m.id, name: m.name, dexId: m.dexId, shiny: m.shiny }, Math.floor(rng() * 2 ** 31), m.bond)]));
   version.value++;
   phase.value = 'prep';
   if (preps.value.length === 0) error.value = 'Nenhum Pokémon da equipe tem número da Pokédex.';
@@ -124,6 +124,7 @@ const attacks = computed(() => {
   return [face(spec.attackType, spec.moveCategory, spec.moveName ?? 'Golpe'), spec.alt ? face(spec.alt.attackType, spec.alt.moveCategory, spec.alt.moveName) : 'Sem segundo ataque'];
 });
 const estimated = computed(() => !!current.value && arenaEstimated(current.value.member.dexId));
+const friendshipBonus = computed(() => current.value ? `${(current.value.rareChanceBonus * 100).toLocaleString('pt-BR', { maximumFractionDigits: 2 })}` : '0');
 
 function maybeFinishPrep(): void {
   version.value++;
@@ -402,6 +403,7 @@ onBeforeUnmount(() => {
         <button type="button" @click="autoAll">Auto: todos</button>
       </div>
       <p class="afight-note">A carta vale nos dois ataques. O automático pega a carta de maior raridade de cada mão.</p>
+      <p v-if="current?.rareChanceBonus" class="afight-note">Amizade: +{{ friendshipBonus }} pontos percentuais de chance de carta rara ou melhor.</p>
     </section>
 
     <section v-else-if="phase === 'waiting'" class="afight-prep" aria-label="Esperando o amigo">

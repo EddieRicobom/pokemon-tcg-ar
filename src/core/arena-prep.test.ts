@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { createArenaBot } from './arena-bot';
 import type { ArenaBotTraits } from './arena-bot';
 import { DIGITAL_ARENA_FINALISTS } from './endless-arena';
-import { ARENA_LEVEL_UPS, ARENA_TEAM_SIZE, arenaCardChanges, arenaCoreStats, arenaIdleUpgrades, arenaRivalTeam, arenaSpecOf, autoFinishArenaPrep, bestArenaCard, createArenaPrep, pickArenaCard } from './arena-prep';
+import { ARENA_LEVEL_UPS, ARENA_TEAM_SIZE, arenaCardChanges, arenaCoreStats, arenaFriendRareBonus, arenaIdleUpgrades, arenaRivalTeam, arenaSpecOf, autoFinishArenaPrep, bestArenaCard, createArenaPrep, pickArenaCard } from './arena-prep';
 import { aliveCount, applyArenaSnapshot, createArena, NO_INPUT, snapshotArena, stepArena, SV_MELEE_WINDUP_MS } from './survivor-pvp';
 import { parseSurvivalMessage } from '../pvp/survival-wire';
 import type { ArenaState, SvAttackForm, SvMonSpec } from './survivor-pvp';
@@ -26,6 +26,32 @@ const form = (moveCategory: MoveCategory): SvAttackForm => ({
 });
 
 describe('10 níveis antes da luta', () => {
+  it('a amizade aumenta gradualmente a chance de cartas raras até 15 pontos percentuais', () => {
+    [0, 1, 2, 3, 4].forEach((level) => expect(arenaFriendRareBonus(level)).toBeCloseTo(level * 0.0375));
+    expect(arenaFriendRareBonus(-1)).toBe(0);
+    expect(arenaFriendRareBonus(99)).toBe(0.15);
+    expect(createArenaPrep(charizard, 7, 4).rareChanceBonus).toBe(0.15);
+    expect(createArenaPrep(charizard, 7).rareChanceBonus).toBe(0);
+    expect(createArenaPrep(charizard, 7).offer).toEqual(createArenaPrep(charizard, 7, 0).offer);
+  });
+
+  it('a amizade melhora a oferta da Arena sem liberar raridades antes do nível exigido', () => {
+    let ordinary = 0;
+    let bestFriends = 0;
+    for (let seed = 1; seed <= 600; seed++) {
+      const baseline = createArenaPrep(charizard, seed, 0);
+      const boosted = createArenaPrep(charizard, seed, 4);
+      expect(boosted.offer.every((card) => card.rarity === 'normal')).toBe(true);
+      for (let level = 0; level < 2; level++) {
+        pickArenaCard(baseline, baseline.offer[0]!.id);
+        pickArenaCard(boosted, boosted.offer[0]!.id);
+      }
+      ordinary += baseline.offer.filter((card) => card.rarity !== 'normal').length;
+      bestFriends += boosted.offer.filter((card) => card.rarity !== 'normal').length;
+    }
+    expect(bestFriends).toBeGreaterThan(ordinary + 150);
+  });
+
   it('cada carta escolhida sobe um nível, até 10', () => {
     const prep = createArenaPrep(charizard, 7);
     expect(prep.offer.length).toBeGreaterThan(0);
