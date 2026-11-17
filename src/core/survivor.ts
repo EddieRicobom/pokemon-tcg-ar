@@ -115,7 +115,7 @@ export const BALANCE = {
   earlyGameMs: 480_000,
   earlySpawnIntervalBonus: 0.75,
   earlyEnemyHpMultiplier: 0.70,
-  earlyEnemyDamageMultiplier: 0.48,
+  earlyEnemyDamageMultiplier: 0.40,
   earlyEnemySpeedMultiplier: 0.68,
   /** Ataques de exposição recebem uma margem curta contra colisões e projéteis. */
   closeRangeDamageMultiplier: 0.88,
