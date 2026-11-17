@@ -1011,6 +1011,7 @@ function stepElementalTerrain(state: SurvivorState, dtMs: number): void {
     terrain.nextTickMs -= dtMs;
     while (terrain.ticksLeft > 0 && terrain.nextTickMs <= 0) {
       const pulseDamage = terrain.damage * 0.5;
+      state.vegetationImpact?.({ kind: 'area', x: terrain.x, y: terrain.y, radius: terrain.radius });
       for (const enemy of state.enemies) {
         if (enemy.hp <= 0 || Math.hypot(enemy.x - terrain.x, enemy.y - terrain.y) > terrain.radius + enemy.radius) continue;
         enemy.hp -= pulseDamage;
@@ -1366,6 +1367,7 @@ function unitFrom(ax: number, ay: number, bx: number, by: number, fallback: numb
 
 /** Acerto em área criado por um transformador: não dispara itens de novo. */
 function heldAreaStrike(state: SurvivorState, x: number, y: number, radius: number, damage: number): number {
+  state.vegetationImpact?.({ kind: 'area', x, y, radius });
   let hits = 0;
   heldGuard++;
   try {
@@ -1382,6 +1384,7 @@ function heldAreaStrike(state: SurvivorState, x: number, y: number, radius: numb
 
 /** Leque em qualquer ponto e direção (o cone do jogador só sai dele). */
 function heldConeStrike(state: SurvivorState, x: number, y: number, angle: number, range: number, damage: number): number {
+  state.vegetationImpact?.({ kind: 'cone', x, y, angle, radius: range });
   let hits = 0;
   heldGuard++;
   try {
@@ -1403,6 +1406,7 @@ function heldConeStrike(state: SurvivorState, x: number, y: number, angle: numbe
 }
 
 function heldLineStrike(state: SurvivorState, ax: number, ay: number, bx: number, by: number, halfWidth: number, damage: number): number {
+  state.vegetationImpact?.({ kind: 'sweep', x: ax, y: ay, toX: bx, toY: by, radius: halfWidth });
   let hits = 0;
   heldGuard++;
   try {
@@ -2308,6 +2312,7 @@ function distanceToPath(x: number, y: number, from: { x: number; y: number }, to
 
 /** A bênção do dash bate uma vez em cada inimigo atravessado, sem depender do autoataque. */
 function hitDashPath(state: SurvivorState, path: { from: { x: number; y: number }; to: { x: number; y: number } }): void {
+  state.vegetationImpact?.({ kind: 'sweep', x: path.from.x, y: path.from.y, toX: path.to.x, toY: path.to.y, radius: PLAYER_RADIUS });
   const special = state.special;
   const multiplier = special.branch === 'dash-triple' ? DASH_TRIPLE_DAMAGE_MULTIPLIER : DASH_DAMAGE_MULTIPLIER;
   for (const enemy of state.enemies) {
@@ -2359,6 +2364,7 @@ function stepTrail(state: SurvivorState, movedPx: number, dtMs: number, activate
       previousPoint = last;
       newPoint = { x: p.x, y: p.y };
       p.trailPath.push({ x: p.x, y: p.y, bornMs: state.elapsedMs });
+      state.vegetationImpact?.({ kind: 'area', x: p.x, y: p.y, radius: p.attackRadius });
     }
     // Erva Poderosa: a faixa explode inteira quando termina de ser desenhada.
     if (p.trailActiveMs === 0) heldTrailRelease(state, damage);
@@ -2508,6 +2514,7 @@ function fireFocusBeam(state: SurvivorState, level: number): string {
   const toX = p.x + Math.cos(angle) * beam.length;
   const toY = p.y + Math.sin(angle) * beam.length;
   const damage = artifactDamage(state) * beam.damageMultiplier / BASIC_ATTACK_DAMAGE_FACTOR;
+  state.vegetationImpact?.({ kind: 'sweep', x: p.x, y: p.y, toX, toY, radius: beam.halfWidth });
   let hits = 0;
   for (const e of state.enemies) {
     if (e.hp <= 0 || distanceToSegment(e.x, e.y, p.x, p.y, toX, toY) > beam.halfWidth + e.radius) continue;
@@ -2539,6 +2546,7 @@ function releaseTeleport(state: SurvivorState, action: Extract<NonNullable<Retur
   if (Math.abs(Math.cos(angle)) > 0.01) p.facing = Math.cos(angle) < 0 ? -1 : 1;
   p.aimAngle = angle;
   const damage = artifactDamage(state) * action.damageMultiplier / BASIC_ATTACK_DAMAGE_FACTOR;
+  state.vegetationImpact?.({ kind: 'area', x: p.x, y: p.y, radius: action.wave ? reach.waveRadius : reach.hitRadius });
   let hits = 0;
   for (const e of state.enemies) {
     if (e.hp <= 0 || Math.hypot(e.x - p.x, e.y - p.y) > reach.hitRadius + e.radius) continue;
@@ -2591,6 +2599,7 @@ function attackSupport(state: SurvivorState, support: SurvivorSupport): boolean 
     return true;
   }
   if (move.category === 'aura' || move.category === 'orbit') {
+    state.vegetationImpact?.({ kind: 'area', x: p.x, y: p.y, radius });
     let hits = 0;
     for (const enemy of state.enemies) {
       if (Math.hypot(enemy.x - p.x, enemy.y - p.y) <= radius + enemy.radius) { hitEnemy(state, enemy, damage, p, move, true, Math.hypot(enemy.x - p.x, enemy.y - p.y)); hits++; }
@@ -2607,11 +2616,16 @@ function attackSupport(state: SurvivorState, support: SurvivorSupport): boolean 
       if (inSurvivorCone(p, enemy.x, enemy.y, range, enemy.radius)) { hitEnemy(state, enemy, damage, p, move, true, distance); hits++; }
     }
     drain(state, hits, move);
-    if (hits > 0) state.fx.push({ kind: 'cone', x: p.x, y: p.y, r: range, color: move.color, ageMs: 0, lifeMs: 280, moveType: move.type, angle: survivorAimAngle(p), spread: SURVIVOR_CONE_HALF_ANGLE });
+    if (hits > 0) {
+      const angle = survivorAimAngle(p);
+      state.vegetationImpact?.({ kind: 'cone', x: p.x, y: p.y, radius: range, angle });
+      state.fx.push({ kind: 'cone', x: p.x, y: p.y, r: range, color: move.color, ageMs: 0, lifeMs: 280, moveType: move.type, angle, spread: SURVIVOR_CONE_HALF_ANGLE });
+    }
     return hits > 0;
   }
   const target = nearestEnemies(state, range, 1)[0];
   if (!target) return false;
+  state.vegetationImpact?.({ kind: 'area', x: target.x, y: target.y, radius });
   let hits = 0;
   for (const enemy of state.enemies) {
     if (Math.hypot(enemy.x - target.x, enemy.y - target.y) <= radius + enemy.radius) { hitEnemy(state, enemy, damage, p, move); hits++; }
@@ -2637,6 +2651,7 @@ function stepSupportFocus(state: SurvivorState, support: SurvivorSupport, dtMs: 
   const toX = p.x + Math.cos(angle) * beam.length;
   const toY = p.y + Math.sin(angle) * beam.length;
   const damage = round1(support.profile.damage * support.damageFactor * beam.damageMultiplier / BASIC_ATTACK_DAMAGE_FACTOR);
+  state.vegetationImpact?.({ kind: 'sweep', x: p.x, y: p.y, toX, toY, radius: beam.halfWidth });
   let hits = 0;
   for (const e of state.enemies) {
     if (e.hp <= 0 || distanceToSegment(e.x, e.y, p.x, p.y, toX, toY) > beam.halfWidth + e.radius) continue;
@@ -2666,7 +2681,10 @@ function stepSupportTrail(state: SurvivorState, support: SurvivorSupport, movedP
   if (support.trailActiveMs > 0) {
     support.trailActiveMs = Math.max(0, support.trailActiveMs - dtMs);
     const last = support.trailPath[support.trailPath.length - 1];
-    if (!last || Math.hypot(last.x - support.x, last.y - support.y) >= TRAIL_POINT_SPACING) support.trailPath.push({ x: support.x, y: support.y, bornMs: state.elapsedMs });
+    if (!last || Math.hypot(last.x - support.x, last.y - support.y) >= TRAIL_POINT_SPACING) {
+      support.trailPath.push({ x: support.x, y: support.y, bornMs: state.elapsedMs });
+      state.vegetationImpact?.({ kind: 'area', x: support.x, y: support.y, radius: support.profile.radius });
+    }
   }
   if (support.trailPath.length === 0) return;
   const damage = round1(support.profile.damage * support.damageFactor * 0.9 / BASIC_ATTACK_DAMAGE_FACTOR);
@@ -2721,6 +2739,7 @@ function attack(state: SurvivorState): boolean {
   if (move.category === 'aura') {
     // A aura pulsa sempre (dá para ver o raio), mesmo sem ninguém dentro.
     const pulseRadius = p.attackRadius * 0.8;
+    state.vegetationImpact?.({ kind: 'area', x: p.x, y: p.y, radius: pulseRadius });
     let hits = 0;
     const damage = playerAttackDamage(state);
     for (const e of state.enemies) {
@@ -2754,6 +2773,7 @@ function attack(state: SurvivorState): boolean {
     // A carta lendária pode aparar só um projétil por ataque, sem limpar ondas inteiras.
     const projectileIndex = p.projectileDeflection ? state.hostileProjectiles.findIndex((projectile) => inSurvivorCone(p, projectile.x, projectile.y, attackRange, projectile.size)) : -1;
     if (!target && projectileIndex < 0) return false;
+    state.vegetationImpact?.({ kind: 'cone', x: p.x, y: p.y, radius: attackRange, angle: survivorAimAngle(p) });
     if (projectileIndex >= 0) state.hostileProjectiles.splice(projectileIndex, 1);
     let hits = 0;
     for (const e of state.enemies) {
@@ -2773,6 +2793,7 @@ function attack(state: SurvivorState): boolean {
   let hits = 0;
   for (const t of targets) {
     const center = { x: t.x, y: t.y };
+    state.vegetationImpact?.({ kind: 'area', ...center, radius: p.attackRadius });
     for (const e of state.enemies) {
       if (e.hp > 0 && Math.hypot(e.x - center.x, e.y - center.y) <= p.attackRadius + e.radius) {
         const direct = e.id === t.id;
@@ -2799,6 +2820,7 @@ function stepOrbiters(state: SurvivorState, dtMs: number): void {
   p.orbitAngle = ((p.orbitAngle ?? 0) + survivorOrbitAngularSpeed(cooldownMs) * dtMs) % (Math.PI * 2);
   const orbiters = survivorOrbiters(p);
   const hitRadius = survivorOrbiterHitRadius(p);
+  if (state.vegetationImpact) for (const orbiter of orbiters) state.vegetationImpact({ kind: 'area', x: orbiter.x, y: orbiter.y, radius: hitRadius });
   const intervalMs = survivorOrbitHitIntervalMs(p, cooldownMs);
   const damage = playerAttackDamage(state);
   let hits = 0;
@@ -3549,16 +3571,19 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
   state.projectiles = state.projectiles.filter((proj) => {
     if (proj.homing) steerHomingProjectile(state, proj, dt);
     const terrainSpeed = survivorBiomeProjectileSpeedMultiplier(state.elapsedMs, proj.x, proj.y);
+    const fromX = proj.x, fromY = proj.y;
     proj.x += proj.vx * terrainSpeed * dt;
     proj.y += proj.vy * terrainSpeed * dt;
     proj.lifeMs -= dtMs;
     if (proj.lifeMs <= 0) return false;
     if (proj.x < -40 || proj.x > ARENA_W + 40 || proj.y < -40 || proj.y > ARENA_H + 40) return false;
+    const focusShot = proj.move?.category === 'foco' && proj.source !== 'support';
+    const hitRadius = focusShot ? Math.max(5, proj.size ?? 5) : proj.collisionRadius ?? 5;
+    state.vegetationImpact?.({ kind: 'sweep', x: fromX, y: fromY, toX: proj.x, toY: proj.y, radius: hitRadius });
     for (const e of state.enemies) {
       // Quem caiu neste mesmo passo ainda está na lista: não pode gastar o tiro nem render cura.
       if (e.hp <= 0 || proj.hit.includes(e.id)) continue;
-      const focusShot = proj.move?.category === 'foco' && proj.source !== 'support';
-      if (Math.hypot(e.x - proj.x, e.y - proj.y) < e.radius + (focusShot ? Math.max(5, proj.size ?? 5) : proj.collisionRadius ?? 5)) {
+      if (Math.hypot(e.x - proj.x, e.y - proj.y) < e.radius + hitRadius) {
         if (focusShot) state.charge.level = Math.min(1, state.charge.level + FOCUS_HIT_CHARGE);
         if (proj.noHeld) heldGuard++;
         try {

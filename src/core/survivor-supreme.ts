@@ -207,6 +207,7 @@ function releaseSupreme(state: SurvivorState, hooks: SupremeHooks, events: Survi
   supreme.x = origin.x;
   supreme.y = origin.y;
   supreme.fxMs = 900;
+  state.vegetationImpact?.({ kind: 'area', x: origin.x, y: origin.y, radius });
   state.fx.push({ kind: 'blast', x: origin.x, y: origin.y, r: radius, color: p.move.color, ageMs: 0, lifeMs: 560, moveType: supreme.type });
   events.push({ type: 'supremeRelease', name: def.name, hits, x: origin.x, y: origin.y });
 }

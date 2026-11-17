@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { FLOOR_TEXTURE_SIZE, FOLIAGE_TINTS, GRASS_BASE_TONES, SURVIVOR_FLOOR_PALETTES, TALL_GRASS_TONES, floorTone, recolorGrassBase, survivorDecorTile, survivorFloorTexture, tintFoliage } from './survivor-floor-art';
+import { FLOOR_TEXTURE_SIZE, FOLIAGE_TINTS, GRASS_BASE_TONES, SURVIVOR_FLOOR_PALETTES, TALL_GRASS_TONES, floorHash, floorTone, recolorGrassBase, survivorDecorTile, survivorFloorTexture, tintFoliage } from './survivor-floor-art';
 import type { SurvivorDecorKind, SurvivorFloorKind } from './survivor-floor-art';
 
 const rgbAt = (data: Uint8Array | Uint8ClampedArray, i: number) => (data[i]! << 16) | (data[i + 1]! << 8) | data[i + 2]!;
@@ -64,6 +64,18 @@ describe('pixel art do chão da Torre', () => {
     const b = survivorDecorTile('flowers', 'grass', 2, undefined, 1);
     expect(Array.from(a.data)).not.toEqual(Array.from(b.data));
     expect(Array.from(survivorDecorTile('flowers', 'grass', 2, undefined, 2).data)).toEqual(Array.from(a.data));
+  });
+
+  it('as pontas da grama balançam mantendo a base fixa', () => {
+    for (const variant of [0, 1]) {
+      const a = survivorDecorTile('tuft', 'grass', variant, undefined, 0);
+      const b = survivorDecorTile('tuft', 'grass', variant, undefined, 1);
+      expect(Array.from(a.data)).not.toEqual(Array.from(b.data));
+      expect(Array.from(survivorDecorTile('tuft', 'grass', variant, undefined, 2).data)).toEqual(Array.from(a.data));
+      // A última linha do tufo principal e o pequeno tufo adicional não mudam.
+      const y = 3 + Math.floor(floorHash(variant, 2, 'tuft'.length) * 6) + 3;
+      expect(Array.from(a.data.slice(y * a.w * 4))).toEqual(Array.from(b.data.slice(y * b.w * 4)));
+    }
   });
 
   it('pinta só as copas das árvores no tom pedido, sem mexer no tronco nem na sombra', () => {

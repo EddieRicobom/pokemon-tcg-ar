@@ -87,7 +87,9 @@ import { SoundEngine } from '../box/sound';
 import { survivorRegionLabel } from '../core/survivor-regions';
 import { survivorBiomeAt, survivorBiomeLabel } from '../core/survivor-biomes';
 import { resolveSurvivorLandscapeMove, unstickSurvivorItems } from '../core/survivor-collision';
-import { createSurvivorLandscape, planSurvivorFloor, SURVIVOR_LANDSCAPE_CELL } from '../village/survivor-landscape';
+import { createSurvivorVegetation } from '../core/survivor-vegetation';
+import type { SurvivorVegetation } from '../core/survivor-vegetation';
+import { createSurvivorLandscape, planSurvivorFloor, SURVIVOR_LANDSCAPE_CELL, SURVIVOR_LANDSCAPE_CHUNK_SIZE } from '../village/survivor-landscape';
 import { REGIONAL_ENCOUNTERS, REGIONAL_ENEMY_SPRITES, REGIONAL_KIND_COUNT, regionalEnemyDexId } from '../core/survivor-encounters';
 import { survivorRegionAt } from '../core/survivor-regions';
 import type { SoundCue } from '../box/sound-recipes';
@@ -228,20 +230,34 @@ function watchFrameCost(dtMs: number, fps: number): void {
   slowFrames = 0;
 }
 // A arte é um setor repetível: o mundo cresce sem ampliar árvores, itens ou a textura de cada canvas.
-const drawLandscape = createSurvivorLandscape(SURVIVOR_LANDSCAPE_TILE_W, SURVIVOR_LANDSCAPE_TILE_H);
 const collisionPlans = new Map<number, ReturnType<typeof planSurvivorFloor>>();
+const drawLandscape = createSurvivorLandscape(SURVIVOR_LANDSCAPE_TILE_W, SURVIVOR_LANDSCAPE_TILE_H, landscapePlan);
+let landscapeVegetation: SurvivorVegetation | undefined;
 /** Itens já conferidos contra a grade atual (refeito quando a região, e com ela a grade, muda). */
 let itemsChecked = new WeakSet<object>();
 let lastItemGrid: unknown = null;
 const ITEM_RADIUS = 10;
+function landscapePlan(region: number) {
+  let plan = collisionPlans.get(region);
+  if (!plan) {
+    plan = planSurvivorFloor(region, SURVIVOR_LANDSCAPE_TILE_W, SURVIVOR_LANDSCAPE_TILE_H);
+    collisionPlans.set(region, plan);
+  }
+  return plan;
+}
 function landscapeCollisionPlan(elapsedMs: number, runSeed: number) {
   const { current } = survivorRegionAt(elapsedMs, runSeed);
-  let plan = collisionPlans.get(current);
-  if (!plan) {
-    plan = planSurvivorFloor(current, SURVIVOR_LANDSCAPE_TILE_W, SURVIVOR_LANDSCAPE_TILE_H);
-    collisionPlans.set(current, plan);
-  }
-  return { cols: plan.cols, rows: plan.rows, cellSize: SURVIVOR_LANDSCAPE_CELL, solid: plan.solid };
+  const { cols, rows, solid, treeCells } = landscapePlan(current);
+  return {
+    cols, rows, cellSize: SURVIVOR_LANDSCAPE_CELL, solid,
+    isSolid(col: number, row: number): boolean {
+      const tileX = Math.floor(col / cols), tileY = Math.floor(row / rows);
+      const cell = (row - tileY * rows) * cols + col - tileX * cols;
+      if (!solid[cell]) return false;
+      const tree = treeCells[cell]!;
+      return tree === 0 || !landscapeVegetation?.sectorAt(current, tileX, tileY)?.felledTrees.has(tree);
+    },
+  };
 }
 let landscapeAtlasLoaded = false;
 /** Atlas da Vila já carregado (null enquanto carrega ou se falhar): o BONK recorta as texturas dele. */
@@ -2514,7 +2530,7 @@ function draw(): void {
   ctx.translate(-(camX + worldViewW / 2), -(camY + worldViewH / 2));
   if (regionScenery.value) {
     // Flores e brilho da água só balançam com "Efeitos: completos" (e sem movimento reduzido nem modo Rotom).
-    drawLandscape(ctx, s.elapsedMs, { x: camX - 2, y: camY - 2, w: worldViewW + 4, h: worldViewH + 4 }, { timeMs: animMs, animate: detailedSpecialEffects.value }, s.runSeed);
+    drawLandscape(ctx, s.elapsedMs, { x: camX - 2, y: camY - 2, w: worldViewW + 4, h: worldViewH + 4 }, { timeMs: animMs, animate: detailedSpecialEffects.value }, s.runSeed, landscapeVegetation);
   } else if (groundPattern) {
     ctx.fillStyle = groundPattern;
     ctx.fillRect(0, 0, ARENA_W, ARENA_H);
@@ -3459,8 +3475,9 @@ function loop(ts: number): void {
       triggerRef(bonkPhysics);
     }
     if (beforeLandscapePosition) {
+      const grid = landscapeCollisionPlan(s.elapsedMs, s.runSeed);
       const resolved = resolveSurvivorLandscapeMove(
-        landscapeCollisionPlan(s.elapsedMs, s.runSeed),
+        grid,
         beforeLandscapePosition,
         s.player,
         PLAYER_RADIUS,
@@ -3468,7 +3485,6 @@ function loop(ts: number): void {
       s.player.x = resolved.x;
       s.player.y = resolved.y;
       // Nada que dá para pegar fica dentro de árvore ou rocha: quem nasceu ali vai para a clareira mais perto.
-      const grid = landscapeCollisionPlan(s.elapsedMs, s.runSeed);
       if (grid.solid !== lastItemGrid) {
         lastItemGrid = grid.solid;
         itemsChecked = new WeakSet();
@@ -3954,6 +3970,16 @@ async function beginRun(dexId: number, name: string, picked?: PokemonType, infin
     runOmegaShardTaken = mega !== null && !pureWanted.value && takeRunOmegaShard();
     const runMega = runOmegaShardTaken ? mega : null;
     state.value = createSurvivorState(runSeed, { ...(props.pvpRun ? { noHeld: true } : {}), kindCount: REGIONAL_KIND_COUNT, enemyDexId: regionalEnemyDexId, move, profile, secondMove, ...(hypotheticalSecondaryType ? { hypotheticalSecondaryType } : {}), supportCandidates, dexId, evolutions: evolutionsFor, infinite, bonk, preparation, typeAffinityChoices, fast, loadout: runLoadout, ...(runMega ? { mega: runMega } : {}), adaptive: adaptiveWanted.value && !props.pvpRun });
+    landscapeVegetation = bonk ? undefined : createSurvivorVegetation(SURVIVOR_LANDSCAPE_CELL, SURVIVOR_LANDSCAPE_CHUNK_SIZE, ARENA_W, ARENA_H);
+    if (landscapeVegetation) {
+      const run = state.value;
+      const vegetation = landscapeVegetation;
+      run.vegetationImpact = (hit) => {
+        if (!regionScenery.value) return;
+        const { current } = survivorRegionAt(run.elapsedMs, run.runSeed);
+        vegetation.impact(current, landscapePlan(current), hit);
+      };
+    }
     initialPlayerSpeed = Math.max(1, state.value.player.speed);
     footDust.strength = 0; footDust.ratio = 0; footDust.puffs.length = 0;
     megaWasActive = state.value.player.mega?.active === true;
