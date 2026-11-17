@@ -418,8 +418,10 @@ function spawnIntervalMs(state: SurvivorState): number {
   const t = state.elapsedMs / 1000;
   const base = Math.max(BALANCE.spawnFloorMs, BALANCE.spawnStartMs - t * BALANCE.spawnPerSecMs - state.wave * BALANCE.spawnPerWaveMs);
   const early = Math.max(0, 1 - state.elapsedMs / BALANCE.earlyGameMs);
+  // No começo, metade do intervalo dobra os encontros; o bônus desaparece no primeiro minuto.
+  const initialDensity = Math.max(0, 1 - state.elapsedMs / 60_000);
   const interval = base * (1 + BALANCE.earlySpawnIntervalBonus * early) * BALANCE.spawnRateMultiplier / survivorDifficultyDensityMultiplier(state.player.difficultyStacks ?? 0)
-    / Math.sqrt(state.adaptive?.value ?? 1);
+    / Math.sqrt(state.adaptive?.value ?? 1) * (1 - 0.5 * initialDensity);
   return interval;
 }
 

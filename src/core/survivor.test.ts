@@ -235,7 +235,7 @@ describe('stepSurvivor', () => {
     expect(s.digitalDanger).toBeLessThanOrEqual(dangerAfterTrigger);
   });
 
-  it('dobra a taxa e o teto de inimigos comuns sem antecipar treinadores ou chefes', () => {
+  it('dobra a densidade inicial de inimigos comuns sem antecipar treinadores ou chefes', () => {
     const s = createSurvivorState(104, { kindCount: 1 });
     s.special.phase = 'ready';
     s.nextBossAtMs = Number.POSITIVE_INFINITY;
@@ -245,9 +245,9 @@ describe('stepSurvivor', () => {
     s.player.hp = s.player.maxHp = 1_000_000;
     const oldInterval = Math.max(BALANCE.spawnFloorMs, BALANCE.spawnStartMs - BALANCE.spawnPerWaveMs)
       * (1 + BALANCE.earlySpawnIntervalBonus) * 0.90;
-    const currentInterval = oldInterval / 2;
+    const currentInterval = oldInterval / 4;
     stepSurvivor(s, { dx: 0, dy: 0 }, oldInterval);
-    expect(s.enemies.filter((enemy) => enemy.grade === 'comum' && !enemy.boss)).toHaveLength(2);
+    expect(s.enemies.filter((enemy) => enemy.grade === 'comum' && !enemy.boss)).toHaveLength(3);
     expect(s.nextBossAtMs).toBe(Number.POSITIVE_INFINITY);
     expect(s.nextTrainerAtMs).toBe(Number.POSITIVE_INFINITY);
 
