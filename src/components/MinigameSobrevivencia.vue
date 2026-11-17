@@ -49,6 +49,7 @@ import {
   survivorBanBlockReason,
   ARENA_H,
   ARENA_W,
+  DIGITAL_DANGER_UNLOCK_MS,
   PLAYER_RADIUS,
   createSurvivorState,
   chooseSurvivorTypeAffinity,
@@ -3394,7 +3395,13 @@ function visibleEnemyCountForDanger(s: SurvivorState): number {
   const worldViewH = view.h;
   const camX = clamp(s.player.x - worldViewW / 2, 0, Math.max(0, ARENA_W - worldViewW));
   const camY = clamp(s.player.y - worldViewH / 2, 0, Math.max(0, ARENA_H - worldViewH));
-  return s.enemies.filter((enemy) => enemy.hp > 0 && enemy.x >= camX && enemy.x <= camX + worldViewW && enemy.y >= camY && enemy.y <= camY + worldViewH).length;
+  const right = camX + worldViewW;
+  const bottom = camY + worldViewH;
+  let count = 0;
+  for (const enemy of s.enemies) {
+    if (enemy.hp > 0 && enemy.x >= camX && enemy.x <= right && enemy.y >= camY && enemy.y <= bottom) count++;
+  }
+  return count;
 }
 
 /** Run do PvP: avisos curtos do tempo e, no fim (tempo esgotado ou Pokémon caído), entrega o resultado e para o laço. */
@@ -3505,13 +3512,24 @@ function loop(ts: number): void {
     const simulationDt = (s.fast ? dt * FAST_TIME_SCALE : dt) * (cinemaMotion.value ? cinemaTimeScale(cinemaCam) : 1);
     // Quadro longo vira passos curtos: tiro rápido não atravessa inimigo em celular lento nem no Ritmo acelerado.
     const steps = simulationSteps(simulationDt);
+    const dangerUnlockMs = survivorMilestoneMs(DIGITAL_DANGER_UNLOCK_MS, s.fast);
     const events: SurvivorEvent[] = [];
     let criticalThisFrame = false;
     let attackedThisFrame = false;
     for (let index = 0; index < steps.count && !s.over && !s.pendingUpgrade && s.pendingBlackChest == null; index++) {
       const timerBeforeStep = s.player.attackTimerMs;
       const first = index === 0;
-      events.push(...stepSurvivor(s, { airborne: bonkRun.value && (bonkPhysics.value?.z ?? 0) > 34, dx: move.dx, dy: move.dy, special: first && specialQueued, supreme: first && supremeQueued, charge: chargeHeld.value || (autoCharge.value && !!chargeStyle.value && autoChargeHeld(chargeStyle.value, s.charge)), cancelCharge: first && cancelChargeQueued, visibleEnemies: visibleEnemyCountForDanger(s), ...(bonkRun.value && bonkPhysics.value ? { aimAngle: bonkPhysics.value.cameraYaw } : {}) }, steps.stepMs));
+      events.push(...stepSurvivor(s, {
+        airborne: bonkRun.value && (bonkPhysics.value?.z ?? 0) > 34,
+        dx: move.dx,
+        dy: move.dy,
+        special: first && specialQueued,
+        supreme: first && supremeQueued,
+        charge: chargeHeld.value || (autoCharge.value && !!chargeStyle.value && autoChargeHeld(chargeStyle.value, s.charge)),
+        cancelCharge: first && cancelChargeQueued,
+        visibleEnemies: s.elapsedMs + steps.stepMs >= dangerUnlockMs ? visibleEnemyCountForDanger(s) : undefined,
+        ...(bonkRun.value && bonkPhysics.value ? { aimAngle: bonkPhysics.value.cameraYaw } : {}),
+      }, steps.stepMs));
       criticalThisFrame ||= s.criticalHits.length > 0;
       attackedThisFrame ||= s.player.attackTimerMs > timerBeforeStep;
     }

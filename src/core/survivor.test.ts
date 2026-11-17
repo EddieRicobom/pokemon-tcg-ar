@@ -73,6 +73,34 @@ function run(seed: number, kindCount = 4) {
 }
 
 describe('stepSurvivor', () => {
+  it('preserva as bordas dos círculos de contato, projétil e coleta', () => {
+    const s = quiet(run(5));
+    const p = s.player;
+    p.attackTimerMs = Infinity;
+    p.pickupRadius = 20;
+    const contact = { ...dummy(201, p.x + PLAYER_RADIUS + 13, p.y), damage: 20 };
+    const target = dummy(202, p.x + 218, p.y);
+    s.enemies = [contact, target];
+    s.projectiles = [{ id: 203, x: p.x + 200, y: p.y, vx: 0, vy: 0, damage: 10, pierce: 0, lifeMs: 200, hit: [], canChain: false }];
+    s.orbs = [{ id: 204, x: p.x + 20, y: p.y, value: 1 }, { id: 205, x: p.x + 15, y: p.y + 15, value: 1 }];
+    const hp = p.hp;
+
+    stepSurvivor(s, { dx: 0, dy: 0 }, 16);
+
+    expect(p.hp).toBe(hp);
+    expect(target.hp).toBe(target.maxHp);
+    expect(s.projectiles.map(({ id }) => id)).toEqual([203]);
+    expect(s.orbs.map(({ id }) => id)).toEqual([205]);
+
+    contact.x -= 1;
+    target.x -= 1;
+    stepSurvivor(s, { dx: 0, dy: 0 }, 16);
+
+    expect(p.hp).toBeLessThan(hp);
+    expect(target.hp).toBeLessThan(target.maxHp);
+    expect(s.projectiles).toHaveLength(0);
+  });
+
   it('respeita o foco escolhido antes da distância no autoataque', () => {
     const { move, profile } = as('normal', 'projetil');
     const s = quiet(createSurvivorState(71, { kindCount: 1, move, profile }));

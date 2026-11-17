@@ -31,18 +31,20 @@ export function colorGradient(image: RgbaImage): Gradient {
     for (let x = 1; x < width - 1; x++) {
       const i = y * width + x;
       let best = 0;
-      let bestAng = 0;
+      let bestX = 0;
+      let bestY = 0;
       for (const g of channels) {
         const gx = -g[i - width - 1]! - 2 * g[i - 1]! - g[i + width - 1]! + g[i - width + 1]! + 2 * g[i + 1]! + g[i + width + 1]!;
         const gy = -g[i - width - 1]! - 2 * g[i - width]! - g[i - width + 1]! + g[i + width - 1]! + 2 * g[i + width]! + g[i + width + 1]!;
         const m = Math.hypot(gx, gy);
         if (m > best) {
           best = m;
-          bestAng = Math.atan2(gy, gx);
+          bestX = gx;
+          bestY = gy;
         }
       }
       mag[i] = best;
-      ang[i] = bestAng;
+      ang[i] = best > 0 ? Math.atan2(bestY, bestX) : 0;
     }
   }
   // Limiar por percentil: ~88% dos pixels abaixo; piso para não tratar ruído de quadro liso como borda.
