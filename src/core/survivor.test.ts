@@ -29,6 +29,8 @@ import {
   survivorRapidAttackDamageMultiplier,
   SURVIVOR_SHADOW_BALL_FIRST_MS,
   SURVIVOR_SHADOW_CUTSCENE_MS,
+  SURVIVOR_TERASTAL_DURATION_MS,
+  SURVIVOR_TERASTAL_UNLOCK_MS,
   SURVIVOR_SPAWN_DISTANCE,
   FAST_FINAL_BOSS_MS,
   FAST_TIME_SCALE,
@@ -47,7 +49,8 @@ import { seededRng } from './battle';
 import { attackProfile, moveFor } from './survivor-moves';
 import { HYPOTHETICAL_TYPE_ACTIVATION_MS, hypotheticalTypeRuleFor } from './survivor-type-mix';
 import type { MoveCategory, SurvivorMove } from './survivor-moves';
-import type { PokemonType } from './pokemon-data';
+import { POKEMON_TYPES, type PokemonType } from './pokemon-data';
+import { SUPREME_WINDUP_MS, SURVIVOR_SUPREMES } from './survivor-supreme';
 
 /** Golpe de um elemento numa forma escolhida (com os números de stats médios). */
 function as(type: PokemonType, category: MoveCategory) {
@@ -1531,6 +1534,135 @@ describe('encontros de campo', () => {
 });
 
 describe('artefatos temporários', () => {
+  function dropAt(elapsedMs: number, roll: number) {
+    const s = quiet(run(19));
+    s.special.phase = 'ready';
+    s.elapsedMs = elapsedMs - 1;
+    s.rng = () => roll;
+    s.enemies.push(dummy(940, s.player.x + 300, s.player.y, 0));
+    stepSurvivor(s, { dx: 0, dy: 0 }, 1);
+    return s.artifacts[0];
+  }
+
+  function collectTerastal(s: SurvivorState, teraType: PokemonType) {
+    s.artifacts.push({ id: s.nextId++, x: s.player.x, y: s.player.y, kind: 'terastal', teraType });
+    return stepSurvivor(s, { dx: 0, dy: 0 }, 16);
+  }
+
+  it('reserva 0,5% do pool de artefatos aos tipos Tera a partir dos quatro minutos', () => {
+    expect(BALANCE.terastalArtifactShare).toBe(0.005);
+    expect(dropAt(SURVIVOR_TERASTAL_UNLOCK_MS - 1, 0)).toMatchObject({ kind: 'speed' });
+    expect(dropAt(SURVIVOR_TERASTAL_UNLOCK_MS, 0.005)).toMatchObject({ kind: 'speed' });
+    POKEMON_TYPES.forEach((type, index) => {
+      const roll = (index + 0.5) / POKEMON_TYPES.length * 0.005;
+      expect(dropAt(SURVIVOR_TERASTAL_UNLOCK_MS, roll)).toMatchObject({ kind: 'terastal', teraType: type });
+    });
+  });
+
+  it('mantém nome e forma, reinicia a duração ao trocar de cristal e restaura o golpe original', () => {
+    const { move, profile } = as('water', 'cone');
+    const s = quiet(createSurvivorState(19, { kindCount: 1, move, profile }));
+    expect(collectTerastal(s, 'grass')).toContainEqual({ type: 'artifactCollected', kind: 'terastal', teraType: 'grass' });
+    expect(s.player.move).toMatchObject({ type: 'grass', name: move.name, category: 'cone' });
+    expect(s.fx).toContainEqual(expect.objectContaining({ artifact: 'terastal', moveType: 'grass' }));
+    stepSurvivor(s, { dx: 0, dy: 0 }, 100);
+    collectTerastal(s, 'fire');
+    expect(s.player.terastal).toMatchObject({ type: 'fire', remainingMs: SURVIVOR_TERASTAL_DURATION_MS });
+    stepSurvivor(s, { dx: 0, dy: 0 }, SURVIVOR_TERASTAL_DURATION_MS);
+    expect(s.player.terastal).toBeUndefined();
+    expect(s.player.move).toBe(move);
+  });
+
+  function teraAura(type?: PokemonType, boss = false, protection = false) {
+    const s = quiet(createSurvivorState(21, { kindCount: 1, ...as('normal', 'aura') }));
+    s.player.critChance = 0;
+    s.player.attackRadius = 60;
+    if (type) collectTerastal(s, type);
+    s.player.attackTimerMs = 0;
+    const x = s.player.x + 40;
+    const enemy = dummy(948, x, s.player.y);
+    const neighbor = dummy(949, x + 80, s.player.y);
+    enemy.boss = boss;
+    if (protection) enemy.protectedMs = 1000;
+    s.enemies.push(enemy, neighbor);
+    s.player.hp = s.player.maxHp - 20;
+    stepSurvivor(s, { dx: 0, dy: 0 }, 16);
+    return { s, enemy, neighbor, push: enemy.x - x, damage: enemy.maxHp - enemy.hp, recovered: s.player.hp - (s.player.maxHp - 20) };
+  }
+
+  const testTeraEffect: Record<PokemonType, (hit: ReturnType<typeof teraAura>) => void> = {
+    normal: ({ damage }) => expect(damage).toBeCloseTo(teraAura().damage * 1.2),
+    fire: ({ enemy }) => expect(enemy.burnMs).toBe(2000),
+    water: ({ enemy, push }) => { expect(enemy.wetMs).toBeGreaterThan(0); expect(push).toBeCloseTo(11); },
+    electric: ({ s, neighbor }) => {
+      expect(neighbor.hp).toBeLessThan(neighbor.maxHp);
+      expect(s.fx.some((f) => f.kind === 'chain')).toBe(true);
+    },
+    grass: ({ enemy }) => { expect(enemy.seededMs).toBeGreaterThan(0); expect(enemy.slowMs).toBe(900); },
+    ice: ({ enemy }) => { expect(enemy.frostStacks).toBe(1); expect(enemy.slowMs).toBeGreaterThan(0); },
+    fighting: ({ enemy, push }) => { expect(enemy.stunMs).toBe(250); expect(push).toBeCloseTo(11); },
+    poison: ({ enemy }) => expect(enemy.burnMs).toBe(3200),
+    ground: ({ s }) => expect(s.elementalTerrain[0]).toMatchObject({ radius: 42, ticksLeft: 3 }),
+    flying: ({ push }) => expect(push).toBeCloseTo(19.8),
+    psychic: ({ enemy, push }) => { expect(enemy.slowMs).toBe(900); expect(push).toBeCloseTo(11); },
+    bug: ({ s, enemy }) => {
+      expect(enemy.slowMs).toBe(2200);
+      expect(s.fx.some((f) => f.kind === 'follow-up' && f.element === 'bug')).toBe(true);
+    },
+    rock: ({ s, damage }) => expect(s.elementalTerrain[0]?.damage).toBeCloseTo(damage * 1.35),
+    ghost: ({ s, damage }) => {
+      expect(damage).toBeCloseTo(teraAura().damage * 1.3);
+      expect(s.fx.some((f) => f.kind === 'follow-up' && f.element === 'ghost')).toBe(true);
+    },
+    dragon: ({ damage }) => expect(damage).toBeCloseTo(teraAura(undefined, true).damage * 1.2),
+    dark: ({ recovered }) => expect(recovered).toBe(1),
+    steel: ({ damage }) => expect(damage).toBeCloseTo(teraAura().damage),
+    fairy: ({ recovered }) => expect(recovered).toBe(2),
+  };
+
+  it.each([...POKEMON_TYPES])('aplica o efeito de %s aos golpes Tera', (type) => {
+    const hit = teraAura(type, type === 'dragon', type === 'steel');
+    expect(hit.s.fx).toContainEqual(expect.objectContaining({ kind: 'pulse', moveType: type }));
+    testTeraEffect[type](hit);
+  });
+
+  it('mantém a queimadura de um projétil Tera que acerta após a transformação acabar', () => {
+    const { move, profile } = as('normal', 'projetil');
+    const s = quiet(createSurvivorState(20, { kindCount: 1, move, profile }));
+    collectTerastal(s, 'fire');
+    const target = dummy(945, s.player.x + 100, s.player.y);
+    s.enemies.push(target);
+    stepSurvivor(s, { dx: 0, dy: 0 }, 16);
+    expect(s.projectiles[0]?.move).toMatchObject({ type: 'fire', effect: 'queimar' });
+    s.player.terastal!.remainingMs = 1;
+    s.player.attackTimerMs = 10_000;
+    for (let i = 0; i < 30 && target.burnMs === undefined; i++) stepSurvivor(s, { dx: 0, dy: 0 }, 16);
+    expect(s.player.move).toBe(move);
+    expect(target.burnMs).toBeGreaterThan(0);
+  });
+
+  it('aplica sementes e lentidão no especial e usa a variante Tera do Supremo', () => {
+    const s = quiet(run(21));
+    collectTerastal(s, 'grass');
+    s.special.phase = 'ready';
+    s.special.selected = 'pulse';
+    s.player.attackTimerMs = 10_000;
+    const target = dummy(946, s.player.x + 100, s.player.y);
+    s.enemies.push(target);
+    stepSurvivor(s, { dx: 0, dy: 0, special: true }, 16);
+    expect(target.seededMs).toBeGreaterThan(0);
+    expect(target.slowMs).toBeGreaterThan(0);
+    s.player.hp -= 40;
+    const hp = s.player.hp;
+    s.supreme.meter = 1;
+    stepSurvivor(s, { dx: 0, dy: 0, supreme: true }, 16);
+    s.player.terastal!.remainingMs = 1;
+    const events = stepSurvivor(s, { dx: 0, dy: 0 }, SUPREME_WINDUP_MS);
+    expect(events).toContainEqual(expect.objectContaining({ type: 'supremeRelease', name: SURVIVOR_SUPREMES.grass.name }));
+    expect(s.player.hp).toBeGreaterThan(hp);
+    expect(s.supreme.type).toBe('normal');
+  });
+
   it('coleta artefato real e aplica cura com proteção visual registrada', () => {
     const s = createSurvivorState(8, { kindCount: 1 });
     s.player.hp = 20;

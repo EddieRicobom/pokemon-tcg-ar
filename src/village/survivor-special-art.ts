@@ -1,6 +1,6 @@
 import type { PokemonType } from '../core/pokemon-data';
 import type { SurvivorState } from '../core/survivor';
-import { SUPREME_RADIUS, SUPREME_WINDUP_MS, SURVIVOR_SUPREMES, supremeWaveMarks } from '../core/survivor-supreme';
+import { SUPREME_RADIUS, SUPREME_WINDUP_MS, SURVIVOR_SUPREMES, supremeWaveMarks, survivorSupremeType } from '../core/survivor-supreme';
 import type { WorldToScreen } from './survivor-attack-art';
 
 /** Silhuetas distintas por tipo, sem texturas ou partículas persistentes. */
@@ -59,8 +59,8 @@ const flatProjection: WorldToScreen = (x, y, z = 0) => ({ x, y: y - z, s: 1 });
 export function drawSurvivorSupreme(ctx: CanvasRenderingContext2D, state: SurvivorState, timeMs: number, detailed: boolean, project: WorldToScreen = flatProjection): void {
   const supreme = state.supreme;
   const p = state.player;
-  const color = p.move.color;
-  const def = SURVIVOR_SUPREMES[supreme.type];
+  const color = supreme.casting?.color ?? p.move.color;
+  const def = SURVIVOR_SUPREMES[supreme.casting?.type ?? survivorSupremeType(state)];
   const center = project(p.x, p.y, 12);
   if (detailed && supreme.meter >= 1 && supreme.windupMs <= 0 && center) {
     ctx.save();

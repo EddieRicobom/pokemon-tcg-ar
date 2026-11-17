@@ -103,6 +103,8 @@ export interface SurvivorPlayer {
   artifactShieldMs: number;
   artifactMagnetMs: number;
   artifactFocusMs: number;
+  /** Tipo temporário do protagonista, com o golpe original guardado para a restauração. */
+  terastal?: { type: PokemonType; remainingMs: number; baseMove: SurvivorMove };
   /** -1 olhando para a esquerda, 1 para a direita (para virar o sprite). */
   facing: -1 | 1;
   /** Frente do Pokémon em radianos (último passo; no BONK, para onde a câmera olha). O cone ataca nessa direção. */
@@ -230,6 +232,8 @@ export const DIGITAL_DANGER_VISIBLE_RADIUS = 520;
 export type SurvivorEnemyGrade = 'comum' | 'elite' | 'chefao';
 
 export interface SurvivorEnemy {
+  /** Alfa: o dobro de tamanho, HP e dano; deixa um orbe que concede um nível completo. */
+  alpha?: boolean;
   /** Caiu pelo Golpe Supremo: não recarrega o medidor. */
   supremeHit?: boolean;
   digitalThreat?: boolean;
@@ -396,7 +400,10 @@ export interface SurvivorFx {
   artifact?: SurvivorArtifactKind;
 }
 
-export type SurvivorArtifactKind = 'speed' | 'heal' | 'power' | 'magnet' | 'focus' | 'pokeball' | 'shadow-ball';
+export type SurvivorArtifactKind = 'speed' | 'heal' | 'power' | 'magnet' | 'focus' | 'pokeball' | 'shadow-ball' | 'terastal';
+
+export const SURVIVOR_TERASTAL_UNLOCK_MS = 4 * 60_000;
+export const SURVIVOR_TERASTAL_DURATION_MS = 20_000;
 
 /** Texto único para HUD e avisos: descreve exatamente os bônus temporários aplicados pelo motor. */
 export const SURVIVOR_ARTIFACT_DETAILS: Record<SurvivorArtifactKind, { icon: string; name: string; description: string }> = {
@@ -407,20 +414,25 @@ export const SURVIVOR_ARTIFACT_DETAILS: Record<SurvivorArtifactKind, { icon: str
   focus: { icon: '◈', name: 'Foco preciso', description: 'Reduz em 20% a recarga do golpe por 8 s.' },
   pokeball: { icon: '★', name: 'Pokébola errante', description: 'Reúne opções de Digital Pokémon para escolher ao fim da corrida.' },
   'shadow-ball': { icon: '◉', name: 'Pokébola Sombria', description: 'Desafio opcional: chama um lendário perigoso. Vença para assegurar uma Pedra da Confiança ao concluir a corrida.' },
+  terastal: { icon: '💎', name: 'Terastalização', description: 'Muda o tipo e o efeito dos seus golpes por 20 s.' },
 };
 
-export interface SurvivorArtifact {
+type SurvivorArtifactElement = { kind: 'terastal'; teraType: PokemonType }
+  | { kind: Exclude<SurvivorArtifactKind, 'terastal'>; teraType?: never };
+
+export type SurvivorArtifact = {
   id: number;
   x: number;
   y: number;
-  kind: SurvivorArtifactKind;
-}
+} & SurvivorArtifactElement;
 
 export interface SurvivorOrb {
   id: number;
   x: number;
   y: number;
   value: number;
+  /** Recompensa alfa: o valor de um nível é resolvido ao coletar, sem bônus de XP. */
+  alpha?: boolean;
   /** Orbe raro que concede o dobro do valor base ao ser coletado. Opcional para compatibilidade com estados antigos. */
   doubleXp?: boolean;
 }
@@ -754,6 +766,8 @@ export function survivorCoins(s: Pick<SurvivorSummary, 'survivedMs' | 'kills' | 
 
 export type SurvivorEvent =
   | { type: 'levelup'; level: number }
+  | { type: 'alphaSpawn'; enemyId: number; dexId?: number }
+  | { type: 'alphaDefeated'; enemyId: number; dexId?: number }
   | { type: 'keyPicked'; keys: number }
   | { type: 'chestSpawn' }
   | { type: 'chestLocked' }
@@ -793,7 +807,7 @@ export type SurvivorEvent =
   /** Um apoio assumiu uma evolução real; ele continua sem vida, hitbox ou upgrades do protagonista. */
   | { type: 'supportEvolve'; dexId: number; name: string }
   /** Artefato do chão realmente alcançado pelo jogador; a UI explica o efeito aplicado. */
-  | { type: 'artifactCollected'; kind: SurvivorArtifactKind }
+  | ({ type: 'artifactCollected' } & SurvivorArtifactElement)
   | { type: 'thiefSpawn'; dexId: number; leftMs: number }
   | { type: 'thiefCaught'; coins: number }
   | { type: 'thiefEscaped' }

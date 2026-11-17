@@ -2,15 +2,18 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, shallowRef, toRaw, triggerRef, watch } from 'vue';
 import MusicControls from './MusicControls.vue';
 import SurvivorDebug from './SurvivorDebug.vue';
+import SurvivorDiscoveries from './SurvivorDiscoveries.vue';
 import AttackIcon from './AttackIcon.vue';
 import { MusicPlayer } from '../app/music-player';
 import { CINEMA_BEATS, cinemaFrame, cinemaLook, cinemaPower, cinemaTimeScale, createCinemaCamera, presentationMayResume, resetCinema, showCinemaBanner, simulationSteps, stepCinema, triggerCinema } from '../core/survivor-cinema';
 import type { CinemaBeat, CinemaFrame } from '../core/survivor-cinema';
-import { SURVIVOR_SUPREMES } from '../core/survivor-supreme';
+import { SURVIVOR_SUPREMES, survivorSupremeType } from '../core/survivor-supreme';
 import { ORB_RAIN_FALL_MS, SURVIVOR_SURGE_LABEL, SWARM_TRAVEL, surgeHudText } from '../core/survivor-surges';
 import type { SurvivorSurge } from '../core/survivor-surges';
 import { flashAlpha, impactFromFx, moveLight, shadowFrom } from '../core/survivor-impacts';
 import { drawCastShadows, drawCinemaBanner, drawImpactFrame, drawKillStreak, drawLights, drawNight, drawPokemonShadow, drawScreenFlash, drawSpeedLines } from '../village/survivor-cinema-art';
+import { drawTerastal } from '../village/survivor-terastal-art';
+import { drawAlphaTint } from '../village/survivor-alpha-art';
 import { addStreakKills, createKillStreak, resetKillStreak, STREAK_SHOW_AT, stepKillStreak, streakFade, streakPop, streakTier, streakVisible } from '../core/survivor-streak';
 import { ImpactSparks } from '../village/survivor-impact-art';
 import { ARTIFACT_ICONS, artifactIconUrl, drawArtifactIcon } from '../village/artifact-icons-art';
@@ -67,9 +70,10 @@ import {
   SURVIVOR_LANDSCAPE_TILE_W,
 } from '../core/survivor';
 import type { SurvivorEnemy, SurvivorEvent, SurvivorEvolutionOption, SurvivorState, SurvivorSummary, SurvivorSupportCandidate, SurvivorUpgradeOption, SurvivorUpgradeRarity } from '../core/survivor';
-import { attackProfile, moveEffectForType, moveFor, moveWith, rankedCategories, MOVE_CATEGORY_LABELS_PT, MOVE_EFFECT_LABELS_PT, profileBars } from '../core/survivor-moves';
+import { attackProfile, moveEffectForType, moveFor, moveWith, rankedCategories, MOVE_CATEGORY_LABELS_PT, MOVE_EFFECT_LABELS_PT, profileBars, SURVIVOR_TERASTAL_EFFECTS } from '../core/survivor-moves';
 import { survivorAttackChoices, survivorAttackOf, survivorSupportMove } from '../core/survivor-loadout';
 import { TYPE_LABELS_PT } from '../core/pokemon-data';
+import { TYPE_GLYPHS } from '../core/type-glyphs';
 import type { PokemonType } from '../core/pokemon-data';
 import { SURVIVOR_CLEAR_BONUS } from '../core/survivor';
 import { autoChargeHeld, TELEPORT_FULL_HOLD_MS } from '../core/survivor-charge';
@@ -319,11 +323,14 @@ function say(text: string, ms = 3000): void {
   toastTimer = setTimeout(() => (toast.value = ''), ms);
 }
 
-/** Item do chão fica no centro e separado dos avisos de região, para o efeito não passar despercebido. */
+/** Aviso compacto do item coletado, sem cobrir o centro da arena. */
 const artifactNotice = ref<null | { icon: string; name: string; description: string; image: string }>(null);
 let artifactNoticeTimer: ReturnType<typeof setTimeout> | null = null;
-function showArtifactNotice(kind: keyof typeof SURVIVOR_ARTIFACT_DETAILS): void {
-  artifactNotice.value = { ...SURVIVOR_ARTIFACT_DETAILS[kind], image: artifactIconUrl(kind) };
+function showArtifactNotice(kind: keyof typeof SURVIVOR_ARTIFACT_DETAILS, teraType?: PokemonType): void {
+  const details = SURVIVOR_ARTIFACT_DETAILS[kind];
+  const name = teraType ? `${details.name} · ${TYPE_LABELS_PT[teraType]}` : details.name;
+  const description = teraType ? `${SURVIVOR_TERASTAL_EFFECTS[teraType]} Duração de 20 s.` : details.description;
+  artifactNotice.value = { ...details, name, description, image: artifactIconUrl(kind) };
   if (artifactNoticeTimer) clearTimeout(artifactNoticeTimer);
   artifactNoticeTimer = setTimeout(() => (artifactNotice.value = null), 2600);
 }
@@ -800,7 +807,7 @@ function cinemaBeat(beat: CinemaBeat): void {
   if (cinemaMotion.value) triggerCinema(cinemaCam, beat);
 }
 let supremeQueued = false;
-const supremeDef = computed(() => (state.value ? SURVIVOR_SUPREMES[state.value.supreme.type] : null));
+const supremeDef = computed(() => (state.value ? SURVIVOR_SUPREMES[survivorSupremeType(state.value)] : null));
 const supremeBlocked = computed(() => !state.value || state.value.over || paused.value || shadowCutsceneOpen.value || !!pendingUpgrade.value || !!blackChestOffer.value || !!evolving.value || specialModalOpen.value);
 function queueSupreme(): void {
   if (supremeBlocked.value || (state.value?.supreme.meter ?? 0) < 1) return;
@@ -964,6 +971,21 @@ watch(pendingUpgrade, (offer) => {
 });
 const availableUpgradeRerolls = computed(() => state.value?.player.upgradeRerolls ?? 0);
 const summary = ref<SurvivorSummary | null>(null);
+// Apenas o resultado usa este registro; não adiciona trabalho visual ao HUD da corrida.
+const rareDiscoveries = ref<{
+  alphas: Record<number, { found: number; defeated: number }>;
+  terastal: Partial<Record<PokemonType, number>>;
+}>({ alphas: {}, terastal: {} });
+function recordRareDiscovery(event: SurvivorEvent): void {
+  if (event.type === 'alphaSpawn' || event.type === 'alphaDefeated') {
+    const dexId = event.dexId ?? 0;
+    const count = rareDiscoveries.value.alphas[dexId] ??= { found: 0, defeated: 0 };
+    if (event.type === 'alphaSpawn') count.found++;
+    else count.defeated++;
+  } else if (event.type === 'artifactCollected' && event.kind === 'terastal') {
+    rareDiscoveries.value.terastal[event.teraType] = (rareDiscoveries.value.terastal[event.teraType] ?? 0) + 1;
+  }
+}
 const feedback = reactive(emptySurvivorFeedbackAnswers());
 const feedbackCode = ref('');
 const feedbackSubmitted = ref(false);
@@ -1568,10 +1590,10 @@ function drawSurge(c: CanvasRenderingContext2D, surge: SurvivorSurge, animMs: nu
   c.restore();
 }
 
-function drawSprite(asset: SpriteAsset | null, x: number, y: number, flip: boolean, scale: number, direction: SurvivorSpriteDirection = 'down', accessory?: string | null, polished = false): void {
+function drawSprite(asset: SpriteAsset | null, x: number, y: number, flip: boolean, scale: number, direction: SurvivorSpriteDirection = 'down', accessory?: string | null, polished = false, teraType?: PokemonType, alpha = false): void {
   if (!ctx) return;
   if (!asset) {
-    ctx.fillStyle = 'rgba(110,116,130,0.92)';
+    ctx.fillStyle = alpha ? 'rgba(174,65,65,0.92)' : 'rgba(110,116,130,0.92)';
     ctx.beginPath();
     ctx.ellipse(x, y, 12 * scale, 14 * scale, 0, 0, Math.PI * 2);
     ctx.fill();
@@ -1611,6 +1633,8 @@ function drawSprite(asset: SpriteAsset | null, x: number, y: number, flip: boole
     ctx.drawImage(frame, left, top, w, h);
     ctx.restore();
   }
+  if (alpha) drawAlphaTint(ctx, frame, x + (mirror ? -left - w : left), y + top, w, h, mirror);
+  if (teraType) drawTerastal(ctx, frame, x + (mirror ? -left - w : left), y + top, w, h, mirror, x, y + top + sprite.bounds.top * h, teraType, animMs, detailedSpecialEffects.value, scale);
   if (fit && !fit.behind) drawAccessoryOverlay(fit);
 }
 
@@ -1766,11 +1790,11 @@ function drawAlertMark(c: CanvasRenderingContext2D, x: number, y: number, t: num
 }
 
 function enemySpriteScale(e: SurvivorEnemy): number {
-  return e.shadowBoss ? 1.7 : e.boss ? 1.2 : e.grade === 'chefao' ? 1.3 : e.grade === 'elite' ? 1.1 : 1;
+  return (e.shadowBoss ? 1.7 : e.boss ? 1.2 : e.grade === 'chefao' ? 1.3 : e.grade === 'elite' ? 1.1 : 1) * (e.alpha ? 2 : 1);
 }
 
 function bonkEnemySpriteScale(e: SurvivorEnemy, scale: number): number {
-  return (e.shadowBoss ? 1.7 : e.boss ? 1.2 : e.grade === 'chefao' ? 1.12 : e.grade === 'elite' ? 0.96 : 0.84) * scale;
+  return (e.shadowBoss ? 1.7 : e.boss ? 1.2 : e.grade === 'chefao' ? 1.12 : e.grade === 'elite' ? 0.96 : 0.84) * scale * (e.alpha ? 2 : 1);
 }
 
 function paintPokemonShadow(
@@ -1780,6 +1804,19 @@ function paintPokemonShadow(
   if (!sprite) return false;
   const cast = shadowFrom(point.x, point.y, 14 * scale, cinemaLights, reach * Math.min(scale, 1.5));
   return drawPokemonShadow(c, sprite, direction, animMs, point.x, point.y, scale, flip, cast, depth, alpha);
+}
+
+function drawAlphaLabel(c: CanvasRenderingContext2D, x: number, y: number, scale: number): void {
+  c.save();
+  c.font = `bold ${Math.max(9, Math.round(10 * scale))}px sans-serif`;
+  c.textAlign = 'center';
+  c.textBaseline = 'bottom';
+  c.lineWidth = 3;
+  c.strokeStyle = '#3c1018';
+  c.strokeText('ALFA', x, y);
+  c.fillStyle = '#ffcece';
+  c.fillText('ALFA', x, y);
+  c.restore();
 }
 
 function drawEnemy(e: SurvivorEnemy): void {
@@ -1873,11 +1910,12 @@ function drawEnemy(e: SurvivorEnemy): void {
     ctx.translate(e.x, e.y);
     ctx.scale(1 + 0.14 * windup, 1 - 0.18 * windup);
     ctx.translate(-e.x, -e.y);
-    drawSprite(sprite, e.x, e.y, false, scale, facing);
+    drawSprite(sprite, e.x, e.y, false, scale, facing, undefined, false, undefined, e.alpha);
     ctx.restore();
   } else {
-    drawSprite(sprite, e.x, e.y, false, scale, facing);
+    drawSprite(sprite, e.x, e.y, false, scale, facing, undefined, false, undefined, e.alpha);
   }
+  if (e.alpha) drawAlphaLabel(ctx, e.x, e.y - (e.boss ? 100 : 60), 1);
   if (windup > 0) drawAlertMark(ctx, e.x, e.y - (e.boss ? 62 : 40), windup);
   // Efeitos do golpe no inimigo: um pontinho colorido em cima (queimando, lento, atordoado).
   const marks: string[] = [];
@@ -1900,7 +1938,7 @@ function drawEnemy(e: SurvivorEnemy): void {
   }
   if (e.hp < e.maxHp) {
     const w = e.boss ? 44 : 22;
-    const y = e.y - (e.boss ? 46 : 26);
+    const y = e.y - (e.boss ? 46 : 26) * (e.alpha ? 2 : 1);
     ctx.fillStyle = 'rgba(0,0,0,0.5)';
     ctx.fillRect(e.x - w / 2, y, w, 4);
     // O suporte usa rosa e um coração: a recuperação deixa de parecer um HP que voltou sozinho.
@@ -1947,7 +1985,7 @@ function drawDamageNumbers(worldToScreen: WorldToScreen): void {
 /** Sprite 2D voltado para a câmera (billboard): a perspectiva vem da projeção, não de um modelo 3D inventado. */
 function drawBonkBillboard(
   sprite: SpriteAsset | null, x: number, y: number, scale: number, flip = false, alpha = 1,
-  shadow: { x: number; y: number; rx: number; ry: number } | null = null, squash = 0, direction: SurvivorSpriteDirection = 'down', accessory?: string | null, polished = false,
+  shadow: { x: number; y: number; rx: number; ry: number } | null = null, squash = 0, direction: SurvivorSpriteDirection = 'down', accessory?: string | null, polished = false, teraType?: PokemonType, alphaEnemy = false,
 ): void {
   if (!ctx) return;
   ctx.save();
@@ -1962,9 +2000,9 @@ function drawBonkBillboard(
     // Achatado ao pousar (squash > 0), esticado ao subir (squash < 0), sempre com os pés no mesmo ponto.
     ctx.translate(x, y);
     ctx.scale(1 + squash * 0.7, 1 - squash);
-    drawSprite(sprite, 0, 0, flip, scale, direction, accessory, polished);
+    drawSprite(sprite, 0, 0, flip, scale, direction, accessory, polished, teraType, alphaEnemy);
   } else {
-    drawSprite(sprite, x, y, flip, scale, direction, accessory, polished);
+    drawSprite(sprite, x, y, flip, scale, direction, accessory, polished, teraType, alphaEnemy);
   }
   ctx.restore();
 }
@@ -2011,11 +2049,12 @@ function drawBonkEnemy(e: SurvivorEnemy, x: number, y: number, scale: number): v
     ctx.stroke();
     ctx.restore();
   }
-  drawBonkBillboard(sprite, x, y, size, false, 1, null, 0, player ? survivorSpriteDirection(player.x - e.x, player.y - e.y) : 'down');
+  drawBonkBillboard(sprite, x, y, size, false, 1, null, 0, player ? survivorSpriteDirection(player.x - e.x, player.y - e.y) : 'down', undefined, false, undefined, e.alpha);
+  if (e.alpha) drawAlphaLabel(ctx, x, y - Math.max(30, 70 * scale), clamp(scale, 0.7, 1.5));
   if (windup > 0) drawAlertMark(ctx, x, y - Math.max(34, 58 * scale), windup);
   if (e.hp < e.maxHp) {
     const width = Math.max(14, 28 * scale);
-    const barY = y - Math.max(22, 38 * scale);
+    const barY = y - Math.max(22, 38 * scale) * (e.alpha ? 2 : 1);
     ctx.fillStyle = 'rgba(8, 14, 25, .72)';
     ctx.fillRect(x - width / 2, barY, width, Math.max(2, 3 * scale));
     ctx.fillStyle = e.archetype === 'suporte' ? '#ff78b7' : '#8be06a';
@@ -2267,7 +2306,7 @@ function drawBonkScene(s: SurvivorState, physics: BonkPhysics): void {
       c.scale(motion.scaleX, motion.scaleY);
       drawBonkBillboard(playerBackSprite ?? playerSprite, motion.lunge * 18 * scale, 0, scale, bonkFacing < 0,
         s.player.invulnMs > 0 && Math.floor(animMs / 80) % 2 === 0 ? 0.45 : 1,
-        { x: playerGround.x - playerPoint.x, y: playerGround.y - playerPoint.y, rx: shadow.rx, ry: shadow.ry }, squash, 'down', playerAccessory, true);
+        { x: playerGround.x - playerPoint.x, y: playerGround.y - playerPoint.y, rx: shadow.rx, ry: shadow.ry }, squash, 'down', playerAccessory, true, s.player.terastal?.type);
       c.restore();
     } });
   }
@@ -2750,7 +2789,7 @@ function draw(): void {
     const breath = lively && !walking ? Math.sin(animMs / 430) * 0.022 : 0;
     if (walking) ctx.rotate(playerLean * 0.07 * playerStepping);
     ctx.scale(1 - breath, 1 + breath);
-    drawSprite(playerSprite, motion.lunge * 18 * aimX, motion.lunge * 12 * aimY - hop, s.player.facing < 0, 1, survivorSpriteDirectionFromAngle(aimAngle, s.player.facing), playerAccessory, true);
+    drawSprite(playerSprite, motion.lunge * 18 * aimX, motion.lunge * 12 * aimY - hop, s.player.facing < 0, 1, survivorSpriteDirectionFromAngle(aimAngle, s.player.facing), playerAccessory, true, s.player.terastal?.type);
     ctx.restore();
   }
   orbiters.forEach((orbiter, index) => { if (orbiter.y >= s.player.y) drawElementOrbiter(ctx!, s.player, move.type, flat, index, animMs, detailed); });
@@ -3524,6 +3563,7 @@ function loop(ts: number): void {
       showDamageFeedback();
     }
     for (const ev of events) {
+      recordRareDiscovery(ev);
       if (ev.type === 'levelup') playSound('survivor-level');
       else if (ev.type === 'bossSpawn') {
         playSound('survivor-boss');
@@ -3590,7 +3630,7 @@ function loop(ts: number): void {
       }
       else if (ev.type === 'artifactCollected') {
         playSound('survivor-pickup');
-        showArtifactNotice(ev.kind);
+        showArtifactNotice(ev.kind, ev.teraType);
       }
       else if (ev.type === 'thiefSpawn') {
         playSound('survivor-level');
@@ -3897,6 +3937,7 @@ async function beginRun(dexId: number, name: string, picked?: PokemonType, infin
   runCompanion = companion;
   runShiny = shiny;
   runEpoch++;
+  rareDiscoveries.value = { alphas: {}, terastal: {} };
   outroSummary = null;
   if (outroTimer) clearTimeout(outroTimer);
   outroTimer = null;
@@ -4332,6 +4373,7 @@ onBeforeUnmount(() => {
             <span>XP {{ state.player.xp }}/{{ state.player.xpToNext }}</span>
           </div>
           <div class="survivor-stats">
+            <span v-if="state.player.terastal" class="chip survivor-tera-chip" :aria-label="`Terastalização ${TYPE_LABELS_PT[state.player.terastal.type]}: ${Math.ceil(state.player.terastal.remainingMs / 1000)} segundos restantes`" :title="`Terastalização ${TYPE_LABELS_PT[state.player.terastal.type]}`">💎 {{ TYPE_GLYPHS[state.player.terastal.type] }} {{ TYPE_LABELS_PT[state.player.terastal.type] }} · {{ Math.ceil(state.player.terastal.remainingMs / 1000) }}s</span>
             <span v-if="(state.player.healBlockMs ?? 0) > 0" class="chip survivor-heal-block" role="status">🚫 CURA BLOQUEADA · {{ Math.ceil((state.player.healBlockMs ?? 0) / 1000) }}s</span>
             <span v-if="bonkRun" class="chip survivor-bonk-chip" title="Câmera em terceira pessoa, terreno físico e salto">💥 BONK</span>
             <span v-if="state.player.mega?.active" class="chip survivor-mega-chip" role="status" title="Stats base da forma Mega (PokéAPI) até o fim da corrida.">💎 {{ state.player.mega.label }}</span>
@@ -4876,6 +4918,7 @@ onBeforeUnmount(() => {
               <div><strong>{{ summary.kills }}</strong><small>Derrotas</small></div>
               <div><strong>{{ summary.wave }}</strong><small>Onda</small></div>
             </div>
+            <SurvivorDiscoveries :alphas="rareDiscoveries.alphas" :terastal="rareDiscoveries.terastal" />
             <section v-if="summary.damageBySource?.length" class="survivor-chart" aria-label="Dano por golpe">
               <strong>Quem causou o dano</strong>
               <ul>

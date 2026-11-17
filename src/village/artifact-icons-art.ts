@@ -47,6 +47,25 @@ const GEM = [
   '................',
 ] as const;
 
+const CRYSTAL = [
+  '.......W........',
+  '......WkW.......',
+  '.....kLLLk......',
+  '....kLWLLOk.....',
+  '...kLLLOOOOk....',
+  '..kLLLOOOOook...',
+  '.kLLLLOOOOooOk..',
+  '.kLLkOOOkOOOOk..',
+  '..kLLkOOkOOOk...',
+  '...kLLkOkOOk....',
+  '....kLLkOok.....',
+  '.....kLkOk......',
+  '......kOk.......',
+  '.......k........',
+  '................',
+  '................',
+] as const;
+
 const HEART = [
   '................',
   '..kkkk....kkkk..',
@@ -136,6 +155,7 @@ export const ARTIFACT_ICONS: Record<SurvivorArtifactKind, IconArt> = {
   heal: { rows: HEART, palette: { P: 0xff6a9c, p: 0xc83c74, W: 0xffe4ee }, color: '#ff8fbb' },
   magnet: { rows: MAGNET, palette: { R: 0xe84848, r: 0xa82c3c, W: 0xffb4a8, S: 0xd8e0ec, s: 0x98a4b8 }, color: '#d68cff' },
   focus: { rows: LENS, palette: { G: 0xf4c848, B: 0x8cd8f8, W: 0xf0fcff, R: 0xe84848 }, color: '#ffe071' },
+  terastal: { rows: CRYSTAL, palette: { O: 0xa46dff, o: 0x6140c4, L: 0x9deaff, W: 0xffffff }, color: '#c99bff' },
   pokeball: { rows: BALL, palette: { T: 0xef4b57, t: 0xb02c44, W: 0xfcf8ec, s: 0xc8c4bc }, color: '#ff5b5b' },
   'shadow-ball': { rows: BALL, palette: { T: 0x6a2c94, t: 0x431a68, W: 0xe4d4f4, s: 0xa890c4 }, color: '#a66bff' },
 };

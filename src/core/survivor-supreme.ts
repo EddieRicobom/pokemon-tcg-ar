@@ -127,6 +127,8 @@ export interface SurvivorSupremeState {
   /** Energia ganha que ainda vai escoar para o medidor. */
   banked: number;
   windupMs: number;
+  /** Elemento escolhido ao iniciar a carga, usado também pela onda depois da soltura. */
+  casting?: { type: PokemonType; color: string };
   /** Tempo restante da marca visual da soltura. */
   fxMs: number;
   /** Onde a soltura aconteceu. */
@@ -145,6 +147,10 @@ export interface SupremeHooks {
 
 export function createSurvivorSupreme(type: PokemonType): SurvivorSupremeState {
   return { type, meter: 0, banked: 0, windupMs: 0, fxMs: 0, x: 0, y: 0, uses: 0 };
+}
+
+export function survivorSupremeType(state: SurvivorState): PokemonType {
+  return state.player.terastal?.type ?? state.supreme.type;
 }
 
 /** Soma energia, respeitando o que já está guardado. Medidor cheio ou golpe em carga não guardam nada. */
@@ -176,15 +182,16 @@ export function supremeDamageTo(enemy: SurvivorEnemy, def: SurvivorSupremeDef, a
 
 function releaseSupreme(state: SurvivorState, hooks: SupremeHooks, events: SurvivorEvent[]): void {
   const supreme = state.supreme;
-  const def = SURVIVOR_SUPREMES[supreme.type];
   const p = state.player;
+  const { type, color } = supreme.casting ??= { type: survivorSupremeType(state), color: p.move.color };
+  const def = SURVIVOR_SUPREMES[type];
   const origin = { x: p.x, y: p.y };
   const radius = SUPREME_RADIUS * (def.radius ?? 1);
   let hits = 0;
   for (const e of state.enemies) {
     if (e.hp <= 0 || e.thief || Math.hypot(e.x - origin.x, e.y - origin.y) > radius + e.radius) continue;
     const damage = supremeDamageTo(e, def, hooks.attackDamage) * ((e.protectedMs ?? 0) > 0 ? 0.75 : 1);
-    hooks.record(def.name, p.move.color, Math.min(Math.max(0, e.hp), damage));
+    hooks.record(def.name, color, Math.min(Math.max(0, e.hp), damage));
     e.hp -= damage;
     e.hitFlashMs = 140;
     hits++;
@@ -208,7 +215,7 @@ function releaseSupreme(state: SurvivorState, hooks: SupremeHooks, events: Survi
   supreme.y = origin.y;
   supreme.fxMs = 900;
   state.vegetationImpact?.({ kind: 'area', x: origin.x, y: origin.y, radius });
-  state.fx.push({ kind: 'blast', x: origin.x, y: origin.y, r: radius, color: p.move.color, ageMs: 0, lifeMs: 560, moveType: supreme.type });
+  state.fx.push({ kind: 'blast', x: origin.x, y: origin.y, r: radius, color, ageMs: 0, lifeMs: 560, moveType: type });
   events.push({ type: 'supremeRelease', name: def.name, hits, x: origin.x, y: origin.y });
 }
 
@@ -221,6 +228,7 @@ export function stepSurvivorSupreme(state: SurvivorState, input: SurvivorInput, 
     if (supreme.windupMs === 0) releaseSupreme(state, hooks, events);
     return;
   }
+  if (supreme.fxMs === 0) delete supreme.casting;
   if (supreme.meter < 1 && supreme.banked > 0) {
     const flow = Math.min(supreme.banked, dtMs / SUPREME_MIN_FILL_MS, 1 - supreme.meter);
     supreme.meter = Math.min(1, supreme.meter + flow);
@@ -228,15 +236,16 @@ export function stepSurvivorSupreme(state: SurvivorState, input: SurvivorInput, 
     if (supreme.meter >= 1 - 1e-9) {
       supreme.meter = 1;
       supreme.banked = 0;
-      events.push({ type: 'supremeReady', name: SURVIVOR_SUPREMES[supreme.type].name });
+      events.push({ type: 'supremeReady', name: SURVIVOR_SUPREMES[survivorSupremeType(state)].name });
     }
   }
   if (input.supreme && supreme.meter >= 1 && !state.over) {
     supreme.meter = 0;
     supreme.banked = 0;
     supreme.windupMs = SUPREME_WINDUP_MS;
+    supreme.casting = { type: survivorSupremeType(state), color: state.player.move.color };
     supreme.uses += 1;
     state.player.invulnMs = Math.max(state.player.invulnMs, SUPREME_WINDUP_MS + SUPREME_GRACE_MS);
-    events.push({ type: 'supremeCharge', name: SURVIVOR_SUPREMES[supreme.type].name });
+    events.push({ type: 'supremeCharge', name: SURVIVOR_SUPREMES[supreme.casting.type].name });
   }
 }

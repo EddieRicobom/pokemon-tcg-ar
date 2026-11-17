@@ -1,13 +1,14 @@
 import { healSurvivor } from './survivor-healing';
 import { seededRng } from './battle';
 import { statsOfDex } from './survivor-stats';
+import { rollSurvivorAlpha, survivorAlphaRng, survivorAlphaXpValue } from './survivor-alpha';
 import type { Rng } from './battle';
 import { BASIC_ATTACK_DAMAGE_FACTOR, moveWith, type AttackProfile, type MoveCategory, type SurvivorMove } from './survivor-moves';
 import { destinyLinkRule, HELD_ITEM_BY_ID, HELD_OFFER_PREFIX, heldChargePosition, heldItemText, heldMods, isHeldItemId, mirrorOrbiters, rollHeldOffer, timeBubbleRule } from './survivor-held';
 import type { HeldItemId } from './survivor-held';
 import { survivorBiomeDamageMultiplier, survivorBiomeMovementMultiplier, survivorBiomeProjectileSpeedMultiplier } from './survivor-biomes';
 import { survivorElementalStatus, survivorSynergyFor } from './survivor-synergies';
-import { HYPOTHETICAL_TYPE_ACTIVATION_MS, hypotheticalSecondaryTypeFor, hypotheticalTypeRuleFor } from './survivor-type-mix';
+import { HYPOTHETICAL_TYPE_ACTIVATION_MS, hypotheticalSecondaryTypeFor, hypotheticalTypeRuleFor, type HypotheticalTypeRule } from './survivor-type-mix';
 import { survivorPreparation } from './survivor-preparations';
 import { MAX_OFFER_CHOICES, PURE_LOADOUT } from './survivor-loadout';
 import type { TowerLoadout } from './survivor-loadout';
@@ -17,7 +18,8 @@ import type { SurvivorMegaForm } from './survivor-mega';
 import type { SurvivorPreparationId } from './survivor-preparations';
 import { advanceSpecialEncounter, breakSurvivorShield, createSurvivorSpecial, DASH_DAMAGE_MULTIPLIER, DASH_TRIPLE_DAMAGE_MULTIPLIER, SPECIAL_GUARDIANS, SURVIVOR_SPECIALS, specialProtects, stepSurvivorSpecial } from './survivor-specials';
 import { inSurvivorCone, SURVIVOR_CONE_HALF_ANGLE, SURVIVOR_ORBIT_BASE, SURVIVOR_ORBIT_MAX, survivorAimAngle, survivorOrbitAngularSpeed, survivorOrbiterHitRadius, survivorOrbiters, survivorOrbitHitIntervalMs } from './survivor-shapes';
-import type { PokemonType } from './pokemon-data';
+import { POKEMON_TYPES, type PokemonType } from './pokemon-data';
+import { SURVIVOR_TERASTAL_DURATION_MS, SURVIVOR_TERASTAL_UNLOCK_MS } from './survivor-types';
 import { creditSupremeKill, createSurvivorSupreme, gainSupreme, stepSurvivorSupreme, SUPREME_GAIN } from './survivor-supreme';
 import { createSurgeTrack, removeEscapedSwarm, stepSurvivorSurge } from './survivor-surges';
 import { SURVIVOR_MIGRATION_MS, SURVIVOR_MIGRATION_SPAWN_MULTIPLIER, survivorMigrationOverlapMs, survivorMigrationRemainingMs } from './survivor-regions';
@@ -44,7 +46,7 @@ import {
   SURVIVOR_THIEF_DEX, SURVIVOR_THIEF_EVERY_MS, SURVIVOR_THIEF_FIRST_MS, SURVIVOR_THIEF_LIFE_MS, SURVIVOR_THIEF_SPEED, thiefFleeTarget, thiefReward,
 } from './survivor-extras';
 import { ARENA_H, ARENA_W, DIGITAL_DANGER_COOLDOWN_MS, DIGITAL_DANGER_MAX, DIGITAL_DANGER_UNLOCK_MS, DIGITAL_DANGER_VISIBLE_RADIUS, MAGNET_PICKUP_RADIUS_CAP, MAX_DIGITAL_POKEBALLS_PER_RUN, MAX_SURVIVOR_SUPPORTS, PICKUP_RADIUS, PLAYER_RADIUS, SPAWN_MARGIN, SURVIVOR_FIELD_EVENT_BEACON_MS, SURVIVOR_FIELD_EVENT_EVERY_MS, SURVIVOR_FIELD_EVENT_FIRST_MS, SURVIVOR_FIELD_EVENT_HUNT_MS, SURVIVOR_FIELD_EVENT_REACH_RADIUS, SURVIVOR_LOVE_CANDY_MS, SURVIVOR_OMEGA_SHARD_MS, SURVIVOR_SHADOW_BALL_EVERY_MS, SURVIVOR_SHADOW_BALL_FIRST_MS, SURVIVOR_SHADOW_BALL_MAX_PER_RUN, SURVIVOR_SHADOW_CUTSCENE_MS, SURVIVOR_SPAWN_DISTANCE, SURVIVOR_SUPPORT_EVOLUTION_OFFER_CHANCE, SURVIVOR_SUPPORT_RARE_OFFER_CHANCE, SURVIVOR_TRUST_STONE_MS, SURVIVOR_UPGRADE_RARITIES, SURVIVOR_FAST_TRAINER_COIN_SCALE, survivorMilestoneMs } from './survivor-types';
-import type { SurvivorSummary, SurvivorArtifactKind, SurvivorChest, SurvivorGravityWell, SurvivorHeldStrike, SurvivorTimeBubble, SurvivorFinalHit, SurvivorHitSource, SurvivorEnemy, SurvivorEnemyArchetype, SurvivorEnemyGrade, SurvivorEvent, SurvivorEvolutionOption, SurvivorInput, SurvivorPlayer, SurvivorProjectile, SurvivorState, SurvivorSupport, SurvivorSupportCandidate, SurvivorSupportRole, SurvivorTypeAffinity, SurvivorUpgrade, SurvivorUpgradeOption, SurvivorUpgradeRarity } from './survivor-types';
+import type { SurvivorSummary, SurvivorChest, SurvivorGravityWell, SurvivorHeldStrike, SurvivorTimeBubble, SurvivorFinalHit, SurvivorHitSource, SurvivorEnemy, SurvivorEnemyArchetype, SurvivorEnemyGrade, SurvivorEvent, SurvivorEvolutionOption, SurvivorInput, SurvivorPlayer, SurvivorProjectile, SurvivorState, SurvivorSupport, SurvivorSupportCandidate, SurvivorSupportRole, SurvivorTypeAffinity, SurvivorUpgrade, SurvivorUpgradeOption, SurvivorUpgradeRarity } from './survivor-types';
 import { cadenceCanImprove, CHARGE_FOCUS_RATE_ID, CHARGE_RUSH_LENGTH_ID, SURVIVOR_ATTACK_DAMAGE_CAP, SURVIVOR_UPGRADES, SURVIVOR_RARITY_ORDER, round1 } from './survivor-upgrades';
 import { cancelTeleportHold, createSurvivorCharge, distanceToSegment, FOCUS_CHARGE_PER_SEC, FOCUS_HIT_CHARGE, FOCUS_SHOT_PIERCE, FOCUS_SHOT_SIZE_MULTIPLIER, FOCUS_SHOT_SPEED_MULTIPLIER, FOCUS_SLOW_MULTIPLIER, focusBeam, TELEPORT_MAX_RANGE, RAPID_BURST_MIN_CYCLE_MS, RAPID_BURST_SHOT_INTERVAL_MS, RAPID_BURST_SHOTS, RAPID_BURST_SPREAD, RUSH_REFERENCE_SPEED, stepChargeMeter, teleportReach } from './survivor-charge';
 import type { ChargeStyle } from './survivor-charge';
@@ -153,6 +155,7 @@ export const BALANCE = {
   artifactDropChance: 0.15,
   artifactEliteDropChance: 0.3,
   artifactBossDropChance: 0.5,
+  terastalArtifactShare: 0.005,
   /** Depois dos 10 minutos, uma morte pode deixar uma Pokébola especial. A chance varia por grau. */
   digitalPokeballDropChance: {
     comum: 0.005,
@@ -509,6 +512,7 @@ function resolveEnemyArchetype(
  */
 function spawnEnemy(
   state: SurvivorState,
+  events: SurvivorEvent[],
   boss: boolean,
   grade: SurvivorEnemyGrade = 'comum',
   trainerId?: number,
@@ -521,7 +525,7 @@ function spawnEnemy(
     const shadow = options?.shadowBoss === true;
     const hp = Math.round((BALANCE.bossHpBase + state.wave * BALANCE.bossHpPerWave) * state.infiniteScale * (shadow ? BALANCE.shadowBossHpMultiplier : 1));
     const id = state.nextId++;
-    addEnemy(state, {
+    addEnemy(state, events, {
       id,
       kind: state.kindCount,
       boss: true,
@@ -560,7 +564,7 @@ function spawnEnemy(
   const kind = Math.floor(state.rng() * state.kindCount);
   const id = state.nextId++;
   const archetype = resolveEnemyArchetype(state, kind, false, grade, id);
-  addEnemy(state, {
+  addEnemy(state, events, {
     id,
     kind,
     boss: false,
@@ -577,6 +581,7 @@ function spawnEnemy(
     archetype,
     specialTimerMs: grade === 'chefao' ? 1800 : 2400,
     ...(archetype === 'suporte' ? { supportRole: supportRoleFor(id) } : {}),
+    ...(options?.dexId !== undefined ? { dexId: options.dexId } : {}),
   });
   return id;
 }
@@ -586,14 +591,15 @@ function spawnTrainer(state: SurvivorState, count: number, final: boolean, event
   const trainerId = state.nextId++;
   const grade: SurvivorEnemyGrade = final ? 'chefao' : 'elite';
   for (let i = 0; i < count; i++) {
-    const id = spawnEnemy(state, false, grade, trainerId);
+    const id = spawnEnemy(state, events, false, grade, trainerId);
     if (trigger === 'digital-danger') {
       const enemy = state.enemies.find((entry) => entry.id === id);
       if (enemy) {
         enemy.digitalThreat = true;
-        enemy.maxHp = Math.round(enemy.maxHp * 2.5);
+        const alphaScale = enemy.alpha ? 2 : 1;
+        enemy.maxHp = Math.round(enemy.maxHp / alphaScale * 2.5) * alphaScale;
         enemy.hp = enemy.maxHp;
-        enemy.damage = Math.round(enemy.damage * 1.75);
+        enemy.damage = Math.round(enemy.damage / alphaScale * 1.75) * alphaScale;
         enemy.speed *= 1.3;
       }
     }
@@ -602,9 +608,11 @@ function spawnTrainer(state: SurvivorState, count: number, final: boolean, event
 }
 
 /** Resolve a aparência uma vez, depois de sortear os números de combate. */
-function addEnemy(state: SurvivorState, enemy: SurvivorEnemy): void {
+function addEnemy(state: SurvivorState, events: SurvivorEvent[], enemy: SurvivorEnemy): void {
   if (enemy.dexId === undefined && state.enemyDexId) enemy.dexId = state.enemyDexId(enemy, state.elapsedMs, state.runSeed);
+  rollSurvivorAlpha(enemy, state.elapsedMs, survivorAlphaRng(state.runSeed, enemy.id));
   state.enemies.push(enemy);
+  if (enemy.alpha) events.push({ type: 'alphaSpawn', enemyId: enemy.id, ...(enemy.dexId !== undefined ? { dexId: enemy.dexId } : {}) });
 }
 
 /** Sorteia raridade primeiro; o tamanho do catálogo não altera a chance de cada faixa. */
@@ -730,7 +738,7 @@ export function rerollSurvivorUpgradeOffer(state: SurvivorState): boolean {
     return SURVIVOR_RARITY_ORDER.indexOf(rarity) < SURVIVOR_RARITY_ORDER.indexOf(lowest) ? rarity : lowest;
   }, 'ancestral');
   const banned = state.bannedUpgradeIds ?? [];
-  const naturalRerolled = rollUpgrades(state.rng, rerollCount, state.player.move, state.player, {
+  const naturalRerolled = rollUpgrades(state.rng, rerollCount, state.player.terastal?.baseMove ?? state.player.move, state.player, {
     excludeIds: [...current.map((option) => option.id), ...banned],
   });
   let rerolled = naturalRerolled;
@@ -740,7 +748,7 @@ export function rerollSurvivorUpgradeOffer(state: SurvivorState): boolean {
       return SURVIVOR_RARITY_ORDER.indexOf(rarity) > SURVIVOR_RARITY_ORDER.indexOf(floor);
     });
     if (!hasHigherRarity) {
-      const guaranteed = rollUpgrades(state.rng, rerollCount, state.player.move, state.player, {
+      const guaranteed = rollUpgrades(state.rng, rerollCount, state.player.terastal?.baseMove ?? state.player.move, state.player, {
         excludeIds: [...current.map((option) => option.id), ...banned],
         minimumRarity: rerollMinimumRarity(state.player, floor),
       });
@@ -769,7 +777,7 @@ export function banSurvivorUpgrade(state: SurvivorState, id: string): boolean {
   if (survivorBanBlockReason(state, id) !== null) return false;
   const current = state.pendingUpgrade!;
   const banned = state.bannedUpgradeIds ?? [];
-  const [replacement] = rollUpgrades(state.rng, 1, state.player.move, state.player, { excludeIds: [...current.map((option) => option.id), ...banned, id] });
+  const [replacement] = rollUpgrades(state.rng, 1, state.player.terastal?.baseMove ?? state.player.move, state.player, { excludeIds: [...current.map((option) => option.id), ...banned, id] });
   if (!replacement) return false;
   state.pendingUpgrade = current.map((option) => (option.id === id ? replacement : option));
   state.bannedUpgradeIds = [...banned, id];
@@ -824,7 +832,7 @@ function offerOwedUpgrade(state: SurvivorState, events?: SurvivorEvent[]): void 
   // Olhar treinado (Dojô): só a primeira oferta mostra a carta a mais, e nunca passa do teto de 5.
   const choices = Math.min(MAX_OFFER_CHOICES, Math.max(state.player.upgradeChoices, state.player.upgradeChoices + (state.firstOfferBonus ?? 0)));
   state.firstOfferBonus = 0;
-  const options = rollUpgrades(state.rng, choices, state.player.move, state.player, { excludeIds: state.bannedUpgradeIds ?? [] });
+  const options = rollUpgrades(state.rng, choices, state.player.terastal?.baseMove ?? state.player.move, state.player, { excludeIds: state.bannedUpgradeIds ?? [] });
   const evolve = evolutionOffer(state);
   if (evolve) options.splice(options.length - 1, 1, evolve);
   else if (!state.supportCandidate && !state.secondAttackOffered && state.player.level >= 6 && state.supportCandidates.length > 0) {
@@ -1004,7 +1012,9 @@ function applyStun(e: SurvivorEnemy, ms: number): void {
 
 /** Pedra/Terra não paralisa: deixa um terreno que pulsa três vezes com metade do dano do golpe. */
 function leaveElementalTerrain(state: SurvivorState, e: SurvivorEnemy, damage: number, move: SurvivorMove): void {
-  state.elementalTerrain.push({ x: e.x, y: e.y, radius: Math.max(28, e.radius * 2), damage, ticksLeft: 3, nextTickMs: 0, move });
+  const radius = move.terastal && move.type === 'ground' ? Math.max(42, e.radius * 3) : Math.max(28, e.radius * 2);
+  const terrainDamage = move.terastal && move.type === 'rock' ? damage * 1.35 : damage;
+  state.elementalTerrain.push({ x: e.x, y: e.y, radius, damage: terrainDamage, ticksLeft: 3, nextTickMs: 0, move });
   // Evita centenas de marcas quando uma Trilha ou Rajada encontra uma multidão.
   if (state.elementalTerrain.length > 48) state.elementalTerrain.splice(0, state.elementalTerrain.length - 48);
 }
@@ -1083,10 +1093,10 @@ function refillHeldLeech(p: SurvivorPlayer, dtMs: number): void {
 }
 
 /** Multiplicador de dano dos itens: Orbe da Vida e Faixa, Cinto Expert contra os fortes e a sequência do Metrônomo. */
-function heldDamageFactor(state: SurvivorState, e: SurvivorEnemy): number {
+function heldDamageFactor(state: SurvivorState, e: SurvivorEnemy, type: PokemonType): number {
   const p = state.player;
   const mods = p.heldMods!;
-  let factor = mods.damageMul * (mods.typeBoost[p.move.type] ?? 1);
+  let factor = mods.damageMul * (mods.typeBoost[type] ?? 1);
   if (e.boss || e.grade !== 'comum' || e.trainerId !== undefined) factor *= mods.eliteMul;
   if (mods.metronomeStep > 0) {
     // Sequência por inimigo: vale igual para quem acerta um alvo só (projétil) e para quem acerta vários (aura, trilha).
@@ -1437,9 +1447,11 @@ function spawnHeldShot(state: SurvivorState, x: number, y: number, angle: number
   if (state.projectiles.length >= MAX_HELD_PROJECTILES) return;
   const p = state.player;
   const speed = p.projectileSpeed * speedFactor;
+  const teraPierce = p.move.terastal && p.move.effect === 'atravessar' ? 1 : 0;
   state.projectiles.push({
     id: state.nextId++, x, y, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed,
-    damage: round1(damage), pierce: p.pierce, lifeMs: Math.max(900, Math.ceil((p.attackRange + 60) / Math.max(1, speed) * 1000)), hit: [],
+    damage: round1(damage), pierce: p.pierce + teraPierce, lifeMs: Math.max(900, Math.ceil((p.attackRange + 60) / Math.max(1, speed) * 1000)), hit: [],
+    canChain: p.move.terastal && p.move.effect === 'saltar',
     size: p.projectileSize, collisionRadius: 5 * (p.projectileHitRadiusFactor ?? 1), move: p.move, distanceFromPlayer: 0, ...(trigger ? {} : { noHeld: true }),
     look: survivorProjectileLook(p),
     ...(trigger ? heldHoming(p) : {}),
@@ -2175,16 +2187,14 @@ function applyTypeAffinity(state: SurvivorState, e: SurvivorEnemy, damage: numbe
 }
 
 /** Aplica a propriedade tabelada do segundo tipo hipotético, depois que ele desperta aos nove minutos. */
-function applyHypotheticalTypeEffect(state: SurvivorState, e: SurvivorEnemy, damage: number, from: { x: number; y: number }): void {
-  if (!state.hypotheticalSecondaryActive) return;
-  const rule = hypotheticalTypeRuleFor(state.player.move.type, state.hypotheticalSecondaryType);
+function applyHypotheticalTypeEffect(state: SurvivorState, e: SurvivorEnemy, damage: number, from: { x: number; y: number }, move: SurvivorMove, rule: HypotheticalTypeRule): void {
   switch (rule.effect) {
     case 'queimar':
       e.burnMs = Math.max(e.burnMs ?? 0, 1600);
       e.burnDps = Math.max(e.burnDps ?? 0, round1(damage * 0.16));
       break;
     case 'lentidao': e.slowMs = Math.max(e.slowMs ?? 0, 700); break;
-    case 'atordoar': leaveElementalTerrain(state, e, damage, state.player.move); break;
+    case 'atordoar': leaveElementalTerrain(state, e, damage, move); break;
     case 'empurrar': applyKnockback(e, from, e.boss ? 2 : 6); break;
     case 'roubar': healSurvivor(state.player, 1); break;
     case 'semente': e.seededMs = Math.max(e.seededMs ?? 0, 1500); break;
@@ -2199,19 +2209,85 @@ function applyHypotheticalTypeEffect(state: SurvivorState, e: SurvivorEnemy, dam
   }
 }
 
+function isPlayerAttack(player: SurvivorPlayer, move: SurvivorMove): boolean {
+  return move === player.move || move === player.terastal?.baseMove || move.terastal === true;
+}
+
+function terastalDamageMultiplier(move: SurvivorMove, enemy: SurvivorEnemy): number {
+  if (!move.terastal) return 1;
+  if (move.type === 'normal') return 1.2;
+  if (move.type === 'dragon' && (enemy.boss || enemy.grade === 'chefao' || enemy.shadowBoss)) return 1.2;
+  return 1;
+}
+
+function applyTerastalSpecialImpact(state: SurvivorState, e: SurvivorEnemy, damage: number, from: { x: number; y: number }): void {
+  const move = state.player.move;
+  if (!move.terastal || damage <= 0) return;
+  Object.assign(e, survivorElementalStatus(move.type));
+  applyMoveImpact(state, e, move, true, damage, from, false);
+  if (move.effect === 'roubar') drain(state, 1, move);
+}
+
+/** Choque direto quando a forma Tera não lança um projétil capaz de saltar. */
+function terastalArc(state: SurvivorState, target: SurvivorEnemy, damage: number, color: string): void {
+  const [nearby] = heldNeighbors(state, target, 140, 1);
+  if (!nearby) return;
+  nearby.hp -= damage * 0.3;
+  nearby.hitFlashMs = 90;
+  state.fx.push({ kind: 'chain', x: target.x, y: target.y, fromX: target.x, fromY: target.y, toX: nearby.x, toY: nearby.y, r: 12, color, ageMs: 0, lifeMs: 250 });
+}
+
+function applyMoveImpact(state: SurvivorState, e: SurvivorEnemy, move: SurvivorMove, playerAttack: boolean, finalDamage: number, from: { x: number; y: number }, projectileHit: boolean): void {
+  const p = state.player;
+  switch (move.effect) {
+    case 'queimar':
+      e.burnMs = move.terastal && move.type === 'poison' ? 3_200 : EFFECT_MS.burn;
+      e.burnDps = Math.max(e.burnDps ?? 0, round1(finalDamage * (playerAttack && (move.type === 'fire' && hasUpgrade(p, 'fire-brasa') || move.type === 'poison' && hasUpgrade(p, 'poison-dose')) ? 0.525 : 0.35)));
+      break;
+    case 'lentidao':
+      e.slowMs = playerAttack && move.type === 'bug' && (move.terastal || hasUpgrade(p, 'bug-web')) ? EFFECT_MS.slow + 700 : EFFECT_MS.slow;
+      if (move.type === 'ice' && (e.frostImmuneMs ?? 0) <= 0) {
+        const frostThreshold = playerAttack && hasUpgrade(p, 'ice-deep-cold') ? 2 : 3;
+        e.frostStacks = Math.min(frostThreshold, (e.frostStacks ?? 0) + 1);
+        if (e.frostStacks >= frostThreshold) {
+          e.frostStacks = 0;
+          e.frostImmuneMs = e.boss ? 2200 : 1500;
+          applyStun(e, e.boss ? 150 : 550);
+        }
+      }
+      break;
+    case 'atordoar':
+      leaveElementalTerrain(state, e, finalDamage, move);
+      break;
+    case 'empurrar': {
+      const strongerPush = playerAttack && ((move.type === 'water' && hasUpgrade(p, 'water-tide')) || (move.type === 'fighting' && hasUpgrade(p, 'fighting-impact')));
+      const flyingPush = move.terastal && move.type === 'flying';
+      applyKnockback(e, from, (e.boss ? 3 : 11) * (flyingPush ? 1.8 : strongerPush ? 1.5 : 1));
+      break;
+    }
+    default:
+      break;
+  }
+  if (!move.terastal) return;
+  if (move.type === 'grass' || move.type === 'psychic') e.slowMs = Math.max(e.slowMs ?? 0, 900);
+  if (move.type === 'fighting') applyStun(e, e.boss ? 100 : 250);
+  if (move.type === 'electric' && !projectileHit) terastalArc(state, e, finalDamage, move.color);
+}
+
 /** Dano de um golpe num inimigo, com o efeito do tipo. `from` é de onde o golpe veio (para empurrar). */
-function hitEnemy(state: SurvivorState, e: SurvivorEnemy, damage: number, from: { x: number; y: number }, attackMove = state.player.move, allowFollowUp = true, distanceFromPlayer = Math.hypot(e.x - state.player.x, e.y - state.player.y)): void {
+function hitEnemy(state: SurvivorState, e: SurvivorEnemy, damage: number, from: { x: number; y: number }, attackMove = state.player.move, allowFollowUp = true, distanceFromPlayer = Math.hypot(e.x - state.player.x, e.y - state.player.y), projectileHit = false): void {
   const move = attackMove;
   const p = state.player;
+  const playerAttack = isPlayerAttack(p, move);
   const wasSeeded = (e.seededMs ?? 0) > 0;
   const synergy = survivorSynergyFor(move.type, e);
-  const hypotheticalRule = move === p.move && state.hypotheticalSecondaryActive ? hypotheticalTypeRuleFor(move.type, state.hypotheticalSecondaryType) : null;
-  let upgradeMultiplier = 1;
+  const hypotheticalRule = playerAttack && state.hypotheticalSecondaryActive ? hypotheticalTypeRuleFor(move.type, state.hypotheticalSecondaryType) : null;
+  let upgradeMultiplier = terastalDamageMultiplier(move, e);
   // Caçador de ameaças entra depois de todos os outros modificadores de dano.
   // Isso mantém a carta explicitamente multiplicativa, inclusive sobre sinergias e terreno.
   let finalThreatHunterMultiplier = 1;
   if (hypotheticalRule) upgradeMultiplier *= 1 + hypotheticalRule.damageBonus;
-  if (move === p.move) {
+  if (playerAttack) {
     const openingStrike = p.upgradeLevels['opening-strike'] ?? 0;
     const lastStand = p.upgradeLevels['last-stand'] ?? 0;
     const closeQuarters = p.upgradeLevels['close-quarters'] ?? 0;
@@ -2232,14 +2308,14 @@ function hitEnemy(state: SurvivorState, e: SurvivorEnemy, damage: number, from: 
   }
   const baseChance = Math.max(0, Math.min(1, p.critChance ?? 0.05));
   const chance = Math.min(Math.max(0.4, baseChance), baseChance + (e.hp <= e.maxHp * 0.3 ? (p.upgradeLevels['crit-finish'] ?? 0) * 0.05 : 0));
-  const critical = move === p.move && chance > 0 && state.critRng() < chance;
+  const critical = playerAttack && chance > 0 && state.critRng() < chance;
   if (critical) upgradeMultiplier *= 2 + (p.upgradeLevels['crit-power'] ?? 0) * 0.25;
-  const heldActive = move === p.move && heldGuard === 0 && p.heldMods !== undefined;
-  if (heldActive) upgradeMultiplier *= heldDamageFactor(state, e);
+  const heldActive = playerAttack && heldGuard === 0 && p.heldMods !== undefined;
+  if (heldActive) upgradeMultiplier *= heldDamageFactor(state, e, move.type);
   const environmentalDamage = damage * survivorDirectDamageMultiplier(distanceFromPlayer) * (p.move.category === 'rapido' || p.move.category === 'teleporte' ? 1 : survivorRapidAttackDamageMultiplier(p)) * upgradeMultiplier
     * (synergy?.damageMultiplier ?? 1)
     * survivorBiomeDamageMultiplier(state.elapsedMs, from.x, from.y, move.type);
-  const reducedDamage = e.protectedMs && e.protectedMs > 0 ? environmentalDamage * 0.75 : environmentalDamage;
+  const reducedDamage = e.protectedMs && e.protectedMs > 0 && !(move.terastal && move.type === 'steel') ? environmentalDamage * 0.75 : environmentalDamage;
   const finalDamage = reducedDamage * finalThreatHunterMultiplier;
   if (critical && state.criticalHits.length < 64) state.criticalHits.push({ enemyId: e.id, x: e.x, y: e.y, damage: finalDamage, boss: e.boss || e.grade === 'chefao' || e.shadowBoss === true });
   const hpBefore = Math.max(0, e.hp);
@@ -2250,48 +2326,21 @@ function hitEnemy(state: SurvivorState, e: SurvivorEnemy, damage: number, from: 
   if (synergy?.consume) e[synergy.consume] = 0;
   if (synergy?.refreshSlowMs) e.slowMs = Math.max(e.slowMs ?? 0, synergy.refreshSlowMs);
   Object.assign(e, survivorElementalStatus(move.type));
-  if (move === p.move) {
+  if (playerAttack) {
     const slowField = p.upgradeLevels['slow-field'] ?? 0;
     if (slowField > 0) e.slowMs = Math.max(e.slowMs ?? 0, slowField * 250);
   }
-  if (move === p.move && move.type === 'grass' && hasUpgrade(p, 'grass-roots') && wasSeeded) {
+  if (playerAttack && move.type === 'grass' && hasUpgrade(p, 'grass-roots') && wasSeeded) {
     applyStun(e, e.boss ? 100 : 250);
   }
-  switch (move.effect) {
-    case 'queimar':
-      e.burnMs = EFFECT_MS.burn;
-      e.burnDps = Math.max(e.burnDps ?? 0, round1(finalDamage * (move === p.move && (move.type === 'fire' && hasUpgrade(p, 'fire-brasa') || move.type === 'poison' && hasUpgrade(p, 'poison-dose')) ? 0.525 : 0.35)));
-      break;
-    case 'lentidao':
-      e.slowMs = move === p.move && move.type === 'bug' && hasUpgrade(p, 'bug-web') ? EFFECT_MS.slow + 700 : EFFECT_MS.slow;
-      if (move.type === 'ice' && (e.frostImmuneMs ?? 0) <= 0) {
-        const frostThreshold = move === p.move && hasUpgrade(p, 'ice-deep-cold') ? 2 : 3;
-        e.frostStacks = Math.min(frostThreshold, (e.frostStacks ?? 0) + 1);
-        if (e.frostStacks >= frostThreshold) {
-          e.frostStacks = 0;
-          e.frostImmuneMs = e.boss ? 2200 : 1500;
-          applyStun(e, e.boss ? 150 : 550);
-        }
-      }
-      break;
-    case 'atordoar':
-      leaveElementalTerrain(state, e, finalDamage, move);
-      break;
-    case 'empurrar': {
-      const strongerPush = move === p.move && ((move.type === 'water' && hasUpgrade(p, 'water-tide')) || (move.type === 'fighting' && hasUpgrade(p, 'fighting-impact')));
-      applyKnockback(e, from, (e.boss ? 3 : 11) * (strongerPush ? 1.5 : 1));
-      break;
-    }
-    default:
-      break;
-  }
-  if (move === p.move && state.typeAffinity?.type !== move.type) {
+  applyMoveImpact(state, e, move, playerAttack, finalDamage, from, projectileHit);
+  if (playerAttack && state.typeAffinity?.type !== move.type) {
     applyTypeAffinity(state, e, environmentalDamage, from);
   }
-  if (hypotheticalRule) applyHypotheticalTypeEffect(state, e, environmentalDamage, from);
+  if (hypotheticalRule) applyHypotheticalTypeEffect(state, e, environmentalDamage, from, move, hypotheticalRule);
   // Inseto e Fantasma atacam em dupla: um único eco visual e de dano por impacto, sem efeitos, cura ou recursão.
   if (allowFollowUp && (move.type === 'bug' || move.type === 'ghost') && e.hp > 0) {
-    const enhancedEcho = move === p.move && ((move.type === 'bug' && hasUpgrade(p, 'bug-formation')) || (move.type === 'ghost' && hasUpgrade(p, 'ghost-haunt')));
+    const enhancedEcho = playerAttack && ((move.type === 'bug' && hasUpgrade(p, 'bug-formation')) || (move.type === 'ghost' && (move.terastal || hasUpgrade(p, 'ghost-haunt'))));
     const echoDamage = finalDamage * (enhancedEcho ? 0.3 : 0.2);
     e.hp -= echoDamage;
     state.fx.push({ kind: 'echo', x: e.x, y: e.y, r: Math.max(10, e.radius * 1.8), color: move.color, ageMs: 0, lifeMs: 220 });
@@ -2321,10 +2370,13 @@ function hitDashPath(state: SurvivorState, path: { from: { x: number; y: number 
   for (const enemy of state.enemies) {
     if (enemy.hp <= 0 || special.dashHitEnemyIds.includes(enemy.id)) continue;
     if (distanceToPath(enemy.x, enemy.y, path.from, path.to) > PLAYER_RADIUS + enemy.radius) continue;
-    const damage = state.player.attackDamage * multiplier * ((enemy.protectedMs ?? 0) > 0 ? 0.75 : 1);
+    const move = state.player.move;
+    const protectedTarget = (enemy.protectedMs ?? 0) > 0 && !(move.terastal && move.type === 'steel');
+    const damage = state.player.attackDamage * multiplier * terastalDamageMultiplier(move, enemy) * (protectedTarget ? 0.75 : 1);
     enemy.hp -= damage;
     enemy.hitFlashMs = 90;
     special.dashHitEnemyIds.push(enemy.id);
+    applyTerastalSpecialImpact(state, enemy, damage, path.from);
   }
 }
 
@@ -2332,8 +2384,9 @@ function hitDashPath(state: SurvivorState, path: { from: { x: number; y: number 
 function drain(state: SurvivorState, hits: number, move: SurvivorMove): void {
   if (move.effect !== 'roubar' || hits <= 0) return;
   const p = state.player;
-  const strongerDrain = move === p.move && ((move.type === 'dark' && hasUpgrade(p, 'dark-thirst')) || (move.type === 'fairy' && hasUpgrade(p, 'fairy-pulse')));
-  healSurvivor(p, Math.min(strongerDrain ? 3 : 2, hits));
+  const strongerDrain = isPlayerAttack(p, move) && ((move.type === 'dark' && hasUpgrade(p, 'dark-thirst')) || (move.type === 'fairy' && hasUpgrade(p, 'fairy-pulse')));
+  const fairyTera = move.terastal && move.type === 'fairy';
+  healSurvivor(p, Math.min(strongerDrain || fairyTera ? 3 : 2, hits * (fairyTera ? 2 : 1)));
 }
 
 const TRAIL_DISTANCE_TO_CHARGE = 150 * 15;
@@ -2498,6 +2551,7 @@ function fireFocusShot(state: SurvivorState, target: SurvivorEnemy): void {
     pierce: FOCUS_SHOT_PIERCE + p.pierce + (move.effect === 'atravessar' ? 1 : 0),
     lifeMs: Math.round(1000 * p.attackRange * 1.4 / Math.max(1, speed)),
     hit: [],
+    canChain: move.terastal && move.effect === 'saltar',
     size: round1(p.projectileSize * FOCUS_SHOT_SIZE_MULTIPLIER),
     move,
     distanceFromPlayer: Math.hypot(target.x - p.x, target.y - p.y),
@@ -3076,9 +3130,34 @@ function playerAttackDamage(state: SurvivorState): number {
   return state.player.move.category === 'aura' ? base * BALANCE.closeRangeAttackDamageMultiplier : base;
 }
 
-function artifactKind(rng: Rng): SurvivorArtifactKind {
-  const roll = rng();
-  return roll < 0.24 ? 'speed' : roll < 0.48 ? 'heal' : roll < 0.72 ? 'power' : roll < 0.86 ? 'magnet' : 'focus';
+function dropArtifact(state: SurvivorState, x: number, y: number): void {
+  const id = state.nextId++;
+  const roll = state.rng();
+  const teraChance = state.elapsedMs >= SURVIVOR_TERASTAL_UNLOCK_MS ? BALANCE.terastalArtifactShare : 0;
+  // O mesmo sorteio escolhe o tipo e mantém o consumo de RNG dos artefatos comuns.
+  if (roll < teraChance) {
+    const index = Math.floor((roll / teraChance) * POKEMON_TYPES.length);
+    state.artifacts.push({ id, x, y, kind: 'terastal', teraType: POKEMON_TYPES[index]! });
+    return;
+  }
+  const commonRoll = (roll - teraChance) / (1 - teraChance);
+  const kind = commonRoll < 0.24 ? 'speed' : commonRoll < 0.48 ? 'heal' : commonRoll < 0.72 ? 'power' : commonRoll < 0.86 ? 'magnet' : 'focus';
+  state.artifacts.push({ id, x, y, kind });
+}
+
+function beginTerastalization(player: SurvivorPlayer, type: PokemonType): void {
+  const baseMove = player.terastal?.baseMove ?? player.move;
+  const { color, effect, icon } = moveWith(type, baseMove.category, null);
+  player.terastal = { type, remainingMs: SURVIVOR_TERASTAL_DURATION_MS, baseMove };
+  player.move = { ...baseMove, type, color, effect, icon, terastal: true };
+}
+
+function tickTerastalization(player: SurvivorPlayer, dtMs: number): void {
+  if (!player.terastal) return;
+  player.terastal.remainingMs -= dtMs;
+  if (player.terastal.remainingMs > 0) return;
+  player.move = player.terastal.baseMove;
+  delete player.terastal;
 }
 
 function nearbyVisibleEnemyCount(state: SurvivorState): number {
@@ -3141,7 +3220,7 @@ function advanceShadowEncounter(state: SurvivorState, dtMs: number, events: Surv
   encounter.arrivalMs = Math.min(SURVIVOR_SHADOW_CUTSCENE_MS, encounter.arrivalMs + dtMs);
   if (encounter.arrivalMs < SURVIVOR_SHADOW_CUTSCENE_MS) return true;
   encounter.phase = 'battle';
-  spawnEnemy(state, true, 'comum', undefined, { shadowBoss: true, dexId: encounter.dexId });
+  spawnEnemy(state, events, true, 'comum', undefined, { shadowBoss: true, dexId: encounter.dexId });
   events.push({ type: 'shadowBossArrival', dexId: encounter.dexId, name: encounter.name });
   return false;
 }
@@ -3186,18 +3265,19 @@ function spawnThiefIfDue(state: SurvivorState, dtMs: number, events: SurvivorEve
   state.thiefClockMs = (state.thiefClockMs ?? 0) + Math.max(0, dtMs);
   if (state.debugLaboratory || state.heldDisabled || state.thief || state.thiefClockMs < (state.nextThiefAtMs ?? Infinity)) return;
   state.nextThiefAtMs = state.thiefClockMs + SURVIVOR_THIEF_EVERY_MS;
-  const id = spawnEnemy(state, false, 'elite');
+  const id = spawnEnemy(state, events, false, 'elite', undefined, { dexId: SURVIVOR_THIEF_DEX });
   const thief = id === null ? undefined : state.enemies.find((e) => e.id === id);
   if (!thief) return;
   thief.thief = true;
   thief.dexId = SURVIVOR_THIEF_DEX;
   thief.speed = SURVIVOR_THIEF_SPEED;
   thief.damage = 0;
-  thief.hp = thief.maxHp = Math.round(thief.maxHp * 0.6);
+  const alphaScale = thief.alpha ? 2 : 1;
+  thief.hp = thief.maxHp = Math.round(thief.maxHp / alphaScale * 0.6) * alphaScale;
   thief.archetype = 'perseguidor';
   // Não conta como elite: não é de treinador, não solta chave e não entra nas contas de elites.
   thief.grade = 'comum';
-  thief.radius = 15;
+  thief.radius = 15 * alphaScale;
   delete thief.supportRole;
   state.thief = { enemyId: thief.id, leftMs: SURVIVOR_THIEF_LIFE_MS };
   events.push({ type: 'thiefSpawn', dexId: SURVIVOR_THIEF_DEX, leftMs: SURVIVOR_THIEF_LIFE_MS });
@@ -3257,7 +3337,7 @@ function updateFieldEvent(state: SurvivorState, dtMs: number, events: SurvivorEv
       const enemyIds: number[] = [];
       // Dois elites tornam a recompensa merecida sem competir com o grupo completo de treinador.
       for (let index = 0; index < 2; index++) {
-        const id = spawnEnemy(state, false, 'elite');
+        const id = spawnEnemy(state, events, false, 'elite');
         if (id !== null) enemyIds.push(id);
       }
       event.phase = 'hunt';
@@ -3276,7 +3356,7 @@ function updateFieldEvent(state: SurvivorState, dtMs: number, events: SurvivorEv
   }
   if (event.enemyIds.every((id) => !state.enemies.some((enemy) => enemy.id === id))) {
     // A Caçada paga dois artefatos do mesmo sistema de itens da corrida; não há recompensa inventada fora dele.
-    for (const offset of [-22, 22]) state.artifacts.push({ id: state.nextId++, x: event.x + offset, y: event.y, kind: artifactKind(state.rng) });
+    for (const offset of [-22, 22]) dropArtifact(state, event.x + offset, event.y);
     state.fx.push({ kind: 'artifact', artifact: 'power', x: event.x, y: event.y, r: 46, color: '#ffcf5c', ageMs: 0, lifeMs: 800 });
     state.fieldEvent = null;
     events.push({ type: 'fieldEventComplete', kind: 'hunt' });
@@ -3337,10 +3417,12 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
   p.artifactShieldMs = Math.max(0, p.artifactShieldMs - dtMs);
   p.artifactMagnetMs = Math.max(0, p.artifactMagnetMs - dtMs);
   p.artifactFocusMs = Math.max(0, p.artifactFocusMs - dtMs);
+  tickTerastalization(p, dtMs);
   const dashPath = stepSurvivorSpecial(state, input, dtMs, ARENA_W, ARENA_H, PLAYER_RADIUS, (id, damage, target) => {
     gainSupreme(state, (damage / Math.max(1, target.maxHp)) * SUPREME_GAIN.damageDealtPerBar);
     if (state.runStats) recordDamage(state.runStats, SURVIVOR_SPECIALS[id].name, p.move.color, damage);
-  });
+    applyTerastalSpecialImpact(state, target, damage, p);
+  }, (target) => terastalDamageMultiplier(p.move, target));
   if (dashPath) hitDashPath(state, dashPath);
   stepSurvivorSupreme(state, input, dtMs, events, {
     attackDamage: playerAttackDamage(state),
@@ -3401,11 +3483,11 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
   const interval = spawnIntervalMs(state);
   while (state.spawnAccumMs >= interval) {
     state.spawnAccumMs -= interval;
-    spawnEnemy(state, false);
+    spawnEnemy(state, events, false);
   }
   if (state.elapsedMs >= state.nextBossAtMs) {
     state.nextBossAtMs += BALANCE.bossEveryMs * (state.fast ? FAST_TIME_SCALE : 1);
-    spawnEnemy(state, true);
+    spawnEnemy(state, events, true);
     events.push({ type: 'bossSpawn' });
   }
 
@@ -3597,7 +3679,7 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
         if (focusShot) state.charge.level = Math.min(1, state.charge.level + FOCUS_HIT_CHARGE);
         if (proj.noHeld) heldGuard++;
         try {
-          hitEnemy(state, e, proj.damage, { x: proj.x - proj.vx * 0.05, y: proj.y - proj.vy * 0.05 }, proj.move, true, proj.distanceFromPlayer ?? Math.hypot(e.x - p.x, e.y - p.y));
+          hitEnemy(state, e, proj.damage, { x: proj.x - proj.vx * 0.05, y: proj.y - proj.vy * 0.05 }, proj.move, true, proj.distanceFromPlayer ?? Math.hypot(e.x - p.x, e.y - p.y), true);
         } finally {
           if (proj.noHeld) heldGuard--;
         }
@@ -3640,6 +3722,7 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
     state.enemies = state.enemies.filter((e) => e.hp > 0);
     state.kills += dead.length;
     for (const e of dead) {
+      if (e.alpha) events.push({ type: 'alphaDefeated', enemyId: e.id, ...(e.dexId !== undefined ? { dexId: e.dexId } : {}) });
       creditSupremeKill(state, e);
       if (e.boss || e.grade === 'chefao' || e.shadowBoss) events.push({ type: 'bossDown', x: e.x, y: e.y });
       if (e.thief && !state.debugLaboratory) {
@@ -3651,11 +3734,11 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
         events.push({ type: 'thiefCaught', coins });
       }
       state.fx.push({ kind: 'defeat', x: e.x, y: e.y, r: e.boss || e.grade === 'chefao' ? 26 : 14, color: e.archetype === 'suporte' ? '#ff78b7' : e.grade === 'elite' ? '#ffd84a' : '#e8f2ff', ageMs: 0, lifeMs: 360 });
-      const value = normalizeSurvivorXp(e.boss ? 48 : e.grade === 'chefao' ? 36 : e.grade === 'elite' ? 20 : 8);
-      const doubleXp = state.rng() < BALANCE.doubleXpOrbChance;
-      state.orbs.push({ id: state.nextId++, x: e.x, y: e.y, value, ...(doubleXp ? { doubleXp: true } : {}) });
+      const value = normalizeSurvivorXp(e.alpha ? p.xpToNext : e.boss ? 48 : e.grade === 'chefao' ? 36 : e.grade === 'elite' ? 20 : 8);
+      const doubleXp = !e.alpha && state.rng() < BALANCE.doubleXpOrbChance;
+      state.orbs.push({ id: state.nextId++, x: e.x, y: e.y, value, ...(e.alpha ? { alpha: true } : {}), ...(doubleXp ? { doubleXp: true } : {}) });
       const dropChance = (e.boss ? BALANCE.artifactBossDropChance : e.grade === 'chefao' || e.grade === 'elite' ? BALANCE.artifactEliteDropChance : BALANCE.artifactDropChance) * (1 + (p.artifactLuck ?? 0));
-      if (state.rng() < dropChance) state.artifacts.push({ id: state.nextId++, x: e.x, y: e.y, kind: artifactKind(state.rng) });
+      if (state.rng() < dropChance) dropArtifact(state, e.x, e.y);
       // Elites soltos (caçadas) às vezes derrubam uma chave; os de treinador entregam a chave quando o time cai.
       if (e.grade === 'elite' && e.trainerId === undefined && !state.debugLaboratory && state.rng() < LOOSE_ELITE_KEY_CHANCE) dropKey(state, e.x, e.y);
       if (e.archetype === 'explosivo') explodeOnDeath(state, e);
@@ -3716,11 +3799,11 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
   stepSurvivorSurge(state, dtMs, events, {
     attackDamage: playerAttackDamage(state),
     spawnCommon: () => {
-      const id = spawnEnemy(state, false);
+      const id = spawnEnemy(state, events, false);
       return id === null ? null : state.enemies.find((e) => e.id === id) ?? null;
     },
     dropKey: (x, y) => { dropKey(state, x, y); },
-    dropArtifact: (x, y) => { state.artifacts.push({ id: state.nextId++, x, y, kind: artifactKind(state.rng) }); },
+    dropArtifact: (x, y) => dropArtifact(state, x, y),
     record: (name, color, damage) => { if (state.runStats) recordDamage(state.runStats, name, color, damage); },
   });
   updateThief(state, dtMs, events);
@@ -3739,7 +3822,7 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
       // A marmita de Peixe não multiplica o ritmo acelerado: vale o maior dos dois.
       const multiplier = Math.max(p.xpMultiplier ?? 1, p.lunch?.active ? 1 + p.lunch.effect.xpBonus : 1);
       const orbValue = orb.doubleXp ? orb.value * 2 : orb.value;
-      const xpWithCarry = orbValue * multiplier * BALANCE.xpOrbMultiplier + (p.xpCarry ?? 0);
+      const xpWithCarry = (orb.alpha ? survivorAlphaXpValue(p.level, p.xp, xpForLevel) : orbValue * multiplier * BALANCE.xpOrbMultiplier) + (p.xpCarry ?? 0);
       const boostedValue = normalizeSurvivorXp(xpWithCarry);
       p.xpCarry = Math.max(0, xpWithCarry - boostedValue);
       p.xp = normalizeSurvivorXp(p.xp + boostedValue);
@@ -3752,6 +3835,12 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
   state.artifacts = state.artifacts.filter((artifact) => {
     const pickupRadius = Math.min(MAGNET_PICKUP_RADIUS_CAP, effectivePickupRadius(p) * (p.artifactMagnetMs > 0 ? 1.7 : 1));
     if (Math.hypot(artifact.x - p.x, artifact.y - p.y) > pickupRadius) return true;
+    if (artifact.kind === 'terastal') {
+      beginTerastalization(p, artifact.teraType);
+      state.fx.push({ kind: 'artifact', artifact: 'terastal', x: p.x, y: p.y, r: 42, color: p.move.color, moveType: artifact.teraType, ageMs: 0, lifeMs: 1000 });
+      events.push({ type: 'artifactCollected', kind: 'terastal', teraType: artifact.teraType });
+      return false;
+    }
     if (artifact.kind === 'shadow-ball') {
       state.shadowEncounter.phase = 'arrival';
       state.shadowEncounter.arrivalMs = 0;
