@@ -80,6 +80,14 @@ describe('acabamento metálico dos Digital Pokémon', () => {
 });
 
 describe('efeitos da Vila', () => {
+  it('liga a retícula por padrão e suspende o efeito no Modo Rotom', () => {
+    const saved = normalizeVisual({});
+    expect(saved.villageHalftone).toBe(true);
+    expect(normalizeVisual({ villageHalftone: false }).villageHalftone).toBe(false);
+    expect(effectiveVisualSettings({ ...saved, rotomMode: true }).villageHalftone).toBe(false);
+    expect(effectiveVisualSettings(saved).villageHalftone).toBe(true);
+  });
+
   it('migra saves antigos e preserva a escolha de desligar', () => {
     expect(normalizeVisual({}).villageFx).toBe(true);
     expect(normalizeVisual({ villageFx: false }).villageFx).toBe(false);

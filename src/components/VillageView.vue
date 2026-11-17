@@ -3493,6 +3493,7 @@ onMounted(async () => {
   game.ambientFx = () => effectiveVisual.value.villageFx;
   game.glowFx = () => effectiveVisual.value.villageGlow;
   game.windFx = () => effectiveVisual.value.villageWind;
+  game.halftone = () => effectiveVisual.value.villageHalftone;
   game.hd2d = () => effectiveVisual.value.villageHd2d;
   game.smoothSprites = () => effectiveVisual.value.renderProfile === 'cinema';
   game.castShadows = () => effectiveVisual.value.shadow;
@@ -4264,10 +4265,14 @@ onBeforeUnmount(() => {
             <span>Mato alto e flores balançando ao vento na Vila (desligue em celular fraco)</span>
           </label>
           <label class="art-option">
+            <input v-model="visual.villageHalftone" type="checkbox" :disabled="visual.rotomMode" />
+            <span>Retícula (halftone) nos personagens e objetos da Vila</span>
+          </label>
+          <label class="art-option">
             <input v-model="visual.villageHd2d" type="checkbox" :disabled="visual.rotomMode" />
             <span>Profundidade 2D-HD na Vila: foco seletivo por prédio, árvore e personagem (desligue em celular fraco)</span>
           </label>
-          <p v-if="visual.rotomMode" class="hint">A profundidade 2D-HD fica suspensa pelo Modo Rotom e volta à sua escolha ao desligá-lo.</p>
+          <p v-if="visual.rotomMode" class="hint">O Modo Rotom suspende a retícula e a profundidade 2D-HD. Suas escolhas voltam ao desligá-lo.</p>
           <p v-else-if="reducedMotion" class="hint">A preferência do sistema «Reduzir movimento» suspende a profundidade 2D-HD para diminuir estímulos visuais.</p>
           <button type="button" @click="openDress('player')">Escolher acessório</button>
           <h4>Amigos e pedidos de hoje</h4>

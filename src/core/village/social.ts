@@ -15,6 +15,8 @@ import { SEASON_MOMENTS } from './moments/season';
 import { SOLO_MOMENTS } from './moments/solo';
 import { TRIO_MOMENTS } from './moments/trio';
 import { CAFE_MOMENTS } from './moments/cafe';
+import { SURVIVAL_ABSENCE_MOMENTS, SURVIVAL_ABSENCE_PREFIX } from './moments/survival-absence';
+import { survivalAbsenceChance } from './survival-absence';
 import type { Actor, Ctx, Outcome, SocialEnv, Template, WorkSignal } from './moments/kit';
 
 export type { Actor, Ctx, Outcome, SocialEnv, Template } from './moments/kit';
@@ -966,7 +968,8 @@ const CINEMATIC_MOMENTS: readonly Template[] = [
 ];
 
 /** Todos os momentos: os do começo (`CORE`) e as levas novas, por tipo de elenco e por ocasião. */
-export const TEMPLATES: readonly Template[] = [...CORE, ...INTRIGUE_MOMENTS, ...CINEMATIC_MOMENTS, ...SOLO_MOMENTS, ...DUO_MOMENTS, ...TRIO_MOMENTS, ...SEASON_MOMENTS, ...EXTRA_MOMENTS, ...CAFE_MOMENTS];
+const ORDINARY_MOMENTS: readonly Template[] = [...CORE, ...INTRIGUE_MOMENTS, ...CINEMATIC_MOMENTS, ...SOLO_MOMENTS, ...DUO_MOMENTS, ...TRIO_MOMENTS, ...SEASON_MOMENTS, ...EXTRA_MOMENTS, ...CAFE_MOMENTS];
+export const TEMPLATES: readonly Template[] = [...ORDINARY_MOMENTS, ...SURVIVAL_ABSENCE_MOMENTS];
 export const TEMPLATE_COUNT = TEMPLATES.length;
 export const TEMPLATE_BY_ID = new Map(TEMPLATES.map((t) => [t.id, t]));
 
@@ -1119,7 +1122,7 @@ export interface Scene {
 }
 
 /** Sorteia o próximo momento entre os Pokémon que estão na Vila; `null` se ninguém combinou com nenhum modelo. */
-export function pickMoment(actors: readonly Actor[], state: VillageState, env: SocialEnv, rng: Rng): Scene | null {
+export function pickMoment(actors: readonly Actor[], state: VillageState, env: SocialEnv, rng: Rng, away = false): Scene | null {
   if (actors.length === 0) return null;
   const plan = pendingPlan(state, actors, env.day);
   if (plan) {
@@ -1135,7 +1138,18 @@ export function pickMoment(actors: readonly Actor[], state: VillageState, env: S
   const recent = state.diary.slice(-8).map((m) => m.tpl);
   const immediate = state.diary.at(-1)?.tpl;
   const seen = new Set(state.seen);
-  const pool = TEMPLATES.filter((t) => t.cast <= actors.length);
+  const absenceChance = away ? 0 : survivalAbsenceChance(state.survivalAbsence, env.day);
+  if (absenceChance > 0 && rng() < absenceChance) {
+    const possible = SURVIVAL_ABSENCE_MOMENTS.filter((t) => t.cast <= actors.length);
+    const unseen = possible.filter((t) => !seen.has(t.id));
+    const varied = possible.filter((t) => !recent.includes(t.id));
+    const choices = unseen.length ? unseen : varied.length ? varied : possible;
+    const tpl = choices[Math.floor(rng() * choices.length)]!;
+    const cast = pickCast(tpl.cast, actors, state, rng);
+    const ctx = makeCtx(state, cast, env, rng);
+    return { tpl, ctx, cast, lines: tpl.lines(ctx) };
+  }
+  const pool = ORDINARY_MOMENTS.filter((t) => t.cast <= actors.length);
   const hasTension = Object.values(state.rel).some((rel) => rel.flag === 'brigados' || rel.bond <= -12);
   const weight = (t: Template): number => {
     const base = t.weight * (seen.has(t.id) ? 1 : 1.8) * (recent.includes(t.id) ? 0.1 : 1);
@@ -1172,6 +1186,7 @@ export function pickMoment(actors: readonly Actor[], state: VillageState, env: S
 /** Monta a cena de um modelo específico (sorteando o elenco até as condições combinarem). Serve para testar modelos de datas raras. */
 export function sceneOfTemplate(tpl: Template, actors: readonly Actor[], state: VillageState, env: SocialEnv, rng: Rng, tries = 40): Scene | null {
   if (actors.length < tpl.cast) return null;
+  if (tpl.id.startsWith(SURVIVAL_ABSENCE_PREFIX) && survivalAbsenceChance(state.survivalAbsence, env.day) === 0) return null;
   for (let k = 0; k < tries; k++) {
     const cast = pickCast(tpl.cast, actors, state, rng);
     const ctx = makeCtx(state, cast, env, rng);
@@ -1314,6 +1329,7 @@ export interface Resolved {
 export function resolveScene(state: VillageState, scene: Scene, choice: number | null, now: number, away = false): Resolved {
   const { tpl, ctx, cast } = scene;
   const day = ctx.env.day;
+  if (tpl.id.startsWith(SURVIVAL_ABSENCE_PREFIX)) state.survivalAbsence.lastMomentDay = day;
   const option = choice !== null ? tpl.choice?.options[choice] : undefined;
   const canPay = !option?.needs || availableCount(state, option.needs.item) >= option.needs.qty;
   const used = option && canPay ? option : undefined;
@@ -1408,7 +1424,7 @@ export function catchUp(state: VillageState, actors: readonly Actor[], now: numb
     const t = state.lastSeen + (k + 1) * Math.min(AWAY_STEP_MS, gone / (n + 1)) + Math.floor(rng() * 60_000);
     const when = new Date(t);
     const day = `${when.getFullYear()}-${String(when.getMonth() + 1).padStart(2, '0')}-${String(when.getDate()).padStart(2, '0')}`;
-    const scene = pickMoment(actors, state, makeEnv(state, day, when.getHours(), weather, player), rng);
+    const scene = pickMoment(actors, state, makeEnv(state, day, when.getHours(), weather, player), rng, true);
     if (!scene) continue;
     out.push(resolveScene(state, scene, null, t, true).moment);
   }

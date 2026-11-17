@@ -13,7 +13,7 @@ vi.mock('../app/services', () => ({
 
 const { default: MinigameSobrevivencia } = await import('./MinigameSobrevivencia.vue');
 
-describe('Torre de Sobrevivência: sair no meio', () => {
+describe('Torre de Sobrevivência', () => {
   let host: HTMLElement | null = null;
   let app: VueApp | null = null;
   // Sem rede: o componente pede `village-sprite-meta.json`; sem este estanque o happy-dom tentava abrir localhost:3000.
@@ -27,6 +27,55 @@ describe('Torre de Sobrevivência: sair no meio', () => {
     host = null;
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
+  });
+
+  it('move e revela o foco, mantém o Enter no favorito e recupera o foco ao voltar da escolha', async () => {
+    vi.spyOn(HTMLElement.prototype, 'getClientRects').mockReturnValue([new DOMRect()] as unknown as DOMRectList);
+    host = document.createElement('div');
+    document.body.append(host);
+    app = createApp({ render: () => h(MinigameSobrevivencia, { digital: [{ dexId: 25, name: 'Pikachu' }] }) });
+    app.mount(host);
+    await vi.waitFor(() => expect(pending).toHaveLength(1));
+    release();
+    await vi.waitFor(() => expect(host!.querySelector('.survivor-favorite')).not.toBeNull());
+
+    const normal = host.querySelector<HTMLButtonElement>('[data-gamepad-default]')!;
+    const bonk = host.querySelector<HTMLButtonElement>('.bonk-mode-button')!;
+    const pvp = host.querySelector<HTMLButtonElement>('.survivor-pvp-entry')!;
+    const favorite = host.querySelector<HTMLButtonElement>('.survivor-favorite')!;
+    const pokemon = favorite.parentElement!;
+    const keyboard = (target: HTMLElement, key: string) => {
+      const event = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true });
+      target.dispatchEvent(event);
+      return event;
+    };
+    expect(document.activeElement).toBe(normal);
+    vi.spyOn(normal, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 60, 440, 60));
+    vi.spyOn(bonk, 'getBoundingClientRect').mockReturnValue(new DOMRect(450, 60, 440, 60));
+    vi.spyOn(pvp, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 10, 890, 40));
+    const reveal = vi.spyOn(bonk, 'scrollIntoView');
+    keyboard(normal, 'ArrowRight');
+    expect(document.activeElement).toBe(bonk);
+    expect(reveal).toHaveBeenCalledWith({ block: 'nearest', inline: 'nearest' });
+
+    favorite.focus();
+    expect(keyboard(favorite, 'Enter').defaultPrevented).toBe(false);
+    favorite.click();
+    await nextTick();
+    expect(favorite.getAttribute('aria-pressed')).toBe('true');
+    expect(host.querySelector('.survivor-attack-choice')).toBeNull();
+
+    pokemon.focus();
+    expect(keyboard(pokemon, ' ').defaultPrevented).toBe(true);
+    await vi.waitFor(() => expect(document.activeElement).toBe(host!.querySelector('.survivor-attack-option')));
+    keyboard(document.activeElement as HTMLElement, 'Escape');
+    await vi.waitFor(() => expect(document.activeElement).toBe(host!.querySelector('[data-gamepad-default]')));
+
+    const volume = host.querySelector<HTMLInputElement>('input[type="range"]')!;
+    host.querySelectorAll<HTMLDetailsElement>('.survivor-more, .survivor-more details').forEach((details) => { details.open = true; });
+    volume.focus();
+    expect(keyboard(volume, 'ArrowRight').defaultPrevented).toBe(false);
+    expect(document.activeElement).toBe(volume);
   });
 
   it('sair enquanto os sprites ainda carregam não deixa um laço de animação rodando depois', async () => {
