@@ -13,6 +13,26 @@ export const SURVIVOR_REGIONS = [
 
 export const REGION_DURATION_MS = 135_000;
 export const REGION_TRANSITION_MS = 40_000;
+export const SURVIVOR_MIGRATION_MS = 30_000;
+export const SURVIVOR_MIGRATION_SPAWN_MULTIPLIER = 3;
+
+/** A migração ocupa os últimos 30 segundos antes da troca efetiva de geração. */
+export function survivorMigrationRemainingMs(elapsedMs: number): number {
+  if (!Number.isFinite(elapsedMs) || elapsedMs < 0) return 0;
+  const remaining = REGION_DURATION_MS - elapsedMs % REGION_DURATION_MS;
+  return remaining <= SURVIVOR_MIGRATION_MS ? remaining : 0;
+}
+
+/** Tempo da janela atravessado pelo passo, inclusive quando ele cruza uma troca de geração. */
+export function survivorMigrationOverlapMs(fromMs: number, toMs: number): number {
+  if (!Number.isFinite(fromMs) || !Number.isFinite(toMs) || toMs <= fromMs) return 0;
+  const total = (time: number): number => {
+    const t = Math.max(0, time);
+    return Math.floor(t / REGION_DURATION_MS) * SURVIVOR_MIGRATION_MS
+      + Math.max(0, t % REGION_DURATION_MS - (REGION_DURATION_MS - SURVIVOR_MIGRATION_MS));
+  };
+  return total(toMs) - total(fromMs);
+}
 
 /** Mistura determinística sem tocar no RNG de combate. */
 function regionShuffleRandom(runSeed: number, cycle: number): () => number {

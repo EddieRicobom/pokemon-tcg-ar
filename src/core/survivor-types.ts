@@ -797,6 +797,8 @@ export type SurvivorEvent =
   | { type: 'thiefSpawn'; dexId: number; leftMs: number }
   | { type: 'thiefCaught'; coins: number }
   | { type: 'thiefEscaped' }
+  /** Onda de migração: taxa tripla de inimigos comuns até a próxima geração. */
+  | { type: 'migration'; remainingMs: number }
   /** Evento-relâmpago: aviso, começo e fim (`value`: meta do desafio, membros da revoada ou abates feitos). */
   | { type: 'surge'; kind: SurvivorSurgeKind; phase: 'warn' | 'offer' | 'start' | 'success' | 'fail' | 'end'; value?: number; dexId?: number }
   /** Subiu de nível sem carta nova para escolher: o bônus já foi aplicado. */
