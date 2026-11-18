@@ -147,7 +147,7 @@ export function breakSurvivorShield(state: SurvivorState): boolean {
   state.special.fxMs = 800;
   return true;
 }
-export function stepSurvivorSpecial(state: SurvivorState, input: SurvivorInput, dtMs: number, width: number, height: number, margin: number, onDamage?: (id: SurvivorSpecialId, damage: number, target: SurvivorEnemy) => void): SurvivorDashPath | null {
+export function stepSurvivorSpecial(state: SurvivorState, input: SurvivorInput, dtMs: number, width: number, height: number, margin: number, onDamage?: (id: SurvivorSpecialId, damage: number, target: SurvivorEnemy) => void, damageMultiplier?: (target: SurvivorEnemy) => number): SurvivorDashPath | null {
   const special = state.special;
   let dashPath: SurvivorDashPath | null = null;
   const wasShieldActive = special.activeMs > 0;
@@ -211,7 +211,12 @@ export function stepSurvivorSpecial(state: SurvivorState, input: SurvivorInput, 
       const targetCount = special.branch === 'teleport-infinite' ? 7 : 4;
       const targets = state.enemies.filter((enemy) => enemy.hp > 0 && !enemy.boss && enemy.grade === 'comum' && enemy.trainerId === undefined)
         .sort((a, b) => Math.hypot(a.x - state.player.x, a.y - state.player.y) - Math.hypot(b.x - state.player.x, b.y - state.player.y) || a.id - b.id).slice(0, targetCount);
-      for (const target of targets) { target.hp = 0; special.targets.push({ x: target.x, y: target.y }); }
+      for (const target of targets) {
+        const damage = target.hp;
+        target.hp = 0;
+        special.targets.push({ x: target.x, y: target.y });
+        if (state.player.terastal) onDamage?.('teleport', damage, target);
+      }
       if (special.branch === 'teleport-vacuum') for (const orb of state.orbs) { orb.x = state.player.x; orb.y = state.player.y; }
       if (special.branch === 'teleport-mend') healSurvivor(state.player, Math.round(state.player.maxHp * 0.15));
       // A resolução normal de derrotas gera XP e contagem uma única vez neste mesmo frame.
@@ -227,11 +232,12 @@ export function stepSurvivorSpecial(state: SurvivorState, input: SurvivorInput, 
       let totalDamage = 0;
       for (const target of targets) {
         const multiplier = pulse ? 2 : special.branch === 'mark-chain' ? 2 : special.branch === 'mark-execute' && target.hp < target.maxHp / 2 ? 5 : 3;
-        const rawDamage = state.player.attackDamage * multiplier;
+        const rawDamage = state.player.attackDamage * multiplier * (damageMultiplier?.(target) ?? 1);
         // Um único uso não apaga chefes nem elites mesmo em builds de ataque extremo.
         const boss = target.boss || target.grade === 'chefao' || target.shadowBoss === true;
+        const protectedTarget = (target.protectedMs ?? 0) > 0 && state.player.terastal?.type !== 'steel';
         const damage = Math.min(rawDamage, target.maxHp * (boss ? pulse ? 0.08 : 0.15 : target.grade === 'elite' ? pulse ? 0.3 : 0.4 : 1))
-          * ((target.protectedMs ?? 0) > 0 ? 0.75 : 1);
+          * (protectedTarget ? 0.75 : 1);
         const actualDamage = Math.min(target.hp, damage);
         totalDamage += actualDamage;
         target.hp -= damage;

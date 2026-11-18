@@ -38,6 +38,8 @@ export interface SurvivorMove {
   icon: string;
   /** Sem stats reais da espécie: forma e números médios (a tela avisa). */
   estimated?: boolean;
+  /** Também acompanha projéteis que permanecem no ar após a transformação. */
+  terastal?: true;
 }
 
 type Element = Pick<SurvivorMove, 'name' | 'effect' | 'color' | 'icon'>;
@@ -84,6 +86,27 @@ export const MOVE_EFFECT_LABELS_PT: Record<MoveEffect, string> = {
   atravessar: 'vai mais longe',
   roubar: 'recupera um pouco de vida',
   nenhum: 'sem efeito extra',
+};
+
+export const SURVIVOR_TERASTAL_EFFECTS: Record<PokemonType, string> = {
+  normal: '+20% de dano.',
+  fire: 'Queima os alvos por 2 s.',
+  water: 'Empurra e encharca os alvos.',
+  electric: 'O choque salta para outro inimigo.',
+  grass: 'Semeia e deixa os alvos mais lentos.',
+  ice: 'Desacelera e acumula geada para congelar.',
+  fighting: 'Empurra e atordoa brevemente.',
+  poison: 'Envenena os alvos por 3,2 s.',
+  ground: 'Cria tremores em uma área maior.',
+  flying: 'Empurra os alvos mais longe.',
+  psychic: 'Empurra e deixa os alvos mais lentos.',
+  bug: 'Desacelera por mais tempo e tem um ataque de eco.',
+  rock: 'Cria terreno com pulsos mais fortes.',
+  ghost: 'Desacelera e causa mais dano com o eco.',
+  dragon: 'Projéteis perfuram e chefes recebem +20% de dano.',
+  dark: 'Recupera vida ao acertar.',
+  steel: 'Projéteis perfuram e os golpes ignoram proteção inimiga.',
+  fairy: 'Recupera até 3 de vida por golpe.',
 };
 
 /** Medianas e distâncias interquartis das 1.025 espécies, congeladas para uma regra estável quando o catálogo crescer. */

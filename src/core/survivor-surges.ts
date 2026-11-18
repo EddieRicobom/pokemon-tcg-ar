@@ -315,11 +315,12 @@ function launchSwarm(surge: SurvivorSurge, hooks: SurgeHooks): void {
     const across = side * 14;
     e.x = clamp(lane.x - lane.dx * back - lane.dy * across, 0, ARENA_W);
     e.y = clamp(lane.y - lane.dy * back + lane.dx * across, 0, ARENA_H);
-    e.hp = e.maxHp = Math.max(1, Math.round(e.maxHp * SWARM_HP_FACTOR));
-    e.damage = Math.max(1, Math.round(e.damage * SWARM_DAMAGE_FACTOR));
+    const alphaScale = e.alpha ? 2 : 1;
+    e.hp = e.maxHp = Math.max(1, Math.round(e.maxHp / alphaScale * SWARM_HP_FACTOR)) * alphaScale;
+    e.damage = Math.max(1, Math.round(e.damage / alphaScale * SWARM_DAMAGE_FACTOR)) * alphaScale;
     e.speed = SWARM_SPEED;
     e.archetype = 'perseguidor';
-    e.radius = 12;
+    e.radius = 12 * alphaScale;
     delete e.supportRole;
     e.swarm = { vx: lane.dx * SWARM_SPEED, vy: lane.dy * SWARM_SPEED, leftMs: Math.round(((SWARM_TRAVEL + back) / SWARM_SPEED) * 1000) };
     ids.push(e.id);
