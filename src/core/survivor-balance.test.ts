@@ -35,9 +35,10 @@ describe('regressão de dificuldade do Survival', { timeout: 30_000 }, () => {
       averages.set(type, total / 8);
     }
     const values = [...averages.values()];
-    expect(Math.min(...values)).toBeGreaterThanOrEqual(150_000);
+    // A primeira migração triplica a horda dos 105 aos 135 segundos.
+    expect(Math.min(...values)).toBeGreaterThanOrEqual(145_000);
     expect(Math.max(...values)).toBeLessThanOrEqual(190_000);
-    expect(Math.max(...values) - Math.min(...values)).toBeLessThanOrEqual(30_000);
+    expect(Math.max(...values) - Math.min(...values)).toBeLessThanOrEqual(35_000);
     expect(averages.get('bug')).toBeGreaterThanOrEqual(160_000);
     expect(averages.get('fighting')).toBeGreaterThanOrEqual(160_000);
     expect(averages.get('ice')).toBeGreaterThanOrEqual(150_000);

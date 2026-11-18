@@ -84,7 +84,7 @@ import type { DecodedGif } from '../core/gif';
 import { firstSpriteFrame, frameIndex, polishedFrame, survivorSpritePose, SURVIVOR_TILE_PX, toSprite } from '../village/survivor-sprite';
 import type { Sprite, SpriteAsset } from '../village/survivor-sprite';
 import { SoundEngine } from '../box/sound';
-import { survivorRegionLabel } from '../core/survivor-regions';
+import { survivorMigrationRemainingMs, survivorRegionLabel } from '../core/survivor-regions';
 import { survivorBiomeAt, survivorBiomeLabel } from '../core/survivor-biomes';
 import { resolveSurvivorLandscapeMove, unstickSurvivorItems } from '../core/survivor-collision';
 import { createSurvivorVegetation } from '../core/survivor-vegetation';
@@ -721,6 +721,7 @@ const fieldEventHud = computed(() => {
 });
 /** Evento-relâmpago em curso (chuva de orbes, revoada, amigo selvagem, desafio): o texto vem do motor puro. */
 const surgeHud = computed(() => (state.value ? surgeHudText(state.value) : null));
+const migrationRemainingMs = computed(() => state.value && !state.value.debugLaboratory ? survivorMigrationRemainingMs(state.value.elapsedMs) : 0);
 const surgeHudTitle = computed(() => {
   const surge = state.value?.surge;
   if (!surge) return '';
@@ -3599,6 +3600,10 @@ function loop(ts: number): void {
       else if (ev.type === 'thiefEscaped') say('🐾 O ladrão fugiu com o tesouro.', 3000);
       else if (ev.type === 'levelBonus') say(`✨ ${ev.text}`, 3000);
       else if (ev.type === 'surge') announceSurge(ev);
+      else if (ev.type === 'migration') {
+        playSound('survivor-boss');
+        say(`Migração! 3× mais inimigos por ${Math.ceil(ev.remainingMs / 1000)} s, até a próxima geração.`, 5000);
+      }
       else if (ev.type === 'fieldEventSpawn') {
         playSound(ev.kind === 'hunt' ? 'survivor-boss' : 'survivor-level');
         say(ev.kind === 'hunt'
@@ -4343,6 +4348,7 @@ onBeforeUnmount(() => {
             <span v-if="thiefHud" class="chip survivor-thief-chip" title="Meowth ladrão: pegue antes que fuja para ganhar moedas">{{ thiefHud }}</span>
             <span v-if="state.adaptive" class="chip survivor-adaptive-chip" :title="`Desafio adaptável: inimigos comuns com ${Math.round(state.adaptive.value * 100)}% da força de sempre`">🎚 {{ Math.round(state.adaptive.value * 100) }}%</span>
             <span v-if="surgeHud" class="chip survivor-field-chip survivor-surge-chip" :class="state.surge ? `surge-${state.surge.kind}` : ''" role="status" :title="surgeHudTitle">{{ surgeHud }}</span>
+            <span v-if="migrationRemainingMs > 0" class="chip survivor-field-chip" role="status" title="Taxa tripla de inimigos comuns até a troca de geração; o limite de inimigos continua valendo.">Migração · 3× inimigos · {{ Math.ceil(migrationRemainingMs / 1000) }}s</span>
             <span v-if="fieldEventHud" class="chip survivor-field-chip" :class="{ hunt: state.fieldEvent?.kind === 'hunt' }" :title="state.fieldEvent?.phase === 'hunt' ? 'A caçada já começou; derrote os dois inimigos elite marcados.' : 'Encontro opcional de campo: siga a seta antes que a baliza desapareça.'">{{ fieldEventHud }}</span>
             <span v-if="pvpRun" class="chip survivor-pvp-chip" role="status" title="PvP: esta run rende um Pokémon para a sua equipe 3x3">⚔ Run {{ pvpRun.index + 1 }}/{{ pvpRun.total }} · ⏳ {{ formatTime(Math.max(0, pvpRun.limitMs - state.elapsedMs)) }}</span>
             <span class="chip survivor-run-stats" :title="`${state.kills} inimigos derrotados${state.fast ? ' · Ritmo acelerado' : ''}`">{{ state.fast ? '⚡ ' : '' }}⏱ {{ formatTime(state.elapsedMs) }} · ☠ {{ state.kills }}</span>

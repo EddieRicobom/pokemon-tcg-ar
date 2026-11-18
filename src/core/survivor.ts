@@ -20,6 +20,7 @@ import { inSurvivorCone, SURVIVOR_CONE_HALF_ANGLE, SURVIVOR_ORBIT_BASE, SURVIVOR
 import type { PokemonType } from './pokemon-data';
 import { creditSupremeKill, createSurvivorSupreme, gainSupreme, stepSurvivorSupreme, SUPREME_GAIN } from './survivor-supreme';
 import { createSurgeTrack, removeEscapedSwarm, stepSurvivorSurge } from './survivor-surges';
+import { SURVIVOR_MIGRATION_MS, SURVIVOR_MIGRATION_SPAWN_MULTIPLIER, survivorMigrationOverlapMs, survivorMigrationRemainingMs } from './survivor-regions';
 
 /**
  * Motor puro do modo Sobrevivência (Zona de Sobrevivência, dentro da Vila): você anda pela arena, seu Pokémon ataca
@@ -3389,7 +3390,14 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
   // Nascimento de inimigos (onda cresce com o tempo) e do chefe periódico.
   let trainerSpawnedThisStep = false;
   state.wave = 1 + Math.floor(state.elapsedMs / 30_000);
-  state.spawnAccumMs += dtMs;
+  // Uma única fonte de nascimentos: triplica só o tempo dentro da janela, mantendo
+  // a fração acumulada, os limites de inimigos e o ritmo normal ao trocar a geração.
+  const migrationMs = state.debugLaboratory ? 0 : survivorMigrationOverlapMs(previousElapsedMs, state.elapsedMs);
+  state.spawnAccumMs += dtMs + migrationMs * (SURVIVOR_MIGRATION_SPAWN_MULTIPLIER - 1);
+  const migrationRemainingMs = survivorMigrationRemainingMs(state.elapsedMs);
+  if (!state.debugLaboratory && migrationRemainingMs > 0 && previousElapsedMs < state.elapsedMs + migrationRemainingMs - SURVIVOR_MIGRATION_MS) {
+    events.push({ type: 'migration', remainingMs: migrationRemainingMs });
+  }
   const interval = spawnIntervalMs(state);
   while (state.spawnAccumMs >= interval) {
     state.spawnAccumMs -= interval;
