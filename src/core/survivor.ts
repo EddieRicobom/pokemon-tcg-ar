@@ -3008,18 +3008,21 @@ function updateEnemyBehavior(state: SurvivorState, enemy: SurvivorEnemy, dtMs: n
   const archetype = enemy.archetype ?? 'perseguidor';
   let targetX = p.x;
   let targetY = p.y;
-  const dxToPlayer = p.x - enemy.x;
-  const dyToPlayer = p.y - enemy.y;
-  const distance = Math.hypot(dxToPlayer, dyToPlayer) || 1;
   enemy.specialTimerMs = (enemy.specialTimerMs ?? 2000) - dtMs;
   if (enemy.protectedMs && enemy.protectedMs > 0) enemy.protectedMs = Math.max(0, enemy.protectedMs - dtMs);
 
   if (archetype === 'flanqueador') {
+    const dxToPlayer = p.x - enemy.x;
+    const dyToPlayer = p.y - enemy.y;
+    const distance = Math.hypot(dxToPlayer, dyToPlayer) || 1;
     const side = enemy.id % 2 === 0 ? 1 : -1;
     const offset = 120;
     targetX = p.x - (dyToPlayer / distance) * side * offset;
     targetY = p.y + (dxToPlayer / distance) * side * offset;
   } else if (archetype === 'atirador') {
+    const dxToPlayer = p.x - enemy.x;
+    const dyToPlayer = p.y - enemy.y;
+    const distance = Math.hypot(dxToPlayer, dyToPlayer) || 1;
     // Mantém distância legível: aproxima-se até 280 e recua quando fica perto de 170.
     const desired = distance < 170 ? -1 : distance > 280 ? 1 : 0;
     targetX = enemy.x + (dxToPlayer / distance) * desired * 180;
@@ -3077,7 +3080,7 @@ function updateEnemyBehavior(state: SurvivorState, enemy: SurvivorEnemy, dtMs: n
             }
           }
           state.fx.push({ kind: 'pulse', x: enemy.x, y: enemy.y, r: 110, color: '#74e2a3', ageMs: 0, lifeMs: 500 });
-        } else if (distance <= 420) {
+        } else if (Math.hypot(p.x - enemy.x, p.y - enemy.y) <= 420) {
           // O suporte ofensivo cria pressão legível, mas com dano menor e recarga mais longa que um atirador.
           spawnHostileProjectile(state, enemy, p, 0.45);
         }
@@ -3097,7 +3100,7 @@ function updateEnemyBehavior(state: SurvivorState, enemy: SurvivorEnemy, dtMs: n
       }
     } else if (enemy.dashMs && enemy.dashMs > 0) {
       enemy.dashMs = Math.max(0, enemy.dashMs - dtMs);
-    } else if (enemy.specialTimerMs <= 0 && distance <= 360) {
+    } else if (enemy.specialTimerMs <= 0 && Math.hypot(p.x - enemy.x, p.y - enemy.y) <= 360) {
       enemy.chargeMs = 500;
       enemy.specialTimerMs = 2600;
       targetX = enemy.x;
@@ -3185,13 +3188,11 @@ function updateDigitalDanger(state: SurvivorState, input: SurvivorInput, dtMs: n
     state.digitalDanger = 0;
     return;
   }
-  const visibleEnemies = input.visibleEnemies ?? nearbyVisibleEnemyCount(state);
-  const trainerActive = state.enemies.some((enemy) => enemy.hp > 0 && enemy.trainerId !== undefined);
-  if (state.digitalDangerCooldownMs > 0 || trainerSpawnedThisStep || trainerActive) {
+  if (state.digitalDangerCooldownMs > 0 || trainerSpawnedThisStep || state.enemies.some((enemy) => enemy.hp > 0 && enemy.trainerId !== undefined)) {
     state.digitalDanger = Math.max(0, state.digitalDanger - (dtMs / 1000) * 4);
     return;
   }
-  if (isOverwhelmingRun(state, visibleEnemies)) {
+  if (isOverwhelmingRun(state, input.visibleEnemies ?? nearbyVisibleEnemyCount(state))) {
     state.digitalDanger = Math.min(DIGITAL_DANGER_MAX, state.digitalDanger + (dtMs / 1000) * 2.4);
   } else {
     state.digitalDanger = Math.max(0, state.digitalDanger - (dtMs / 1000) * 2.5);
@@ -3509,6 +3510,7 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
   // IA parametrizada: cada arquétipo escolhe um alvo e uma ação especial limitada por recarga.
   // No Survival comum, árvores, mato e itens são só cenário: inimigos os atravessam. O BONK aplica
   // sua própria colisão física depois deste passo, sem mudar este comportamento do modo normal.
+  const enemyDifficulty = survivorDifficultyEnemyMultiplier(p.difficultyStacks ?? 0);
   for (const e of state.enemies) {
     if (e.hp <= 0) continue;
     if (e.hitFlashMs > 0) e.hitFlashMs = Math.max(0, e.hitFlashMs - dtMs);
@@ -3549,7 +3551,7 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
     const statusMultiplier = e.slowMs && e.slowMs > 0 ? 0.5 : 1;
     const hasteMultiplier = e.hastenedMs && e.hastenedMs > 0 ? 1.18 : 1;
     const dashMultiplier = e.dashMs && e.dashMs > 0 ? 2.5 : 1;
-    const speed = stunned ? 0 : e.swarm ? Math.hypot(e.swarm.vx, e.swarm.vy) * statusMultiplier : e.speed * survivorDifficultyEnemyMultiplier(p.difficultyStacks ?? 0) * rangedMultiplier * statusMultiplier * hasteMultiplier * dashMultiplier;
+    const speed = stunned ? 0 : e.swarm ? Math.hypot(e.swarm.vx, e.swarm.vy) * statusMultiplier : e.speed * enemyDifficulty * rangedMultiplier * statusMultiplier * hasteMultiplier * dashMultiplier;
     e.x += (dx / d) * speed * dt;
     e.y += (dy / d) * speed * dt;
     if (state.special.selected === 'gravity' && state.special.activeMs > 0) {
@@ -3563,17 +3565,22 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
     // A cerca vale para todos: fora da arena ninguém alcança o inimigo (os tiros somem em 40 px).
     e.x = clamp(e.x, 0, ARENA_W);
     e.y = clamp(e.y, 0, ARENA_H);
-    const playerDistance = Math.hypot(p.x - e.x, p.y - e.y);
+    const thornsDamage = p.thornsDamage ?? 0;
+    // Congelado no tempo ou passando por baixo de um salto do BONK, o inimigo não fere o jogador.
+    const canHitPlayer = !e.thief && !timeStopped && !input.airborne && p.invulnMs <= 0;
+    if (thornsDamage <= 0 && !canHitPlayer) continue;
+    const contactRadius = PLAYER_RADIUS + e.radius;
+    const contactX = p.x - e.x;
+    const contactY = p.y - e.y;
+    if (!(Math.abs(contactX) < contactRadius && Math.abs(contactY) < contactRadius && Math.hypot(contactX, contactY) < contactRadius)) continue;
     // Espinhos: quem encosta em você apanha, mesmo durante a janela de invulnerabilidade do jogador.
-    if ((p.thornsDamage ?? 0) > 0 && playerDistance < PLAYER_RADIUS + e.radius) e.hp -= (p.thornsDamage ?? 0) * dt;
-    // Congelado no tempo não ataca: a bolha do Orbe Adamante e a Estase protegem de verdade.
-    // No BONK, quem está no alto passa por cima de quem encosta.
-    if (!e.thief && !timeStopped && !input.airborne && playerDistance < PLAYER_RADIUS + e.radius && p.invulnMs <= 0) {
+    if (thornsDamage > 0) e.hp -= thornsDamage * dt;
+    if (canHitPlayer) {
       if (specialProtects(state)) {
         breakSurvivorShield(state);
         continue;
       }
-        const incoming = Math.ceil((hasUpgrade(p, 'steel-plate') ? e.damage * 0.88 : e.damage) * survivorDifficultyEnemyMultiplier(p.difficultyStacks ?? 0) * closeRangeDamageMultiplier(state) * (p.artifactShieldMs > 0 ? 0.65 : 1));
+      const incoming = Math.ceil((hasUpgrade(p, 'steel-plate') ? e.damage * 0.88 : e.damage) * enemyDifficulty * closeRangeDamageMultiplier(state) * (p.artifactShieldMs > 0 ? 0.65 : 1));
       damagePlayer(state, incoming, 'contato', hitSource(e));
       p.invulnMs = hitInvulnerabilityMs(p);
     }
@@ -3596,7 +3603,7 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
     if (proj.lifeMs <= 0 || proj.x < -40 || proj.x > ARENA_W + 40 || proj.y < -40 || proj.y > ARENA_H + 40) return false;
     if (!input.airborne && Math.hypot(proj.x - p.x, proj.y - p.y) <= PLAYER_RADIUS + proj.size) {
       if (p.invulnMs <= 0 && !specialProtects(state)) {
-          const incoming = Math.ceil((hasUpgrade(p, 'steel-plate') ? proj.damage * 0.88 : proj.damage) * survivorDifficultyEnemyMultiplier(p.difficultyStacks ?? 0) * closeRangeDamageMultiplier(state) * (p.artifactShieldMs > 0 ? 0.65 : 1));
+        const incoming = Math.ceil((hasUpgrade(p, 'steel-plate') ? proj.damage * 0.88 : proj.damage) * enemyDifficulty * closeRangeDamageMultiplier(state) * (p.artifactShieldMs > 0 ? 0.65 : 1));
         damagePlayer(state, incoming, 'projétil', proj.source ?? { boss: false, grade: proj.grade ?? 'comum' });
         p.invulnMs = hitInvulnerabilityMs(p);
       }
@@ -3674,8 +3681,12 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
     state.vegetationImpact?.({ kind: 'sweep', x: fromX, y: fromY, toX: proj.x, toY: proj.y, radius: hitRadius });
     for (const e of state.enemies) {
       // Quem caiu neste mesmo passo ainda está na lista: não pode gastar o tiro nem render cura.
-      if (e.hp <= 0 || proj.hit.includes(e.id)) continue;
-      if (Math.hypot(e.x - proj.x, e.y - proj.y) < e.radius + hitRadius) {
+      if (e.hp <= 0) continue;
+      // Descarta alvos distantes em cada eixo antes de medir o círculo ou procurar o ID na lista de acertos.
+      const radius = e.radius + hitRadius;
+      const dx = e.x - proj.x;
+      const dy = e.y - proj.y;
+      if (Math.abs(dx) < radius && Math.abs(dy) < radius && !proj.hit.includes(e.id) && Math.hypot(dx, dy) < radius) {
         if (focusShot) state.charge.level = Math.min(1, state.charge.level + FOCUS_HIT_CHARGE);
         if (proj.noHeld) heldGuard++;
         try {
@@ -3817,8 +3828,11 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
     for (const orb of state.orbs) { orb.x = p.x; orb.y = p.y; }
     for (const artifact of state.artifacts) { artifact.x = p.x; artifact.y = p.y; }
   }
+  const orbPickupRadius = effectivePickupRadius(p);
   state.orbs = state.orbs.filter((orb) => {
-    if (Math.hypot(orb.x - p.x, orb.y - p.y) <= effectivePickupRadius(p)) {
+    const dx = orb.x - p.x;
+    const dy = orb.y - p.y;
+    if (Math.abs(dx) <= orbPickupRadius && Math.abs(dy) <= orbPickupRadius && Math.hypot(dx, dy) <= orbPickupRadius) {
       // A marmita de Peixe não multiplica o ritmo acelerado: vale o maior dos dois.
       const multiplier = Math.max(p.xpMultiplier ?? 1, p.lunch?.active ? 1 + p.lunch.effect.xpBonus : 1);
       const orbValue = orb.doubleXp ? orb.value * 2 : orb.value;

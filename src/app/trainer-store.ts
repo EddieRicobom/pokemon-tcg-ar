@@ -3,6 +3,9 @@ import { applyEvent, dayKey, emptyTrainer, importHistory, normalizeTrainer } fro
 import { addCoins, addExactCoins } from './wallet';
 import { MEW_BLESSING } from '../core/village/mew-shrine';
 import type { Reward, TrainerEvent, TrainerState } from '../core/trainer';
+import { rewardFeed, showRewards } from './reward-feed';
+
+export { dismissReward, rewardFeed, showReward } from './reward-feed';
 
 const KEY = 'tcg-ar-trainer-v1';
 
@@ -26,24 +29,6 @@ function write(state: TrainerState): void {
 /** Progresso do Treinador (XP, sequência, missões, conquistas), só neste aparelho. */
 export const trainer = ref<TrainerState>(read());
 
-export interface FeedItem {
-  key: number;
-  reward: Reward;
-}
-
-/** Recompensas recém-ganhas, para a faixa de avisos; cada uma sai sozinha (`dismissReward`). */
-export const rewardFeed = ref<FeedItem[]>([]);
-let seq = 0;
-
-export function dismissReward(key: number): void {
-  rewardFeed.value = rewardFeed.value.filter((item) => item.key !== key);
-}
-
-/** Mostra um aviso na faixa de recompensas sem passar pelo XP (Pokédex, por exemplo). */
-export function showReward(reward: Reward): void {
-  rewardFeed.value = [...rewardFeed.value, { key: ++seq, reward }].slice(-6);
-}
-
 /** Registra um feito (carta lida, batalha, minigame) e devolve o que foi ganho. */
 export function recordEvent(event: TrainerEvent, now: Date = new Date()): Reward[] {
   const before = trainer.value.xp;
@@ -57,7 +42,7 @@ export function recordEvent(event: TrainerEvent, now: Date = new Date()): Reward
   // Mais de 4 avisos de uma vez viram bagunça: os mais importantes (nível, conquista, missão) vêm primeiro.
   const rank: Record<Reward['tone'], number> = { level: 0, achievement: 1, mission: 2, streak: 3, new: 4, xp: 5 };
   const shown = [...rewards].sort((a, b) => rank[a.tone] - rank[b.tone]).slice(0, 4);
-  rewardFeed.value = [...rewardFeed.value, ...shown.map((reward) => ({ key: ++seq, reward }))].slice(-6);
+  showRewards(shown);
   return rewards;
 }
 

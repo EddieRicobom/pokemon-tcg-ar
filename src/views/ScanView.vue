@@ -18,7 +18,6 @@ import { ScanController } from '../app/scan-controller';
 import type { LastAttempt, ScanState } from '../app/scan-controller';
 import { fetchSprite, getArtIndex, loadBattle, getCache, getCatalog, getPipeline, getTcgdex, onOcrProgress, setArtSearch, setCaptureDebug } from '../app/services';
 import type { ManualMatch } from '../recognition/catalog-index';
-import { recordFromTcgdex } from '../recognition/pipeline';
 import { detectCard } from '../recognition/detect-card';
 import { frameQuality } from '../recognition/stability';
 import { sameCardScore } from '../recognition/snapshot';
@@ -49,10 +48,7 @@ import { maybeGalladeSpeaks } from '../app/speech-store';
 import { companionCard } from '../app/card-evolution-store';
 import { includeMember } from '../app/team';
 import { savedTeam, setSavedTeam } from '../app/team-store';
-import { loadVillage } from '../app/village-store';
 import { digitalCandidates } from '../app/digital-members';
-import { cardArchetypeIds } from '../app/card-archetypes';
-import { fxLabel, planArchetypeFx, planDurationMs } from '../core/archetype-fx';
 import type { FxLayer } from '../core/archetype-fx';
 import { SoundEngine } from '../box/sound';
 import type { SoundCue } from '../box/sound-recipes';
@@ -99,7 +95,8 @@ const moveNotice = ref('');
 const arActive = ref(false);
 const evolvedCaption = ref('');
 /** Arquétipos da carta no AR: as camadas da animação e os rótulos que aparecem junto, no mesmo ritmo. */
-const fxLayers = ref<FxLayer[]>([]);
+const fxLayers = ref<Array<FxLayer & { label: string }>>([]);
+let fxDurationMs = 0;
 const fxRun = ref(0);
 const fxShowing = ref(false);
 let fxTimer: ReturnType<typeof setTimeout> | null = null;
@@ -123,7 +120,7 @@ function onArchetypeFxStart(): void {
   fxRun.value++;
   fxShowing.value = true;
   if (fxTimer) clearTimeout(fxTimer);
-  fxTimer = setTimeout(() => (fxShowing.value = false), planDurationMs(fxLayers.value) + 400);
+  fxTimer = setTimeout(() => (fxShowing.value = false), fxDurationMs + 400);
 }
 
 function resetArchetypeFx(): void {
@@ -458,8 +455,10 @@ async function ensureController(): Promise<ScanController> {
     cache,
     loadCardRecord: async (id) => {
       const card = await getTcgdex().getCard(id);
+      if (!card) return null;
       // O índice sabe a espécie das cartas japonesas, que o TCGdex costuma não informar (ex.: Terapagos ex).
-      return card ? recordFromTcgdex(card, (await getCatalog())?.byId(id) ?? undefined) : null;
+      const [catalog, { recordFromTcgdex }] = await Promise.all([getCatalog(), loadChunk(() => import('../recognition/pipeline'))]);
+      return recordFromTcgdex(card, catalog?.byId(id) ?? undefined);
     },
     onState: (state) => {
       scan.value = state;
@@ -608,12 +607,19 @@ async function startArFor(cardId: string): Promise<void> {
   arStage.value = 'engine';
   arDetail.value = 'Iniciando o motor de rastreamento…';
   try {
-    const { startAr } = await loadChunk(() => import('../ar/start-ar'));
+    const [{ startAr }, { cardArchetypeIds }, { fxLabel, planArchetypeFx, planDurationMs }] = await Promise.all([
+      loadChunk(() => import('../ar/start-ar')),
+      loadChunk(() => import('../app/card-archetypes')),
+      loadChunk(() => import('../core/archetype-fx')),
+    ]);
+    if (run !== arRun || disposed || !videoEl.value || !canvasEl.value || !stageEl.value) return;
     const companion = companionCard(assets.card);
     const evolved = companion !== assets.card;
     evolvedCaption.value = evolved ? `${companion.name} · evoluiu da sua carta de ${assets.card.name}` : '';
     const archetypeIds = cardArchetypeIds(assets.card);
-    fxLayers.value = planArchetypeFx(archetypeIds);
+    const layers = planArchetypeFx(archetypeIds);
+    fxDurationMs = planDurationMs(layers);
+    fxLayers.value = layers.map((layer) => ({ ...layer, label: fxLabel(layer.id) }));
     const started = await startAr({
       video: videoEl.value,
       canvas: canvasEl.value,
@@ -730,7 +736,9 @@ async function includeScannedCard(): Promise<void> {
   if (!card) return;
   teamAction.value = 'loading';
   try {
-    const cards = await (await getCache()).list();
+    const [cards, { loadVillage }] = await Promise.all([
+      getCache().then((cache) => cache.list()), loadChunk(() => import('../app/village-store')),
+    ]);
     const candidates = [...cards, ...digitalCandidates(loadVillage().digital)];
     const result = includeMember(savedTeam.value, candidates, card.id);
     if (result.kind === 'added') setSavedTeam(result.ids);
@@ -1128,7 +1136,7 @@ const VERDICT_PT = { aceita: 'aceita', duvida: 'em dúvida', rejeitada: 'rejeita
           <span class="pill-text">✦ Chamado do vínculo<small class="pill-sub">{{ evolvedCaption }}</small></span>
         </p>
         <div v-if="fxShowing && fxLayers.length" :key="fxRun" class="pill archetype-fx" aria-label="Arquétipos da carta">
-          <span v-for="layer in fxLayers" :key="layer.id" class="fx-chip" :style="{ animationDelay: `${layer.startMs}ms` }">{{ fxLabel(layer.id) }}</span>
+          <span v-for="layer in fxLayers" :key="layer.id" class="fx-chip" :style="{ animationDelay: `${layer.startMs}ms` }">{{ layer.label }}</span>
         </div>
         <button
           v-else-if="fxLayers.length && arState.phase === 'tracking' && effectiveVisual.archetypeFx"

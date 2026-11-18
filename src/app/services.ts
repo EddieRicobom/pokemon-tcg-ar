@@ -4,16 +4,13 @@ import { prepareMegaForm, resolveMegaForm } from './mega-data';
 import type { MegaPrepared } from './mega-data';
 import { loadBattleData, loadCardInfo, loadProfile } from './pokemon-data-service';
 import type { CardBattleInfo, PokemonProfile } from '../core/pokemon-data';
-import { recordEvent, syncTrainerHistory } from './trainer-store';
 import { CardCache } from '../cache/card-cache';
 import { openCacheDb } from '../cache/db';
 import { blobToRgba, loadImageRgba, rgbaToCanvas } from '../recognition/browser-image';
-import { ArtIndex } from '../recognition/art-index';
-import { loadCatalogIndex } from '../recognition/catalog-index';
+import type { ArtIndex } from '../recognition/art-index';
 import type { CatalogLookup } from '../recognition/catalog-index';
-import { createTesseractEngine } from '../recognition/ocr';
 import type { OcrEngine } from '../recognition/ocr';
-import { RecognitionPipeline } from '../recognition/pipeline';
+import type { RecognitionPipeline } from '../recognition/pipeline';
 import { TcgdexClient } from '../recognition/tcgdex';
 import { CARD_HEIGHT_PX, CARD_WIDTH_PX } from '../recognition/types';
 import { loadChunk } from './stale-build';
@@ -24,7 +21,7 @@ import type { Dir } from '../core/village/actors';
 import { loadDexNames } from './dex-names';
 import { dataCardIdFor } from './digital-members';
 import { cardJourneys, evolvedBattleCardId } from './card-evolution-store';
-import { loadVillage } from './village-store';
+import { isDigitalInstanceId } from '../core/village/digital';
 import villageAtlasUrl from '../village/vila-atlas.png?url';
 import type { SpeciesRef } from '../core/village/digital';
 
@@ -63,13 +60,16 @@ export function setArtSearch(on: boolean): void {
 
 /** Índice de ilustrações (carregado só quando a opção é usada). null se ainda não foi publicado. */
 export function getArtIndex(): Promise<ArtIndex | null> {
-  artPromise ??= ArtIndex.load(assetUrl('data/art-index.json'), assetUrl('data/art-index.bin'));
+  artPromise ??= loadChunk(() => import('../recognition/art-index'))
+    .then(({ ArtIndex }) => ArtIndex.load(assetUrl('data/art-index.json'), assetUrl('data/art-index.bin')))
+    .catch(() => { artPromise = null; return null; });
   return artPromise;
 }
 
 export function getCache(): Promise<CardCache> {
   cachePromise ??= (async () => {
     const { backend } = createDefaultBackend();
+    const { recordEvent, syncTrainerHistory } = await loadChunk(() => import('./trainer-store'));
     const cache = new CardCache({
       db: await openCacheDb(),
       assets: backend,
@@ -101,7 +101,9 @@ export function getTcgdex(): TcgdexClient {
 }
 
 export function getCatalog(): Promise<CatalogLookup | null> {
-  catalogPromise ??= loadCatalogIndex(assetUrl('data/catalog-index.json'));
+  catalogPromise ??= loadChunk(() => import('../recognition/catalog-index'))
+    .then(({ loadCatalogIndex }) => loadCatalogIndex(assetUrl('data/catalog-index.json')))
+    .catch(() => { catalogPromise = null; return null; });
   return catalogPromise;
 }
 
@@ -202,11 +204,11 @@ export async function getDigitalSprite(dexId: number, shiny: boolean): Promise<{
 }
 
 export function getOcr(): Promise<OcrEngine> {
-  ocrPromise ??= createTesseractEngine({
+  ocrPromise ??= loadChunk(() => import('../recognition/ocr')).then(({ createTesseractEngine }) => createTesseractEngine({
     assetsBaseUrl: assetUrl('ocr'),
     toCanvas: rgbaToCanvas,
     onProgress: (status, progress) => ocrListener?.(status, progress),
-  }).catch((error) => {
+  })).catch((error) => {
     ocrPromise = null;
     throw error;
   });
@@ -216,7 +218,9 @@ export function getOcr(): Promise<OcrEngine> {
 export async function getPipeline(): Promise<RecognitionPipeline> {
   if (pipeline) return pipeline;
   pipelinePromise ??= (async () => {
-    const [cache, catalog, ocr] = await Promise.all([getCache(), getCatalog(), getOcr()]);
+    const [cache, catalog, ocr, { RecognitionPipeline }] = await Promise.all([
+      getCache(), getCatalog(), getOcr(), loadChunk(() => import('../recognition/pipeline')),
+    ]);
     const created = new RecognitionPipeline({
       ocr,
       tcgdex: getTcgdex(),
@@ -238,17 +242,19 @@ export async function getPipeline(): Promise<RecognitionPipeline> {
 
 /** Carrega, em paralelo, atributos/golpes (PokéAPI) e ataques da carta (TCGdex) para o painel de AR. */
 /** Digital Pokémon batalham com os ataques da carta real de origem (ver `app/digital-members.ts`). */
-function dataCardId(cardId: string): string {
+async function dataCardId(cardId: string): Promise<string> {
   const evolved = evolvedBattleCardId(cardId);
   if (evolved) return evolved;
+  if (!isDigitalInstanceId(cardId)) return cardId;
   try {
+    const { loadVillage } = await loadChunk(() => import('./village-store'));
     return dataCardIdFor(cardId, loadVillage().digital);
   } catch {
     return cardId;
   }
 }
 
-export function loadBattle(cardId: string, dexId: number | undefined, onPart: Parameters<typeof loadBattleData>[2]): Promise<void> {
+export async function loadBattle(cardId: string, dexId: number | undefined, onPart: Parameters<typeof loadBattleData>[2]): Promise<void> {
   dexId = cardJourneys.value[cardId]?.dexId ?? dexId;
   let storage: Storage | null = null;
   try {
@@ -256,7 +262,7 @@ export function loadBattle(cardId: string, dexId: number | undefined, onPart: Pa
   } catch {
     storage = null;
   }
-  return loadBattleData({ cardId: dataCardId(cardId), dexId }, { storage, getCard: (id) => getTcgdex().getCard(id) }, onPart);
+  return loadBattleData({ cardId: await dataCardId(cardId), dexId }, { storage, getCard: (id) => getTcgdex().getCard(id) }, onPart);
 }
 
 /** O que o Pin Mode precisa de um Pokémon: atributos e peso (PokéAPI) e ataques da carta (TCGdex). Cada parte pode faltar. */
@@ -268,7 +274,10 @@ export async function loadPinData(cardId: string, dexId: number | undefined): Pr
   } catch {
     storage = null;
   }
-  const [profile, card] = await Promise.all([loadProfile(dexId, { storage }), loadCardInfo(dataCardId(cardId), { storage, getCard: (id) => getTcgdex().getCard(id) })]);
+  const [profile, card] = await Promise.all([
+    loadProfile(dexId, { storage }),
+    dataCardId(cardId).then((id) => loadCardInfo(id, { storage, getCard: (id) => getTcgdex().getCard(id) })),
+  ]);
   return { profile, card };
 }
 

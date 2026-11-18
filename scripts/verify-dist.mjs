@@ -33,8 +33,14 @@ notes.push(`index.html: ${refs.length} referências, todas sob ${base}`);
 need(existsSync('dist/sw.js'), 'dist/sw.js não foi gerado');
 if (existsSync('dist/sw.js')) {
   const sw = readFileSync('dist/sw.js', 'utf8');
+  const precached = new Set([...sw.matchAll(/\burl:\s*["']([^"']+)["']/g)].map(([, url]) => url));
   need(!sw.includes('${base}'), 'Service Worker usa base sem definição (callback capturou variável da configuração)');
   need(sw.includes('index.html'), 'Service Worker não pré-cacheia index.html');
+  for (const ref of refs) {
+    if (ref.startsWith(base) && /\.(?:js|css)$/.test(ref)) {
+      need(precached.has(ref.slice(base.length)), `Service Worker não pré-cacheia o arquivo inicial: ${ref}`);
+    }
+  }
   need(!/\{url:["'][^"']*audio\/[^"']*\.mp3/.test(sw.split('precacheAndRoute')[1]?.split('],')[0] ?? ''), 'Músicas não deveriam estar no pré-cache da instalação');
   need(!/ocr\/worker\.min\.js/.test(sw.split('precacheAndRoute')[1] ?? ''), 'OCR não deveria estar no pré-cache da instalação');
 }

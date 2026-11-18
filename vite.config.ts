@@ -1,3 +1,5 @@
+import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import vue from '@vitejs/plugin-vue';
 import { VitePWA } from 'vite-plugin-pwa';
 import { defineConfig } from 'vitest/config';
@@ -40,20 +42,25 @@ export default defineConfig({
           },
         ],
       },
+      integration: {
+        async beforeBuildServiceWorker({ workbox }) {
+          const { globDirectory } = workbox;
+          if (!globDirectory) throw new Error('Diretório do build indisponível para montar o pré-cache.');
+          const html = await readFile(join(globDirectory, 'index.html'), 'utf8');
+          const shellAssets = [...html.matchAll(/\b(?:src|href)="([^"]+\.(?:js|css))"/g)]
+            .map(([, url]) => url)
+            .filter((url) => url.startsWith(`${base}assets/`))
+            .map((url) => url.slice(base.length));
+          workbox.globPatterns = [...(workbox.globPatterns ?? []), ...shellAssets];
+        },
+      },
       workbox: {
-        // Só o shell e os chunks que a tela inicial usa entram no pré-cache. Os demais chunks
-        // continuam disponíveis offline depois de visitados, pelo cache de runtime abaixo.
+        // beforeBuildServiceWorker inclui os chunks do HTML gerado, com os nomes desta compilação.
+        // Os chunks sob demanda entram no cache de runtime quando usados.
         globPatterns: [
           'index.html',
           'registerSW.js',
           'manifest.webmanifest',
-          'assets/index-*.js',
-          'assets/index-*.css',
-          'assets/rolldown-runtime-*.js',
-          'assets/runtime-core*.js',
-          'assets/pokemon-data-*.js',
-          'assets/sprite-source-*.js',
-          'assets/target-*.js',
           'assets/*-*.woff2',
           'icons/*',
         ],

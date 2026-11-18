@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onBeforeUnmount, watch } from 'vue';
-import { dismissReward, rewardFeed } from '../app/trainer-store';
+import { dismissReward, rewardFeed } from '../app/reward-feed';
 
 const SHOW_MS = 3800;
 const timers = new Map<number, ReturnType<typeof setTimeout>>();
