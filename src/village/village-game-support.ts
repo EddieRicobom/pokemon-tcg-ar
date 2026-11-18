@@ -125,6 +125,8 @@ export interface Mote {
   vx: number;
   vy: number;
   phase: number;
+  variant: 0 | 1;
+  facing: 'left' | 'right';
 }
 
 /** Partículas no mundo (em blocos): poeira, folhas, fumaça, emojis flutuando. */

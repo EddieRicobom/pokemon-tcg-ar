@@ -30,6 +30,8 @@ import { emptyDungeonVault, normalizeDungeonVault } from './dungeon-vault';
 import type { DungeonVault } from './dungeon-vault';
 import type { TowerState } from './tower-state';
 import type { MailState } from './mail';
+import { normalizeSurvivalAbsence, recordVillageConversation } from './survival-absence';
+import type { SurvivalAbsence } from './survival-absence';
 
 /**
  * A vida na Vila: inventário, coleta (madeira, pedra, frutas, flores, conchas), a casa em níveis, móveis que você
@@ -110,6 +112,7 @@ export interface VillageState {
   /** Decoração interna que cada casa de morador compra para si, indexada pelo terreno. */
   homeInteriors: HomeInteriors;
   friends: Record<string, Friendship>;
+  survivalAbsence: SurvivalAbsence;
   /** Último dia em que cada bloco foi coletado ("x,y" → dia). */
   harvested: Record<string, string>;
   /** Quem segue você pela vila (melhor amigo). */
@@ -207,6 +210,7 @@ export function emptyVillage(seed: number, spawn: { x: number; y: number }): Vil
   return {
     v: 1, seed, layout: MAP_LAYOUT, player: { ...spawn, dir: 'down' }, inventory: {}, house: 0, placed: [], homeInterior: emptyHomeInterior(), homeInteriors: {}, friends: {}, harvested: {}, follower: null,
     coins: 100, mewBlessing: false, crops: [], farm: emptyFarm(), wear: { player: null, mons: {} }, collected: [], helped: {}, rareGift: {},
+    survivalAbsence: normalizeSurvivalAbsence(null),
     claimed: [], ...emptySocial(), fishing: { day: '', casts: 0 }, battleCoins: { day: '', count: 0 }, homes: {}, town: { level: 1, mailDay: '', cafeDay: '' }, requests: { day: '', items: [], story: [] },
     digital: emptyDigital(), fountainWishes: 0, fountainTrustStoneDay: '', hoOhWishSeen: false, legendary: emptyLegendary(), recap: { day: '', at: 0 }, community: emptyCommunity(), mail: emptyMail(), mailCarrierId: null, cafeWaiterId: null, instructorId: null, tower: emptyTower(), dungeon: emptyDungeonVault(), residentEconomy: {}, ...emptyWorldProgress(), homeStyles: {}, homeProjects: {},
   };
@@ -247,6 +251,7 @@ export function normalizeVillage(raw: unknown, seed: number, spawn: { x: number;
     if (isItem(k) && Number.isInteger(n) && (n as number) > 0) inv[k as ItemId] = Math.min(999, (inv[k as ItemId] ?? 0) + (n as number));
   }
   const p = r.player;
+  const friends = normalizeFriends(r.friends);
   return {
     ...base,
     // Sem o número (save de antes do mapa grande) = mapa antigo; quem carrega passa por `migrateLayout`.
@@ -258,7 +263,8 @@ export function normalizeVillage(raw: unknown, seed: number, spawn: { x: number;
     placed: Array.isArray(r.placed) ? r.placed.filter((f) => f && Number.isInteger(f.x) && Number.isInteger(f.y) && FURNITURE_IDS.includes(f.item)).slice(0, MAX_PLACED) : [],
     homeInterior: normalizeHomeInterior(r.homeInterior),
     homeInteriors: normalizeHomeInteriors(r.homeInteriors),
-    friends: normalizeFriends(r.friends),
+    friends,
+    survivalAbsence: normalizeSurvivalAbsence(r.survivalAbsence, Object.values(friends).map((f) => f.lastTalk)),
     harvested: r.harvested && typeof r.harvested === 'object' ? r.harvested : {},
     follower: typeof r.follower === 'string' ? r.follower : null,
     coins: Number.isInteger(r.coins) ? Math.max(0, Math.min(999999, r.coins!)) : base.coins,
@@ -765,6 +771,7 @@ const MISSED_YOU: Record<number, (days: number) => string> = {
 export type TalkPlace = 'mountain' | 'statue' | null;
 
 export function talk(s: VillageState, id: string, name: string, types: readonly PokemonType[], day: string, hour: number, rng: Rng, gossip: string | null = null, weather: string | null = null, place: TalkPlace = null): Talk {
+  recordVillageConversation(s.survivalAbsence, day);
   const f = friendOf(s, id);
   let gained = 0;
   let lost = 0;

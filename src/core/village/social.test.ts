@@ -4,6 +4,8 @@ import { FURNITURE_IDS, itemDef } from './catalog';
 import { add, count, emptyVillage, friendOf, normalizeVillage } from './life';
 import { generateVillage } from './map';
 import { birthdayOf } from './personality';
+import { SURVIVAL_ABSENCE_PREFIX } from './moments/survival-absence';
+import { recordSurvivalDay } from './survival-absence';
 import {
   albumEntries, albumProgress, catchUp, MAX_AWAY_MOMENTS, makeEnv, pickMoment, recentGossip, relationMap, relationsOf, resolveScene, savedMoments, sceneChoice, sceneOptionLacks, setFavorite, sceneOfTemplate, TEMPLATE_BY_ID, TEMPLATE_COUNT, TEMPLATES, unreadCount,
 } from './social';
@@ -66,6 +68,12 @@ const SPECIAL_DATES = [
 /** Monta uma cena para um modelo: sorteia em vários mundos (horas, clima, relações, datas) até ele sair. */
 function sceneFor(id: string): Scene | null {
   const tpl = TEMPLATE_BY_ID.get(id)!;
+  if (id.startsWith(SURVIVAL_ABSENCE_PREFIX)) {
+    const { s, env } = richEnv();
+    recordSurvivalDay(s.survivalAbsence, '2026-10-13');
+    recordSurvivalDay(s.survivalAbsence, env.day);
+    return sceneOfTemplate(tpl, cast12, s, env, seededRng(42));
+  }
   if (id.startsWith('data-')) {
     for (const date of SPECIAL_DATES) {
       for (let vi = 0; vi < WORLDS.length; vi++) {
@@ -150,7 +158,7 @@ describe('momentos: catálogo de modelos', () => {
         }
       }
     }
-    const common = TEMPLATES.filter((t) => !t.id.startsWith('data-'));
+    const common = TEMPLATES.filter((t) => !t.id.startsWith('data-') && !t.id.startsWith(SURVIVAL_ABSENCE_PREFIX));
     const reached = common.filter((t) => got.has(t.id)).length;
     expect(n).toBeGreaterThan(1000);
     expect(reached / common.length).toBeGreaterThan(0.85);

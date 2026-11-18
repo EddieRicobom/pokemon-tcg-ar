@@ -1,6 +1,7 @@
 import { VILLAGE_DIORAMA_BANDS, VILLAGE_DIORAMA_FLOOR_INTERVAL_MS, VILLAGE_DIORAMA_SCENE_FPS, VILLAGE_DIORAMA_TEXTURE_SCALE, villageDioramaBand, villageDioramaBandBounds, villageDioramaFps } from '../core/village/ar-diorama';
-import { drawFlock, drawLampMoths, drawWaterFx, drawFountainFx, drawGlow, drawRainbow, drawSunRays, drawSoftShadow, drawSparkle } from './ambient-art';
-import { flockBirds, GREETING_COOLDOWN_MS, RAINBOW_MS, rainbowAlpha, residentGreeting } from '../core/village/ambience';
+import { drawWaterFx, drawFountainFx, drawGlow, drawRainbow, drawSunRays, drawSoftShadow, drawSparkle } from './ambient-art';
+import { AMBIENT_POKEMON, flockBirds, GREETING_COOLDOWN_MS, RAINBOW_MS, rainbowAlpha, residentGreeting } from '../core/village/ambience';
+import { AmbientPokemon } from './ambient-pokemon';
 import { GAME_BUILDINGS } from './game-buildings-art';
 import { BenchVisits, benchesFor } from '../core/village/benches';
 import { CafeService } from '../core/village/cafe';
@@ -70,6 +71,7 @@ import { HD2D_GROUND_TILT, hd2dDepthStyle, hd2dFrameRate, hd2dGroundProjection, 
 import type { Hd2dBounds } from '../core/village/hd2d';
 import { hd2dDepthBand, hd2dPerspectiveBounds, hd2dPerspectiveScale } from '../core/village/hd2d';
 import { DepthSpriteCache } from './depth-sprite-cache';
+import { HalftoneSpriteCache } from './halftone-sprite-cache';
 import { PokemonShadowCache } from './pokemon-shadow-cache';
 
 /**
@@ -96,6 +98,8 @@ export class VillageGame {
   private trainerAtlas: TrainerAtlas | null = null;
   private readonly sprites = new Map<string, HTMLCanvasElement>();
   private readonly depthSprites = new DepthSpriteCache();
+  private readonly halftoneSprites = new HalftoneSpriteCache();
+  private readonly ambientPokemon = new AmbientPokemon((frame) => this.halftone() ? this.halftoneSprites.apply(frame) : frame);
   private readonly pokemonShadows = new PokemonShadowCache();
   private readonly mountainTiles = new Map<string, HTMLCanvasElement>();
   /** O chão foi montado sem o mato alto e as flores, que balançam ao vento por cima (opção «Mato alto e flores»). */
@@ -139,8 +143,9 @@ export class VillageGame {
   /** Alvo selecionado por toque: um anel no chão deixa clara a ação que será feita ao chegar. */
   private interactionMarker: { x: number; y: number } | null = null;
   private bounce = new Map<string, number>();
-  /** Borboletas (dia) e vagalumes (noite), em blocos. */
+  /** Pokémon pequenos que voam perto do treinador, em blocos. */
   private readonly motes: Mote[] = [];
+  private ambientStartedAt = 0;
   private readonly particles: Particle[] = [];
   private lastGreet = 0;
   private nextEmote = 0;
@@ -219,6 +224,7 @@ export class VillageGame {
   glowFx: () => boolean = () => true;
   /** Mato alto e flores balançando ao vento (opção «Mato alto e flores balançando»). */
   windFx: () => boolean = () => true;
+  halftone: () => boolean = () => true;
   /** Profundidade de campo por objeto, no estilo 2D-HD; o Modo Rotom a suspende. */
   hd2d: () => boolean = () => false;
   smoothSprites: () => boolean = () => false;
@@ -1171,6 +1177,7 @@ export class VillageGame {
     if (this.running) return;
     this.running = true;
     this.last = performance.now();
+    this.ambientStartedAt = this.last;
     const tick = (now: number) => {
       if (!this.running) return;
       this.handle = requestGameFrame(tick, () => this.renderFps());
@@ -1344,22 +1351,28 @@ export class VillageGame {
     else {
       this.weather.cloud = this.weather.rain = this.weather.snow = this.weather.wet = this.weather.snowCover = 0;
     }
-    // Borboletas e vagalumes voando perto de você.
-    if (this.motes.length < 9) {
-      this.motes.push({ x: p.x + (this.rng() - 0.5) * 14, y: p.y + (this.rng() - 0.5) * 12, vx: (this.rng() - 0.5) * 0.8, vy: (this.rng() - 0.5) * 0.8, phase: this.rng() * 6 });
-    }
-    for (const m of this.motes) {
-      m.phase += dt * 6;
-      m.vx += (this.rng() - 0.5) * dt * 2;
-      m.vy += (this.rng() - 0.5) * dt * 2;
-      m.vx = Math.max(-0.9, Math.min(0.9, m.vx));
-      m.vy = Math.max(-0.9, Math.min(0.9, m.vy));
-      m.x += m.vx * dt;
-      m.y += m.vy * dt;
-    }
-    for (let i = this.motes.length - 1; i >= 0; i--) {
-      const m = this.motes[i]!;
-      if (Math.abs(m.x - p.x) > 10 || Math.abs(m.y - p.y) > 9) this.motes.splice(i, 1);
+    if (this.ambientFx() && !this.reducedMotion?.matches && this.weather.rain < 0.2 && this.weather.snow < 0.2) {
+      if (this.motes.length < 5) {
+        const phase = this.rng() * 6;
+        const vx = (this.rng() - 0.5) * 0.8;
+        this.motes.push({
+          x: p.x + (this.rng() - 0.5) * 14, y: p.y + (this.rng() - 0.5) * 12, vx, vy: (this.rng() - 0.5) * 0.8,
+          phase, variant: phase < 3 ? 0 : 1, facing: vx < 0 ? 'left' : 'right',
+        });
+      }
+      for (let i = this.motes.length - 1; i >= 0; i--) {
+        const m = this.motes[i]!;
+        if (Math.abs(m.x - p.x) > 10 || Math.abs(m.y - p.y) > 9) {
+          this.motes.splice(i, 1);
+          continue;
+        }
+        m.phase += dt * 6;
+        m.vx = Math.max(-0.9, Math.min(0.9, m.vx + (this.rng() - 0.5) * dt * 2));
+        m.vy = Math.max(-0.9, Math.min(0.9, m.vy + (this.rng() - 0.5) * dt * 2));
+        if (Math.abs(m.vx) > 0.12) m.facing = m.vx < 0 ? 'left' : 'right';
+        m.x += m.vx * dt;
+        m.y += m.vy * dt;
+      }
     }
     // Folhas e pétalas ao vento (dia, sem chuva).
     if (this.weather.rain > 0.4) this.rainWasHeavy = true;
@@ -1538,6 +1551,7 @@ export class VillageGame {
     const night = light.dark > 0.3;
     const wx = this.weather;
     const ambientFx = this.ambientFx() && !this.reducedMotion?.matches;
+    const ambientFlight = ambientFx && wx.rain < 0.2 && wx.snow < 0.2;
     // No chão quase deitado, centenas de tufos cabem na tela. O mato passa
     // a integrar o chão pré-renderizado; árvores continuam animadas em pé.
     const windy = !hd2d && !!this.atlas && this.windFx() && !this.reducedMotion?.matches;
@@ -1602,8 +1616,10 @@ export class VillageGame {
     const shrineGlows: { x: number; y: number; w: number; h: number }[] = [];
     const atlas = this.atlas;
     let depthBand: 0 | 1 | 2 = 0;
+    const halftone = this.halftone();
+    const shadeSprite = (img: HTMLCanvasElement) => halftone ? this.halftoneSprites.apply(img) : img;
     const drawDepthSprite = (img: HTMLCanvasElement, x: number, y: number, w: number, h: number) => {
-      this.depthSprites.draw(ctx, img, x, y, w, h, depthBand);
+      this.depthSprites.draw(ctx, shadeSprite(img), x, y, w, h, depthBand);
     };
     /** Escala cada peça em pé pela sua base, sem filtros nem cópias adicionais. */
     const drawDioramaTilted = (cx: number, base: number, width: number, paint: () => void): void => {
@@ -1733,7 +1749,7 @@ export class VillageGame {
                 },
               });
             } else {
-              list.push({ y: y + 1, draw: () => { shadow(sx(x + 0.5), sy(y + 1) - 1.5 * scale, 6 * scale, 2 * scale, 0.2); ctx.save(); if (depleted) ctx.globalAlpha = .5; ctx.drawImage(img, sx(x), sy(y + 1) - h, T, h); ctx.restore(); } });
+              list.push({ y: y + 1, draw: () => { shadow(sx(x + 0.5), sy(y + 1) - 1.5 * scale, 6 * scale, 2 * scale, 0.2); ctx.save(); if (depleted) ctx.globalAlpha = .5; ctx.drawImage(shadeSprite(img), sx(x), sy(y + 1) - h, T, h); ctx.restore(); } });
             }
             continue;
           }
@@ -1751,14 +1767,14 @@ export class VillageGame {
           });
         } else if (t === 'rock') {
           const img = this.sprite('rock', paintRock);
-          list.push({ y: y + 1, draw: () => { shadow(sx(x + 0.5), sy(y + 1) - 1.5 * scale, 6 * scale, 2 * scale, 0.2); ctx.drawImage(img, sx(x), sy(y), T, T); } });
+          list.push({ y: y + 1, draw: () => { shadow(sx(x + 0.5), sy(y + 1) - 1.5 * scale, 6 * scale, 2 * scale, 0.2); ctx.drawImage(shadeSprite(img), sx(x), sy(y), T, T); } });
         } else if (t === 'bush') {
           const fruit = !this.harvestedToday(x, y);
           const img = this.sprite(`bush${fruit}`, () => paintBush(fruit));
           list.push({ y: y + 1, draw: () => { shadow(sx(x + 0.5), sy(y + 1) - 1.5 * scale, 6 * scale, 2 * scale, 0.2); drawSwayed(img, sx(x), sy(y), T, T, sway(x, y, 0.04)); } });
         } else if (t === 'lamp') {
           const img = this.sprite(`lamp:${night}`, () => paintLamp(night));
-          list.push({ y: y + 1, draw: () => { shadow(sx(x + 0.5), sy(y + 1) - 1 * scale, 4 * scale, 1.5 * scale, 0.18); ctx.drawImage(img, sx(x), sy(y - 1), T, 2 * T); } });
+          list.push({ y: y + 1, draw: () => { shadow(sx(x + 0.5), sy(y + 1) - 1 * scale, 4 * scale, 1.5 * scale, 0.18); ctx.drawImage(shadeSprite(img), sx(x), sy(y - 1), T, 2 * T); } });
           if (night) streetLamps.push({ x, y });
         } else if (t === 'water') {
           if (ambientFx) drawWaterFx(ctx, sx(x), sy(y), T, now, hashN(x * 131 + y * 17) * 7, wx.rain, light.dark);
@@ -1894,7 +1910,7 @@ export class VillageGame {
       if (b.kind === 'fountain') {
         const f = Math.floor(now / 450) % 2;
         const img = this.sprite(`fonte${f}`, () => paintFountain(f));
-        list.push({ y: buildingGroundY(b), draw: () => { drawDioramaTilted(mid, spriteBase, 32 * scale, () => ctx.drawImage(img, left, spriteBase - 40 * scale, 32 * scale, 40 * scale)); if (ambientFx) drawFountainFx(ctx, left + 16 * scale, spriteBase, scale, now); } });
+        list.push({ y: buildingGroundY(b), draw: () => { drawDioramaTilted(mid, spriteBase, 32 * scale, () => ctx.drawImage(shadeSprite(img), left, spriteBase - 40 * scale, 32 * scale, 40 * scale)); if (ambientFx) drawFountainFx(ctx, left + 16 * scale, spriteBase, scale, now); } });
         if (nearDoor) overlays.push(() => this.drawLabel(mid, bottom + 2 * scale, b.name));
         continue;
       }
@@ -1902,7 +1918,7 @@ export class VillageGame {
       const fence = atlas ? this.art('fence-h') : null;
       const drawLot = () => {
         if (!fence) return false;
-        list.push({ y: b.y + b.h, draw: () => { drawDioramaTilted(mid, bottom, wpx, () => { for (let i = 0; i + 2 <= b.w + 1; i += 2) ctx.drawImage(fence, sx(b.x + Math.min(i, b.w - 2)), bottom - 16 * scale, 32 * scale, 16 * scale); }); } });
+        list.push({ y: b.y + b.h, draw: () => { drawDioramaTilted(mid, bottom, wpx, () => { for (let i = 0; i + 2 <= b.w + 1; i += 2) ctx.drawImage(shadeSprite(fence), sx(b.x + Math.min(i, b.w - 2)), bottom - 16 * scale, 32 * scale, 16 * scale); }); } });
         return true;
       };
       if (!open && drawLot()) {
@@ -1915,14 +1931,14 @@ export class VillageGame {
       }
       if (!open) {
         const img = this.sprite('lot', paintLot);
-        list.push({ y: b.y + b.h, draw: () => drawDioramaTilted(mid, bottom, wpx, () => ctx.drawImage(img, left, bottom - 48 * scale, wpx, 3 * T)) });
+        list.push({ y: b.y + b.h, draw: () => drawDioramaTilted(mid, bottom, wpx, () => ctx.drawImage(shadeSprite(img), left, bottom - 48 * scale, wpx, 3 * T)) });
         if (nearDoor) overlays.push(() => this.drawLabel(mid, bottom + 2 * scale, `🔒 Nível ${b.unlock} de Treinador`));
         continue;
       }
       if (b.kind === 'home' && [...this.homes.values()].every((l) => l !== b.lot)) {
         // Terreno liberado, mas sem morador ainda: a casa só é construída quando chega um Pokémon para morar nela.
         const img = this.sprite('lot', paintLot);
-        list.push({ y: b.y + b.h, draw: () => drawDioramaTilted(mid, bottom, wpx, () => ctx.drawImage(img, left, bottom - 48 * scale, wpx, 3 * T)) });
+        list.push({ y: b.y + b.h, draw: () => drawDioramaTilted(mid, bottom, wpx, () => ctx.drawImage(shadeSprite(img), left, bottom - 48 * scale, wpx, 3 * T)) });
         if (nearDoor) overlays.push(() => this.drawLabel(mid, bottom + 2 * scale, 'Terreno livre'));
         continue;
       }
@@ -1951,13 +1967,13 @@ export class VillageGame {
               if (night && who.length > 0) lightUp(id, key, at, tint);
               // Enfeites da casa (comprados na Vila): jardineira, cerquinha, lampião e caixa de correio.
               drawDioramaTilted(mid, spriteBase, Math.max(wpx, b.w * T), () => {
-                if (planter) ctx.drawImage(planter, left, spriteBase - 10 * scale, 24 * scale, 13 * scale);
+                if (planter) ctx.drawImage(shadeSprite(planter), left, spriteBase - 10 * scale, 24 * scale, 13 * scale);
                 if (fenceArt) {
-                  ctx.drawImage(fenceArt, 0, 0, 16, 16, left - 8 * scale, spriteBase - 14 * scale, 16 * scale, 16 * scale);
-                  ctx.drawImage(fenceArt, 16, 0, 16, 16, left + b.w * T - 8 * scale, spriteBase - 14 * scale, 16 * scale, 16 * scale);
+                  ctx.drawImage(shadeSprite(fenceArt), 0, 0, 16, 16, left - 8 * scale, spriteBase - 14 * scale, 16 * scale, 16 * scale);
+                  ctx.drawImage(shadeSprite(fenceArt), 16, 0, 16, 16, left + b.w * T - 8 * scale, spriteBase - 14 * scale, 16 * scale, 16 * scale);
                 }
                 // No vão ao lado da casa (o desenho do tileset ocupa a frente inteira): não tapa janela nem porta.
-                if (lantern) ctx.drawImage(lantern, left + b.w * T, spriteBase - 2 * T, T, 2 * T);
+                if (lantern) ctx.drawImage(shadeSprite(lantern), left + b.w * T, spriteBase - 2 * T, T, 2 * T);
                 if (decor & 8) {
                   ctx.fillStyle = '#6a4a28';
                   ctx.fillRect(left + 2 * scale, spriteBase - 10 * scale, 2 * scale, 10 * scale);
@@ -2098,7 +2114,7 @@ export class VillageGame {
     if (this.townLevel >= 3) for (const table of CAFE_TABLES) {
       for (const dx of [0, 1]) {
         const chair = this.sprite('cafe-chair', () => paintFurnitureItem('cadeira'));
-        list.push({ y: table.y + .3, draw: () => ctx.drawImage(chair, sx(table.x + dx), sy(table.y + .15), T, T) });
+        list.push({ y: table.y + .3, draw: () => ctx.drawImage(shadeSprite(chair), sx(table.x + dx), sy(table.y + .15), T, T) });
       }
       const meals = [...this.getCafe().orders.values()].filter((o) => o.table === table.id && o.stage === 'comendo');
       if (meals.length) list.push({ y: table.y + 2.1, draw: () => {
@@ -2106,7 +2122,7 @@ export class VillageGame {
           const visit = this.getCafe().seats.visits.get(meal.residentId);
           if (!visit) continue;
           const dish = this.sprite('cafe-tea', () => paintItemIcon('suco-pecha'));
-          ctx.drawImage(dish, sx(visit.x) + 4 * scale, sy(table.y + 1) + 2 * scale, 8 * scale, 8 * scale);
+          ctx.drawImage(shadeSprite(dish), sx(visit.x) + 4 * scale, sy(table.y + 1) + 2 * scale, 8 * scale, 8 * scale);
         }
       } });
     }
@@ -2115,7 +2131,7 @@ export class VillageGame {
       const img = this.sprite('public-bench', () => paintFurnitureItem('banco', false, 0));
       list.push({ y: bench.y + 0.5, draw: () => {
         shadow(sx(bench.x + 1), sy(bench.y + 1), 12 * scale, 2 * scale, 0.18);
-        drawDioramaTilted(sx(bench.x + 1), sy(bench.y + 1), 2 * T, () => ctx.drawImage(img, sx(bench.x), sy(bench.y), 2 * T, T));
+        drawDioramaTilted(sx(bench.x + 1), sy(bench.y + 1), 2 * T, () => ctx.drawImage(shadeSprite(img), sx(bench.x), sy(bench.y), 2 * T, T));
       } });
     }
     const lamps: { x: number; y: number; big: boolean }[] = [];
@@ -2133,8 +2149,8 @@ export class VillageGame {
           shadow(sx(f.x + 0.5), sy(f.y + 1) - 1.5 * scale, (tall ? 5 : 6) * scale, 2 * scale, 0.18);
           const base = sy(f.y + 1);
           drawDioramaTilted(sx(f.x + 0.5), base, T, () => {
-            if (tall) ctx.drawImage(img, sx(f.x), sy(f.y - 1), T, 2 * T);
-            else ctx.drawImage(img, sx(f.x), sy(f.y), T, T);
+            if (tall) ctx.drawImage(shadeSprite(img), sx(f.x), sy(f.y - 1), T, 2 * T);
+            else ctx.drawImage(shadeSprite(img), sx(f.x), sy(f.y), T, T);
           });
         },
       });
@@ -2223,8 +2239,9 @@ export class VillageGame {
             // Sem pose própria da direção, o GIF mostra sempre a mesma pose de frente (o espelho, acima, só a vira).
             }, !dirSet ? 'front' : w.dir === 'up' ? 'back' : w.dir === 'down' ? 'front' : w.dir, def.nudge) : null;
             if (acc && fit?.behind && !fit.hidden) this.drawAcc(acc, fit);
-            ctx.drawImage(frame, Math.round(frameLeft), Math.round(frameTop), Math.round(fullW), Math.round(fullH));
-            if (metal) this.drawSheen(id, frame, Math.round(frameLeft), Math.round(frameTop), Math.round(fullW), Math.round(fullH), now);
+            const painted = shadeSprite(frame);
+            ctx.drawImage(painted, Math.round(frameLeft), Math.round(frameTop), Math.round(fullW), Math.round(fullH));
+            if (metal) this.drawSheen(id, painted, Math.round(frameLeft), Math.round(frameTop), Math.round(fullW), Math.round(fullH), now);
             if (acc && fit && !fit.behind && !fit.hidden) this.drawAcc(acc, fit);
             ctx.restore();
           });
@@ -2285,7 +2302,8 @@ export class VillageGame {
             const height = PLAYER_H * scale;
             const width = height * bounds.width / bounds.height;
             const left = px0 + T / 2 - (frame.width / 2 - bounds.x) * height / bounds.height;
-            ctx.drawImage(atlas.filtered ?? atlas.image, frame.x + bounds.x, frame.y + bounds.y, bounds.width, bounds.height, left, py0, width, height);
+            const sheet = atlas.filtered ?? atlas.image;
+            ctx.drawImage(halftone ? this.halftoneSprites.apply(sheet) : sheet, frame.x + bounds.x, frame.y + bounds.y, bounds.width, bounds.height, left, py0, width, height);
           } else if (trainerAvatar && dir !== 'up') {
             const aspect = trainerAvatar.width / trainerAvatar.height;
             const avatarH = Math.min(PLAYER_H * scale, (T * 1.4) / aspect);
@@ -2295,10 +2313,10 @@ export class VillageGame {
               ctx.save();
               ctx.translate(avatarX + avatarW / 2, py0 + avatarH / 2);
               ctx.scale(-1, 1);
-              ctx.drawImage(trainerAvatar, -avatarW / 2, -avatarH / 2, avatarW, avatarH);
+              ctx.drawImage(shadeSprite(trainerAvatar), -avatarW / 2, -avatarH / 2, avatarW, avatarH);
               ctx.restore();
-            } else ctx.drawImage(trainerAvatar, avatarX, py0, avatarW, avatarH);
-          } else if (pimg) ctx.drawImage(pimg, px0, py0, T, PLAYER_H * scale);
+            } else ctx.drawImage(shadeSprite(trainerAvatar), avatarX, py0, avatarW, avatarH);
+          } else if (pimg) ctx.drawImage(shadeSprite(pimg), px0, py0, T, PLAYER_H * scale);
           if (accP && fitP && !fitP.behind && !fitP.hidden) this.drawAcc(accP, fitP);
         });
       },
@@ -2439,15 +2457,11 @@ export class VillageGame {
         ctx.globalAlpha = 1;
       }
     }
-    if (!night) {
-      for (const m of this.motes) {
-        const wing = Math.sin(m.phase) > 0 ? 2 : 1;
-        const color = ['#ffffff', '#ffd84a', '#f8a8c8', '#9ad0ff'][Math.floor(m.phase) % 4]!;
-        ctx.fillStyle = color;
-        const bx = sx(m.x);
-        const by = sy(m.y) - 10 * scale;
-        ctx.fillRect(bx - wing * scale, by, wing * scale, 2 * scale);
-        ctx.fillRect(bx + scale, by, wing * scale, 2 * scale);
+    if (ambientFlight && !night) {
+      for (const [i, m] of this.motes.entries()) {
+        const x = sx(m.x);
+        const y = sy(m.y) - (13 + 2 * Math.sin(m.phase * 0.5)) * scale;
+        this.ambientPokemon.draw(ctx, AMBIENT_POKEMON.butterflies[m.variant], m.facing, now + i * 71, x, y, T * 0.66);
       }
     }
 
@@ -2509,9 +2523,14 @@ export class VillageGame {
       ctx.globalAlpha = 1;
     }
 
-    // Pássaros de dia, só com tempo aberto (desligam com os efeitos da Vila e com «Reduzir movimento»).
-    if (layer !== 'props' && ambientFx && !this.diorama && wx.rain < 0.2 && wx.snow < 0.2) {
-      drawFlock(ctx, flockBirds(now), W, H, scale, 1 - Math.min(1, light.dark / 0.3));
+    // Wingull cruzam o céu em formação V em dias de tempo aberto.
+    if (layer === 'scene' && ambientFlight && !this.diorama && !night) {
+      ctx.globalAlpha = 1 - Math.min(1, light.dark / 0.3);
+      for (const [i, bird] of flockBirds(now - this.ambientStartedAt).entries()) {
+        const y = bird.y * H + Math.sin(now / 320 + i) * scale;
+        this.ambientPokemon.draw(ctx, AMBIENT_POKEMON.flock, bird.facing, now + i * 97, bird.x * W, y, T * 0.48);
+      }
+      ctx.globalAlpha = 1;
     }
 
     // Arco-íris depois da chuva (some sozinho; desliga com os efeitos da Vila).
@@ -2575,17 +2594,28 @@ export class VillageGame {
       }
       for (const l of streetLamps) {
         glow(sx(l.x + 0.5), sy(l.y - 0.3), 2.6 * T, '255,214,120', light.dark * (halos ? 0.6 : 0.35));
-        if (ambientFx && !this.diorama) drawLampMoths(ctx, sx(l.x + 0.5), sy(l.y - 0.4), now, scale, light.dark, l.x * 7 + l.y);
       }
       if (halos) for (const g of shrineGlows) glow(g.x + g.w / 2, g.y + g.h / 2, 1.6 * T, '235,160,255', 0.22 * dusk * (0.8 + 0.2 * Math.sin(now / 900)));
-      // Vagalumes.
-      if (night) {
-        for (const m of this.motes) {
-          const a = 0.35 + 0.65 * Math.max(0, Math.sin(m.phase * 0.7));
-          glow(sx(m.x), sy(m.y) - 8 * scale, 4 * scale, '220,255,140', a);
-        }
-      }
       ctx.globalCompositeOperation = 'source-over';
+      if (ambientFlight && night) {
+        ctx.globalAlpha = 0.85;
+        for (const [i, m] of this.motes.entries()) {
+          const x = sx(m.x);
+          const y = sy(m.y) - (12 + 2 * Math.sin(m.phase * 0.5)) * scale;
+          if (this.ambientPokemon.draw(ctx, AMBIENT_POKEMON.fireflies[m.variant], m.facing, now + i * 79, x, y, T * 0.66)) {
+            const alpha = 0.06 + 0.14 * Math.max(0, Math.sin(m.phase * 0.7));
+            glow(x, y + 2 * scale, 6 * scale, '220,255,140', alpha);
+          }
+        }
+        if (!this.diorama) for (const l of streetLamps) {
+          const seed = l.x * 7 + l.y;
+          const angle = now / 640 + seed * 2.3;
+          const x = sx(l.x + 0.5) + Math.cos(angle) * 14 * scale;
+          const y = sy(l.y - 0.4) + Math.sin(angle) * 8 * scale;
+          this.ambientPokemon.draw(ctx, AMBIENT_POKEMON.lampMoths[seed % 2 === 0 ? 0 : 1], Math.sin(angle) > 0 ? 'left' : 'right', now + seed * 71, x, y, T * 0.64);
+        }
+        ctx.globalAlpha = 1;
+      }
     }
     if (layer !== 'props') {
       if (ambientFx && this.weatherMode() !== 'off') drawSunRays(ctx, W, H, now, (1 - light.dark) * (1 - wx.cloud) * (1 - wx.rain) * (1 - wx.snow));
@@ -2674,7 +2704,7 @@ export class VillageGame {
 
   private drawAcc(id: string, at: { x: number; y: number; w: number; h: number }): void {
     const img = this.sprite(`acc:${id}`, () => paintAccessory(id));
-    this.ctx.drawImage(img, at.x, at.y, at.w, at.h);
+    this.ctx.drawImage(this.halftone() ? this.halftoneSprites.apply(img) : img, at.x, at.y, at.w, at.h);
   }
 
   /** Emoji pequeno sem balão (gota da horta, brilho de pronto). */

@@ -29,6 +29,7 @@ import { recordEvent } from '../app/trainer-store';
 import { recordSightings } from '../app/pokedex-store';
 import { addCoins, withVillage } from '../app/wallet';
 import { settleTowerRun, startTowerRun } from '../core/village/dojo';
+import { recordSurvivalDay } from '../core/village/survival-absence';
 import { PURE_LOADOUT, towerLoadout } from '../core/survivor-loadout';
 import type { TowerLoadout } from '../core/survivor-loadout';
 import { lunchEffectFor } from '../core/survivor-lunch';
@@ -174,7 +175,7 @@ const MOVE_CATEGORY_HINTS_PT: Record<SurvivorMove['category'], string> = {
 const emit = defineEmits<{ leave: []; complete: [summary: SurvivorSummary, participant: { id: string; name: string }, runId: string]; pvpRunDone: [result: SvRunResult]; openPvp: []; pvpBuff: [buff: { id: string; name: string; rarity: SurvivorUpgradeRarity }] }>();
 /** Digital Pokémon (Fase 6: elegíveis como parceiro na Torre, igual a qualquer carta escaneada). */
 const props = defineProps<{ digital?: { instanceId?: string; dexId: number; name: string; shiny?: boolean; accessory?: string | null }[]; accessories?: Record<string, string | null | undefined>; /** Abre já com o modo BONK escolhido (atalho da Vila). */ startBonk?: boolean;
-  /** Run do PvP do Survival: tempo limitado, nada da Vila entra, nada é gravado (moedas, recordes, Torre) e o fim vira `pvpRunDone`. */
+  /** Run do PvP do Survival: tempo limitado, sem bônus ou progresso da Torre, e o fim vira `pvpRunDone`. */
   pvpRun?: { index: number; total: number; limitMs: number; excludeIds?: string[] } }>();
 
 /**
@@ -1224,7 +1225,7 @@ const KEY_DIR: Record<string, SurvivorDirection> = {
   w: 'up', s: 'down', a: 'left', d: 'right', W: 'up', S: 'down', A: 'left', D: 'right',
 };
 
-const SURVIVOR_ACTION_SELECTOR = 'button:not(:disabled), [role="button"][tabindex]:not([tabindex="-1"]), a[href], input:not(:disabled), select:not(:disabled), details > summary:first-child';
+const SURVIVOR_ACTION_SELECTOR = 'button:not(:disabled), [role="button"][tabindex]:not([tabindex="-1"]), a[href], input:not(:disabled):not([type="hidden"]), select:not(:disabled), textarea:not(:disabled), details > summary:first-child';
 
 function activeSurvivorDialog(): HTMLElement | null {
   // Alguns momentos (como a afinidade do segundo tipo) pausam a corrida e deixam
@@ -1233,30 +1234,47 @@ function activeSurvivorDialog(): HTMLElement | null {
     .find((element) => element.getClientRects().length > 0) ?? null;
 }
 
+function survivorDialogActions(dialog: HTMLElement): HTMLElement[] {
+  return [...dialog.querySelectorAll<HTMLElement>(SURVIVOR_ACTION_SELECTOR)].filter((element) => {
+    if (element.getClientRects().length === 0) return false;
+    // O Chromium calcula retângulos mesmo para conteúdo oculto de um details.
+    for (let details = element.closest('details:not([open])'); details; details = details.parentElement?.closest('details:not([open])') ?? null) {
+      if (!details.querySelector(':scope > summary')?.contains(element)) return false;
+    }
+    return true;
+  });
+}
+
+function focusSurvivorAction(action: HTMLElement): void {
+  action.focus({ preventScroll: true });
+  action.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
+}
+
 function focusFirstSurvivorAction(): void {
   void nextTick(() => {
     const dialog = activeSurvivorDialog();
-    const action = dialog?.querySelector<HTMLElement>(SURVIVOR_ACTION_SELECTOR);
-    action?.focus({ preventScroll: true });
+    if (!dialog) return;
+    const actions = survivorDialogActions(dialog);
+    const action = actions.find((element) => element.hasAttribute('data-gamepad-default')) ?? actions[0];
+    if (action) focusSurvivorAction(action);
   });
 }
 
 function moveSurvivorFocus(direction: SurvivorDirection): boolean {
   const dialog = activeSurvivorDialog();
   if (!dialog) return false;
-  const actions = [...dialog.querySelectorAll<HTMLElement>(SURVIVOR_ACTION_SELECTOR)]
-    .filter((element) => element.getClientRects().length > 0);
-  if (!actions.length) return false;
-  const active = document.activeElement instanceof HTMLElement && dialog.contains(document.activeElement)
-    ? document.activeElement
-    : actions[0]!;
-  if (!dialog.contains(document.activeElement)) {
-    active.focus({ preventScroll: true });
+  const actions = survivorDialogActions(dialog);
+  const first = actions[0];
+  if (!first) return false;
+  const active = actions.find((element) => element === document.activeElement);
+  if (!active) {
+    focusSurvivorAction(actions.find((element) => element.hasAttribute('data-gamepad-default')) ?? first);
     return true;
   }
   const from = active.getBoundingClientRect();
   const originX = from.left + from.width / 2;
   const originY = from.top + from.height / 2;
+  const horizontal = direction === 'left' || direction === 'right';
   const next = actions
     .filter((element) => element !== active)
     .map((element) => {
@@ -1264,23 +1282,24 @@ function moveSurvivorFocus(direction: SurvivorDirection): boolean {
       const dx = rect.left + rect.width / 2 - originX;
       const dy = rect.top + rect.height / 2 - originY;
       const primary = direction === 'left' ? -dx : direction === 'right' ? dx : direction === 'up' ? -dy : dy;
-      const secondary = direction === 'left' || direction === 'right' ? Math.abs(dy) : Math.abs(dx);
-      return { element, primary, score: primary + secondary * 1.7 };
+      const gap = horizontal ? Math.max(rect.top - from.bottom, from.top - rect.bottom, 0)
+        : Math.max(rect.left - from.right, from.left - rect.right, 0);
+      return { element, primary, outsideLane: Number(gap > 0), score: primary + gap * 1.7 };
     })
     .filter((candidate) => candidate.primary > 1)
-    .sort((a, b) => a.score - b.score)[0]?.element;
-  (next ?? actions[(actions.indexOf(active) + 1) % actions.length]!).focus({ preventScroll: true });
+    .sort((a, b) => a.outsideLane - b.outsideLane || a.score - b.score)[0]?.element;
+  const step = direction === 'up' || direction === 'left' ? -1 : 1;
+  focusSurvivorAction(next ?? actions[(actions.indexOf(active) + step + actions.length) % actions.length]!);
   return true;
 }
 
 function confirmSurvivorDialog(): boolean {
   const dialog = activeSurvivorDialog();
   if (!dialog) return false;
-  const active = document.activeElement instanceof HTMLElement && dialog.contains(document.activeElement)
-    ? document.activeElement
-    : dialog.querySelector<HTMLElement>(SURVIVOR_ACTION_SELECTOR);
-  if (!active) return false;
-  active.click();
+  const actions = survivorDialogActions(dialog);
+  const active = actions.find((element) => element === document.activeElement);
+  if (active) active.click();
+  else focusFirstSurvivorAction();
   return true;
 }
 
@@ -1294,11 +1313,17 @@ function onKey(e: KeyboardEvent): void {
     return;
   }
   const dir = KEY_DIR[e.key];
+  const target = e.target instanceof Element ? e.target : document.activeElement;
+  // Campos de edição e o volume conservam os comandos nativos do navegador.
+  if (e.type === 'keydown' && (target?.closest('textarea, select, input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), [contenteditable]:not([contenteditable="false"])')
+    || (e.key.startsWith('Arrow') && target?.closest('input[type="range"]')))) return;
   if (e.type === 'keydown' && dir && moveSurvivorFocus(dir)) {
     e.preventDefault();
     return;
   }
-  if (e.type === 'keydown' && (e.key === ' ' || e.key === 'Enter' || e.key === 'z') && !(e.key !== 'z' && document.activeElement instanceof HTMLButtonElement) && confirmSurvivorDialog()) {
+  const confirm = e.key.toLowerCase() === 'z';
+  const nativeActivation = target?.closest('button, a[href], input, summary');
+  if (e.type === 'keydown' && (confirm || (e.key === ' ' || e.key === 'Enter') && !nativeActivation) && confirmSurvivorDialog()) {
     e.preventDefault();
     return;
   }
@@ -4061,6 +4086,8 @@ async function beginRun(dexId: number, name: string, picked?: PokemonType, infin
       if (!disposed && state.value === runState) guardianSprite.value = firstSpriteFrame(sprite)?.toDataURL() ?? null;
     });
     ready.value = true;
+    const today = dayKey(new Date());
+    withVillage((village) => recordSurvivalDay(village.survivalAbsence, today));
     lastTs = performance.now();
     if (!rafId) rafId = requestGameFrame(loop, maxVisualFps);
   } catch {
@@ -4109,11 +4136,17 @@ const typeChoice = ref<PickOption | null>(null);
 const attackChoice = ref<{ opt: PickOption; picked: PokemonType | undefined } | null>(null);
 const omegaAttackChoice = ref(false);
 const typeAffinityOffer = ref<PokemonType[] | null>(null);
+const pickerStep = computed(() => {
+  if (attackChoice.value) return omegaAttackChoice.value ? 'omega' : 'attack';
+  if (typeChoice.value) return 'type';
+  if (pickOptions.value) return 'pokemon';
+  return noCompanion.value ? 'empty' : null;
+});
 
 watch(
-  [pickOptions, typeChoice, attackChoice, typeAffinityOffer, pendingUpgrade, blackChestOffer, paused, leaveConfirm, specialModalOpen],
-  (next, previous) => {
-    if (next.some((value, index) => Boolean(value) && !previous[index])) {
+  [pickerStep, typeAffinityOffer, pendingUpgrade, blackChestOffer, paused, leaveConfirm, specialModalOpen],
+  ([step, ...next], [previousStep, ...previous]) => {
+    if ((step && step !== previousStep && !pickBusy.value) || next.some((value, index) => Boolean(value) && !previous[index])) {
       gamepadKeys.clear();
       if (gamepadCharging) cancelCharge();
       focusFirstSurvivorAction();
@@ -4573,9 +4606,9 @@ onBeforeUnmount(() => {
             <button v-if="!pvpRun" type="button" class="link survivor-pvp-entry" @click="emit('openPvp')">⚔ PvP com um amigo: 3 runs de 2 min e uma arena 3x3</button>
             <p v-if="torre.runs > 0" class="note">{{ torre.runs }} corridas concluídas · melhor onda {{ torre.bestWave }} · melhor nível {{ torre.bestLevel }} · melhor tempo {{ formatTime(torre.bestMs) }} (corrida pura: {{ torre.bestPureMs > 0 ? formatTime(torre.bestPureMs) : '—' }}) · {{ recordedObjectiveCount }} desafio(s) distinto(s) registrados.</p>
             <div class="survivor-mode survivor-mode-bonk" role="group" aria-label="Modo da Torre">
-              <button type="button" :class="{ active: !infiniteWanted && !bonkWanted }" @click="infiniteWanted = false; bonkWanted = false">🗼 Normal<small>Chefão aos 20 min</small></button>
-              <button type="button" class="bonk-mode-button" :class="{ active: bonkWanted }" @click="bonkWanted = true; infiniteWanted = false">💥 BONK<small>3D, física e pulo</small></button>
-              <button v-if="torre.infiniteUnlocked" type="button" :class="{ active: infiniteWanted }" @click="infiniteWanted = true; bonkWanted = false; fastWanted = false">♾️ Infinito<small>Mais difícil, sem fim</small></button>
+              <button type="button" :class="{ active: !infiniteWanted && !bonkWanted }" :data-gamepad-default="!infiniteWanted && !bonkWanted || undefined" @click="infiniteWanted = false; bonkWanted = false">🗼 Normal<small>Chefão aos 20 min</small></button>
+              <button type="button" class="bonk-mode-button" :class="{ active: bonkWanted }" :data-gamepad-default="bonkWanted || undefined" @click="bonkWanted = true; infiniteWanted = false">💥 BONK<small>3D, física e pulo</small></button>
+              <button v-if="torre.infiniteUnlocked" type="button" :class="{ active: infiniteWanted }" :data-gamepad-default="infiniteWanted || undefined" @click="infiniteWanted = true; bonkWanted = false; fastWanted = false">♾️ Infinito<small>Mais difícil, sem fim</small></button>
             </div>
             <p v-if="bonkWanted" class="note bonk-picker-note">💥 BONK é um teste opcional: câmera em terceira pessoa, mapa amplo com ruínas, ponte e bosque físicos. Pedras e muretas bloqueiam; use o botão Pular (ou Q/Espaço) para atravessar obstáculos baixos.</p>
             <details class="survivor-ledger survivor-howto">
@@ -4651,7 +4684,8 @@ onBeforeUnmount(() => {
                  :class="{ disabled: pickBusy }"
                  role="button"
                  :tabindex="pickBusy ? -1 : 0"
-                 @keydown.enter.prevent="opt.types.length > 1 ? openTypeChoice(opt) : openAttackChoice(opt, opt.types[0])"
+                 @keydown.enter.self.prevent="opt.types.length > 1 ? openTypeChoice(opt) : openAttackChoice(opt, opt.types[0])"
+                 @keydown.space.self.prevent="opt.types.length > 1 ? openTypeChoice(opt) : openAttackChoice(opt, opt.types[0])"
                  @click="opt.types.length > 1 ? openTypeChoice(opt) : openAttackChoice(opt, opt.types[0])"
               >
                  <button type="button" class="survivor-favorite" :aria-label="favoriteIds.has(opt.id) ? `Remover ${opt.name} dos favoritos` : `Favoritar ${opt.name}`" :aria-pressed="favoriteIds.has(opt.id)" @click.stop="toggleFavorite(opt.id)">{{ favoriteIds.has(opt.id) ? '★' : '☆' }}</button>
@@ -4677,7 +4711,6 @@ onBeforeUnmount(() => {
                     :disabled="omegaShards < 1 || pureWanted || pickBusy"
                     :title="omegaShards < 1 ? 'Precisa de 1 Fragmento Ômega' : `${form.label}: gasta 1 fragmento`"
                     @click.stop="toggleMegaPick(opt, form)"
-                    @keydown.enter.stop
                   >💎 {{ form.short }}</button>
                 </span>
                </div>
@@ -5006,6 +5039,7 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+.survivor-pick-btn[role="button"]:focus-visible { outline: 2px solid #fff; outline-offset: -3px; }
 /* Botão do Golpe Supremo: no centro de baixo, livre dos arranjos Lado a lado/Empilhados/Trocados. */
 .sv-supreme {
   position: absolute;

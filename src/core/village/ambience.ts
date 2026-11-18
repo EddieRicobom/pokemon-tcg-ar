@@ -15,12 +15,18 @@ export function rainbowAlpha(elapsed: number): number {
 export const FLOCK_PERIOD_MS = 60_000;
 export const FLOCK_CROSS_MS = 11_000;
 
+export const AMBIENT_POKEMON = {
+  butterflies: [12, 267], // Butterfree, Beautifly
+  fireflies: [313, 314], // Volbeat, Illumise
+  lampMoths: [49, 269], // Venomoth, Dustox
+  flock: 278, // Wingull
+} as const;
+
 export interface FlockBird {
   /** Posição na tela, de 0 a 1 (pode passar um pouco das bordas para entrar e sair por fora). */
   x: number;
   y: number;
-  /** Batida de asa, de -1 a 1. */
-  flap: number;
+  facing: 'left' | 'right';
 }
 
 const NO_BIRDS: readonly FlockBird[] = [];
@@ -43,7 +49,8 @@ export function flockBirds(now: number, count = 5): readonly FlockBird[] {
     const rank = Math.ceil(i / 2);
     const side = i % 2 === 0 ? -1 : 1;
     const x = -0.2 + progress * 1.4 - rank * 0.045;
-    return { x: forward ? x : 1 - x, y: lane + drift * progress + side * rank * 0.022, flap: Math.sin(now / 95 + i * 1.3) };
+    const y = lane + drift * progress + side * rank * 0.022;
+    return { x: forward ? x : 1 - x, y, facing: forward ? 'right' : 'left' };
   });
 }
 
