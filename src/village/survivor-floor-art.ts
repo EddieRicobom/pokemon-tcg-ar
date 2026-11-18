@@ -168,10 +168,15 @@ export function survivorDecorTile(kind: SurvivorDecorKind, floor: SurvivorFloorK
   const v = Math.abs(variant | 0);
   const jitter = (n: number, span: number) => Math.floor(floorHash(v, n, kind.length) * span);
   switch (kind) {
-    case 'tuft':
-      stamp(buf, 2 + jitter(1, 6), 3 + jitter(2, 6), TALL_TUFT, { d: p.shade, D: p.deep, L: p.light });
+    case 'tuft': {
+      const x = 2 + jitter(1, 6), y = 3 + jitter(2, 6);
+      // Só as pontas se curvam; as raízes continuam presas ao chão.
+      const sway = frame % 2 ? (v % 2 ? -1 : 1) : 0;
+      stamp(buf, x + sway, y, TALL_TUFT.slice(0, 3), { d: p.shade, D: p.deep, L: p.light });
+      stamp(buf, x, y + 3, TALL_TUFT.slice(3), { d: p.shade, D: p.deep, L: p.light });
       if (v % 3 === 0) stamp(buf, 1 + jitter(3, 4), 11, TUFT_SMALL, { d: p.shade, D: p.deep });
       break;
+    }
     case 'flowers': {
       const spots = v % 2 ? [[1, 1], [9, 8]] : [[8, 1], [2, 9]];
       spots.forEach(([x, y], i) => {

@@ -474,6 +474,8 @@ export interface SurvivorElementalTerrain {
 }
 
 export interface SurvivorState {
+  /** A partida pode resolver cortes e quebras no cenario usando a geometria dos golpes. */
+  vegetationImpact?: (hit: import('./survivor-vegetation').SurvivorVegetationHit) => void;
   /** Desativa encontros automáticos no laboratório isolado. */
   debugLaboratory?: boolean;
   /** Acertos críticos ocorridos no último passo, para apresentação. */

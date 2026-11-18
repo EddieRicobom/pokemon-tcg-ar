@@ -4,6 +4,8 @@ export interface SurvivorCollisionGrid {
   rows: number;
   cellSize: number;
   solid: Uint8Array;
+  /** Sobrescrita por coordenadas da arena quando uma árvore do setor já foi derrubada. */
+  isSolid?: (col: number, row: number) => boolean;
 }
 
 export interface SurvivorPoint { x: number; y: number }
@@ -26,7 +28,8 @@ export function survivorCircleHitsLandscape(grid: SurvivorCollisionGrid, x: numb
   for (let row = minRow; row <= maxRow; row++) for (let col = minCol; col <= maxCol; col++) {
     const wrappedCol = modulo(col, grid.cols);
     const wrappedRow = modulo(row, grid.rows);
-    if (!grid.solid[wrappedRow * grid.cols + wrappedCol]) continue;
+    const solid = grid.isSolid ? grid.isSolid(Math.floor(x / tileW) * grid.cols + col, Math.floor(y / tileH) * grid.rows + row) : grid.solid[wrappedRow * grid.cols + wrappedCol];
+    if (!solid) continue;
     const left = col * grid.cellSize;
     const top = row * grid.cellSize;
     const nearX = Math.max(left, Math.min(localX, left + grid.cellSize));

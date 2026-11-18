@@ -219,6 +219,7 @@ export function stepSurvivorSpecial(state: SurvivorState, input: SurvivorInput, 
     if (special.selected === 'pulse' || special.selected === 'mark') {
       const pulse = special.selected === 'pulse';
       const radius = pulse ? (special.branch === 'pulse-wide' ? 240 : 170) : 260;
+      if (pulse) state.vegetationImpact?.({ kind: 'area', x: state.player.x, y: state.player.y, radius });
       const limit = pulse ? 12 : special.branch === 'mark-chain' ? 3 : 1;
       const targets = state.enemies.filter((enemy) => enemy.hp > 0 && Math.hypot(enemy.x - state.player.x, enemy.y - state.player.y) <= radius + enemy.radius)
         .sort((a, b) => Math.hypot(a.x - state.player.x, a.y - state.player.y) - Math.hypot(b.x - state.player.x, b.y - state.player.y) || a.id - b.id)

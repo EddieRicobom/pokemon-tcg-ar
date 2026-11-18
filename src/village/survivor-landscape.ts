@@ -1,6 +1,7 @@
 import { SURVIVOR_REGIONS, survivorRegionAt } from '../core/survivor-regions';
 import { SURVIVOR_BIOMES, survivorBiomeZonesOf } from '../core/survivor-biomes';
 import type { SurvivorBiomeZoneKind } from '../core/survivor-biomes';
+import type { SurvivorVegetation, SurvivorVegetationPlan, SurvivorVegetationSector } from '../core/survivor-vegetation';
 import { ATLAS_SOURCES, packAtlas } from './atlas-spec';
 import { quarterCell } from './ground-tiles';
 import { SURVIVOR_FLOOR_PALETTES, SURVIVOR_FLOWER_COLORS, floorHash, recolorGrassBase, survivorDecorTile, survivorFloorTexture, tintFoliage } from './survivor-floor-art';
@@ -158,9 +159,7 @@ export function floorNoise(seed: number, c: number, r: number, scale: number, sa
 export const FLOOR_CELL = { base: 0, path: 1, cover: 2, zone: 3, forest: 4 } as const;
 export type FloorCell = typeof FLOOR_CELL[keyof typeof FLOOR_CELL];
 
-export interface SurvivorFloorPlan {
-  cols: number;
-  rows: number;
+export interface SurvivorFloorPlan extends SurvivorVegetationPlan {
   cells: Uint8Array;
   /** Células que têm um tronco, rocha, muro ou mata fechada; o jogador não as atravessa. */
   solid: Uint8Array;
@@ -170,6 +169,14 @@ export interface SurvivorFloorPlan {
   zones: readonly (SurvivorBiomeZoneKind | null)[];
   /** Distância (px) de cada bloco até o eixo da rota. */
   routeDistance: Float32Array;
+}
+
+function forestTreeKey(c: number, r: number, cols: number): number {
+  return 1 + (r + 1) * (cols + 1) + c + 1;
+}
+
+function detailTreeKey(c: number, r: number, cols: number, rows: number): number {
+  return 1 + (rows + 1) * (cols + 1) + r * cols + c;
 }
 
 /** Meia largura da trilha: as rotas das referências têm 4 a 5 blocos, não uma avenida. */
@@ -274,37 +281,80 @@ export function planSurvivorFloor(index: number, width: number, height: number):
   // Mata fechada é uma parede contínua de árvores. Objetos soltos usam a mesma
   // grade e o mesmo sorteio do desenho abaixo, para a hitbox acompanhar a arte.
   const solid = new Uint8Array(cols * rows);
-  const markSolid = (c: number, r: number, w = 1, h = 1) => {
+  const treeCells = new Int32Array(cols * rows);
+  const grass = Uint8Array.from(cells, (cell, i) => Number(zones[i] === 'folhagem' || (cell === FLOOR_CELL.cover && tiles.cover === 'tall')));
+  // Os tufos decorativos seguem o mesmo sorteio usado pelo desenho.
+  const markTuft = (c: number, r: number) => {
+    if (c >= 0 && r >= 0 && c < cols && r < rows && cells[r * cols + c] === FLOOR_CELL.base) grass[r * cols + c] = 1;
+  };
+  for (let gr = 0; gr < rows; gr += 6) for (let gc = 0; gc < cols; gc += 6) {
+    if (floorHash(index, gr, gc, 21) > 0.4 || tiles.decor[Math.floor(floorHash(index, gr, gc, 22) * tiles.decor.length)] !== 'tuft') continue;
+    const c0 = gc + Math.floor(floorHash(index, gr, gc, 23) * 3), r0 = gr + Math.floor(floorHash(index, gr, gc, 24) * 4);
+    const w = 2 + Math.floor(floorHash(index, gr, gc, 25) * 2), h = 1 + Math.floor(floorHash(index, gr, gc, 26) * 2);
+    for (let r = r0; r < r0 + h; r++) for (let c = c0; c < c0 + w; c++) {
+      const corner = (r === r0 || r === r0 + h - 1) && (c === c0 || c === c0 + w - 1) && h > 1;
+      if (!corner || floorHash(index, c, r, 27) >= 0.5) markTuft(c, r);
+    }
+  }
+  for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+    const i = r * cols + c;
+    if (cells[i] !== FLOOR_CELL.base) continue;
+    const h = floorHash(index, c, r, 3);
+    if ((c + r) % 2 === 0 && h <= 0.08 && tiles.decor[Math.floor(floorHash(index, c, r, 4) * tiles.decor.length)] === 'tuft') markTuft(c, r);
+    const distance = routeDistance[i]!;
+    const variant = floorHash(index, c, r, 82);
+    if (distance >= half + 10 && distance <= half + 54 && variant <= 0.17 && tiles.decor[Math.floor(floorHash(index, c, r, 83) * tiles.decor.length)] === 'tuft') markTuft(c, r);
+  }
+  const markSolid = (c: number, r: number, w: number, h: number, treeId: number) => {
     for (let y = r; y < r + h; y++) for (let x = c; x < c + w; x++) {
-      if (x >= 0 && y >= 0 && x < cols && y < rows) solid[y * cols + x] = 1;
+      if (x >= 0 && y >= 0 && x < cols && y < rows) {
+        const cell = y * cols + x;
+        solid[cell] = 1;
+        treeCells[cell] = treeId;
+      }
     }
   };
-  for (let i = 0; i < cells.length; i++) if (cells[i] === FLOOR_CELL.forest) solid[i] = 1;
-  const detailFootprint = tiles.detail === 'tree-big' || tiles.detail === 'pine-m'
+  for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+    const cell = r * cols + c;
+    if (cells[cell] === FLOOR_CELL.forest) {
+      const group = Math.floor((r + 1) / 2);
+      const baseC = group % 2 - 1;
+      const anchorC = baseC + 2 * Math.floor((c - baseC) / 2);
+      solid[cell] = 1;
+      treeCells[cell] = forestTreeKey(anchorC, 2 * group - 1, cols);
+    } else if (cells[cell] === FLOOR_CELL.cover && tiles.cover === 'pine-s1' && c % 2 === 0 && r % 2 === 0) {
+      treeCells[cell] = detailTreeKey(c, r, cols, rows);
+    }
+  }
+  const hasDetailTrees = tiles.detail === 'tree-big' || tiles.detail === 'pine-m';
+  const detailFootprint = hasDetailTrees
     ? { w: 2, h: 2 }
     : tiles.detail === 'wall' ? { w: 2, h: 1 }
       : { w: 1, h: 1 };
+  const detailArt = atlasLayout.rects.get(tiles.detail);
+  const detailSpanC = hasDetailTrees && detailArt ? Math.ceil(detailArt.w / T) : detailFootprint.w;
+  const detailSpanR = hasDetailTrees && detailArt ? Math.ceil(detailArt.h / T) : detailFootprint.h;
   for (let r = 4; r < rows - 6; r += 9) for (let c = 4; c < cols - 6; c += 11) {
     const cc = c + Math.floor(floorHash(index, c, r, 7) * 6);
     const rr = r + Math.floor(floorHash(index, c, r, 8) * 5);
     if (floorHash(index, c, r, 9) > 0.5 || tiles.detail === 'flowers-white') continue;
     let free = true;
-    for (let y = rr; y < rr + detailFootprint.h && free; y++) for (let x = cc; x < cc + detailFootprint.w && free; x++) {
+    for (let y = rr; y < rr + detailSpanR && free; y++) for (let x = cc; x < cc + detailSpanC && free; x++) {
       const i = y * cols + x;
       free = x >= 0 && y >= 0 && x < cols && y < rows && cells[i] === FLOOR_CELL.base && routeDistance[i]! > trailHalfWidth(SURVIVOR_REGION_ROUTES[index]!.width) + 24;
     }
-    if (free) markSolid(cc, rr, detailFootprint.w, detailFootprint.h);
+    if (free) markSolid(cc, rr, detailFootprint.w, detailFootprint.h, hasDetailTrees ? detailTreeKey(cc, rr, cols, rows) : 0);
   }
-  return { cols, rows, cells, solid, path, zones, routeDistance };
+  return { cols, rows, cells, solid, path, zones, routeDistance, treeCells, grass };
 }
 
 /** Retângulo do mundo que aparece na tela (câmera); sem ele a paisagem inteira é desenhada. */
 export interface LandscapeView { x: number; y: number; w: number; h: number }
 
-/** Relógio da animação do chão (flores e brilho da água). `animate: false` deixa tudo no primeiro quadro. */
+/** Relógio da animação do chão (grama, flores e brilho da água). `animate: false` deixa tudo no primeiro quadro. */
 export interface LandscapeMotion { timeMs: number; animate: boolean }
 
-export type SurvivorLandscapeRenderer = ((ctx: CanvasRenderingContext2D, elapsedMs: number, view?: LandscapeView, motion?: LandscapeMotion, runSeed?: number) => void) & {
+export type SurvivorLandscapeRenderer = ((ctx: CanvasRenderingContext2D, elapsedMs: number, view?: LandscapeView, motion?: LandscapeMotion, runSeed?: number, vegetation?: SurvivorVegetation) => void) & {
   setAtlas(image: CanvasImageSource | null): void;
 };
 
@@ -347,12 +397,14 @@ interface LandscapeChunk {
   groundY: number;
   /** Por fileira: posição x e os dois quadros de cada canteiro. */
   flowers: { x: number; frames: readonly [HTMLCanvasElement, HTMLCanvasElement] }[][];
+  tufts: { x: number; frames: readonly [HTMLCanvasElement, HTMLCanvasElement] }[][];
   /** Por fileira: colunas com água. */
   water: number[][];
 }
 
 /** Quadro das flores: troca a cada 450 ms, como o balanço das flores nas rotas. */
 const FLOWER_FRAME_MS = 450;
+const GRASS_FRAME_MS = 700;
 const WATER_FRAME_MS = 260;
 /** 512 px é grande o bastante para reduzir emendas, mas ocupa só 1 MiB por canvas RGBA. */
 export const SURVIVOR_LANDSCAPE_CHUNK_SIZE = 512;
@@ -386,9 +438,10 @@ export function survivorLandscapeChunks(view: LandscapeView, width: number, heig
 }
 
 /** Cacheia os planos regionais e no máximo 18 chunks visíveis; o mapa inteiro nunca vira uma textura única. */
-export function createSurvivorLandscape(width: number, height: number): SurvivorLandscapeRenderer {
+export function createSurvivorLandscape(width: number, height: number, getPlan = (index: number) => planSurvivorFloor(index, width, height)): SurvivorLandscapeRenderer {
   const layers = new Map<number, RegionLayer>();
   const chunks = new Map<string, LandscapeChunk>();
+  let lastVegetation: SurvivorVegetation | undefined;
   const regionAtlases = new Map<number, CanvasImageSource>();
   let atlas: CanvasImageSource | null = null;
 
@@ -482,21 +535,17 @@ export function createSurvivorLandscape(width: number, height: number): Survivor
   function layer(index: number): RegionLayer {
     const cached = layers.get(index);
     if (cached) return cached;
-    const plan = planSurvivorFloor(index, width, height);
+    const plan = getPlan(index);
     const result: RegionLayer = { plan, decorCache: new Map(), treeCache: new Map() };
     layers.set(index, result);
     return result;
-  }
-
-  function chunkKey(index: number, col: number, row: number): string {
-    return `${index}:${col}:${row}`;
   }
 
   function firstStepped(first: number, step: number, min: number): number {
     return first + Math.max(0, Math.ceil((min - first) / step)) * step;
   }
 
-  function buildChunk(index: number, regionLayer: RegionLayer, bounds: LandscapeChunkCoordinate): LandscapeChunk {
+  function buildChunk(index: number, regionLayer: RegionLayer, bounds: LandscapeChunkCoordinate, vegetation?: SurvivorVegetationSector): LandscapeChunk {
     const paintBounds = survivorLandscapeChunkPaintBounds(bounds);
     const canvas = document.createElement('canvas');
     canvas.width = paintBounds.w;
@@ -527,6 +576,7 @@ export function createSurvivorLandscape(width: number, height: number): Survivor
       groundX: bounds.x,
       groundY: bounds.y,
       flowers: Array.from({ length: rows }, () => []),
+      tufts: Array.from({ length: rows }, () => []),
       water: Array.from({ length: rows }, () => []),
     };
     const minC = Math.max(0, Math.floor(paintBounds.x / T));
@@ -562,7 +612,9 @@ export function createSurvivorLandscape(width: number, height: number): Survivor
       result.flowers[r]!.push({ x: c * T, frames: [decor('flowers', variant, 0), decor('flowers', variant, 1)] });
     };
     const placeDecor = (kind: SurvivorDecorKind, c: number, r: number, variant: number) => {
+      if (kind === 'tuft' && vegetation?.clearedGrass.has(r * cols + c)) return;
       if (kind === 'flowers') placeFlower(c, r, variant);
+      else if (kind === 'tuft' && ownsCell(c, r)) result.tufts[r]!.push({ x: c * T, frames: [decor(kind, variant, 0), decor(kind, variant, 1)] });
       else if (ownsCell(c, r)) ctx.drawImage(decor(kind, variant), c * T, r * T);
     };
     /** Árvore do atlas com a copa no tom pedido (`tintFoliage`), recortada uma vez por região. */
@@ -665,7 +717,11 @@ export function createSurvivorLandscape(width: number, height: number): Survivor
       drawSprite(ctx, art, 'tall', c * T, r * T, { x: column, y: row * T, w: T, h: T });
       if (!isTall(c, r - 1)) drawSprite(ctx, art, 'tall', c * T, (r - 1) * T, { x: column, y: 0, w: T, h: T });
     };
-    const zoneTall = (c: number, r: number) => zoneIs(c, r, 'folhagem');
+    const grassAt = (c: number, r: number) => {
+      const cell = at(c, r);
+      return cell !== null && !vegetation?.clearedGrass.has(cell);
+    };
+    const zoneTall = (c: number, r: number) => zoneIs(c, r, 'folhagem') && grassAt(c, r);
     const zoneSoft = (c: number, r: number, kind: SurvivorBiomeZoneKind) =>
       // Na beira da mancha o terreno rareia, em vez de acabar numa linha reta.
       [[0, -1], [0, 1], [-1, 0], [1, 0]].filter(([dc, dr]) => !zoneIs(c + dc!, r + dr!, kind)).length;
@@ -679,6 +735,7 @@ export function createSurvivorLandscape(width: number, height: number): Survivor
       const edge = zoneSoft(c, r, kind);
       switch (kind) {
         case 'folhagem':
+          if (!zoneTall(c, r)) break;
           // As pontas das folhas sobem para o bloco de cima, que pode ser de outro chunk: vão para a camada de cima.
           ctx = topCtx;
           tallCell(c, r, zoneTall);
@@ -726,7 +783,7 @@ export function createSurvivorLandscape(width: number, height: number): Survivor
 
     ctx = topCtx;
     // 5. Cobertura baixa em manchas: mato alto encaixado na grade, arbustos, pinheirinhos ou canteiros de flores.
-    const coverAt = (c: number, r: number) => cellIs(c, r, FLOOR_CELL.cover, false);
+    const coverAt = (c: number, r: number) => cellIs(c, r, FLOOR_CELL.cover, false) && grassAt(c, r);
     for (let r = minR; r <= maxR; r++) for (let c = minC; c <= maxC; c++) {
       if (!ownsCell(c, r)) continue;
       if (!coverAt(c, r)) continue;
@@ -737,7 +794,9 @@ export function createSurvivorLandscape(width: number, height: number): Survivor
         placeFlower(c, r, variant);
       } else if (tiles.cover === 'pine-s1') {
         // Bosque de pinheiros pequenos: um a cada dois blocos, com o tronco na fileira de baixo.
-        if (art && (c + r) % 2 === 0 && r % 2 === 0) drawSprite(ctx, art, 'pine-s1', c * T, (r - 1) * T);
+        if (art && c % 2 === 0 && r % 2 === 0) {
+          if (!vegetation?.felledTrees.has(detailTreeKey(c, r, cols, rows))) drawSprite(ctx, art, 'pine-s1', c * T, (r - 1) * T);
+        }
         else ctx.drawImage(decor('drift', variant), c * T, r * T);
       } else if (variant % 5 < 3 && art) {
         drawSprite(ctx, art, 'bush', c * T, r * T);
@@ -762,6 +821,7 @@ export function createSurvivorLandscape(width: number, height: number): Survivor
           placeFlower(cc, rr, cc + rr);
           placeFlower(cc + 1, rr, cc + rr + 1);
         } else if (tiles.detail === 'tree-big' || tiles.detail === 'pine-m') {
+          if (vegetation?.felledTrees.has(detailTreeKey(cc, rr, cols, rows))) continue;
           const [, tint] = tiles.trees[Math.floor(floorHash(index, cc, rr, 10) * tiles.trees.length)]!;
           const sprite = tree(tiles.detail, tint);
           if (sprite) ctx.drawImage(sprite, cc * T, rr * T);
@@ -786,6 +846,7 @@ export function createSurvivorLandscape(width: number, height: number): Survivor
         const outside = (c < 0 || r < 0 || c >= cols - 1 || r >= rows - 1)
           && [[0, 0], [1, 0], [0, 1], [1, 1]].every(([dc, dr]) => at(c + dc!, r + dr!) === null || cellIs(c + dc!, r + dr!, FLOOR_CELL.base) || cellIs(c + dc!, r + dr!, FLOOR_CELL.forest));
         if (!inside && !outside) continue;
+        if (vegetation?.felledTrees.has(forestTreeKey(c, r, cols))) continue;
         const [id, tint] = tiles.trees[Math.floor(floorHash(index, c, r, 70) * tiles.trees.length)]!;
         const sprite = tree(id, tint);
         if (!sprite) continue;
@@ -812,8 +873,11 @@ export function createSurvivorLandscape(width: number, height: number): Survivor
     };
   }
 
-  function cachedChunk(index: number, region: RegionLayer, bounds: LandscapeChunkCoordinate): LandscapeChunk {
-    const key = chunkKey(index, bounds.col, bounds.row);
+  function cachedChunk(index: number, region: RegionLayer, bounds: LandscapeChunkCoordinate, vegetation?: SurvivorVegetationSector, tileX = 0, tileY = 0): LandscapeChunk {
+    const chunkIndex = bounds.row * Math.ceil(width / SURVIVOR_LANDSCAPE_CHUNK_SIZE) + bounds.col;
+    const version = vegetation?.chunkVersions.get(chunkIndex);
+    const baseKey = `${index}:${bounds.col}:${bounds.row}`;
+    const key = version ? `${baseKey}:${tileX}:${tileY}:${version}` : baseKey;
     const cached = chunks.get(key);
     if (cached) {
       // Map em ordem de uso: a poda abaixo descarta primeiro os blocos deixados para trás.
@@ -821,7 +885,7 @@ export function createSurvivorLandscape(width: number, height: number): Survivor
       chunks.set(key, cached);
       return cached;
     }
-    const made = buildChunk(index, region, bounds);
+    const made = buildChunk(index, region, bounds, vegetation);
     chunks.set(key, made);
     return made;
   }
@@ -831,7 +895,7 @@ export function createSurvivorLandscape(width: number, height: number): Survivor
    * alto, objetos) passa da borda do chunk e do setor e é desenhada depois do chão de todos os chunks e setores, então
    * nenhum vizinho a cobre nem a corta.
    */
-  function paint(ctx: CanvasRenderingContext2D, index: number, region: RegionLayer, view: LandscapeView | undefined, motion: LandscapeMotion, pass: 'ground' | 'top'): void {
+  function paint(ctx: CanvasRenderingContext2D, index: number, region: RegionLayer, view: LandscapeView | undefined, motion: LandscapeMotion, pass: 'ground' | 'top', vegetation: SurvivorVegetationSector | undefined, tileX: number, tileY: number): void {
     if (pass === 'top') {
       const raw = view ?? { x: 0, y: 0, w: width, h: height };
       ctx.save();
@@ -840,7 +904,7 @@ export function createSurvivorLandscape(width: number, height: number): Survivor
       ctx.clip();
       const near = { x: raw.x - CHUNK_DRAW_BLEED, y: raw.y - CHUNK_DRAW_BLEED, w: raw.w + CHUNK_DRAW_BLEED * 2, h: raw.h + CHUNK_DRAW_BLEED * 2 };
       for (const bounds of survivorLandscapeChunks(near, width, height)) {
-        const chunk = cachedChunk(index, region, bounds);
+        const chunk = cachedChunk(index, region, bounds, vegetation, tileX, tileY);
         ctx.drawImage(chunk.canvas, chunk.x, chunk.y);
       }
       ctx.restore();
@@ -855,18 +919,26 @@ export function createSurvivorLandscape(width: number, height: number): Survivor
     ctx.rect(x, y, right - x, bottom - y);
     ctx.clip();
     for (const bounds of visibleChunks) {
-      const chunk = cachedChunk(index, region, bounds);
+      const chunk = cachedChunk(index, region, bounds, vegetation, tileX, tileY);
       ctx.drawImage(chunk.ground, chunk.groundX, chunk.groundY);
     }
     const flowerFrame = motion.animate ? Math.floor(motion.timeMs / FLOWER_FRAME_MS) % 2 : 0;
+    const grassFrame = motion.animate ? Math.floor(motion.timeMs / GRASS_FRAME_MS) : 0;
     for (const bounds of visibleChunks) {
-      const chunk = cachedChunk(index, region, bounds);
+      const chunk = cachedChunk(index, region, bounds, vegetation, tileX, tileY);
       const r0 = Math.max(0, Math.floor(y / T) - 1), r1 = Math.min(chunk.flowers.length - 1, Math.floor(bottom / T));
       for (let r = r0; r <= r1; r++) {
+        for (const tuft of chunk.tufts[r]!) {
+          if (tuft.x + T < x || tuft.x > right) continue;
+          // Faixas de vento com fases diferentes, sem deslocar o pé da grama.
+          const frame = motion.animate ? (grassFrame + Math.floor(tuft.x / (T * 4)) + Math.floor(r / 4)) % 2 : 0;
+          ctx.drawImage(tuft.frames[frame]!, tuft.x, r * T);
+        }
         for (const flower of chunk.flowers[r]!) {
           if (flower.x + T < x || flower.x > right) continue;
           // Canteiros vizinhos balançam em contratempo, em vez de todos juntos.
-          ctx.drawImage(flower.frames[(flowerFrame + (flower.x / T + r) % 2) % 2]!, flower.x, r * T);
+          const frame = motion.animate ? (flowerFrame + (flower.x / T + r) % 2) % 2 : 0;
+          ctx.drawImage(flower.frames[frame]!, flower.x, r * T);
         }
       }
       if (!motion.animate) continue;
@@ -888,7 +960,11 @@ export function createSurvivorLandscape(width: number, height: number): Survivor
     ctx.restore();
   }
 
-  const render = ((ctx: CanvasRenderingContext2D, elapsedMs: number, view?: LandscapeView, motion: LandscapeMotion = { timeMs: 0, animate: false }, runSeed = 0): void => {
+  const render = ((ctx: CanvasRenderingContext2D, elapsedMs: number, view?: LandscapeView, motion: LandscapeMotion = { timeMs: 0, animate: false }, runSeed = 0, vegetation?: SurvivorVegetation): void => {
+    if (lastVegetation !== vegetation) {
+      chunks.clear();
+      lastVegetation = vegetation;
+    }
     const { current, next, blend } = survivorRegionAt(elapsedMs, runSeed);
     for (const key of layers.keys()) if (key !== current && key !== next) layers.delete(key);
     for (const key of regionAtlases.keys()) if (key !== current && key !== next) regionAtlases.delete(key);
@@ -907,10 +983,10 @@ export function createSurvivorLandscape(width: number, height: number): Survivor
         ctx.translate(offsetX, offsetY);
         // Na troca de região, o chão e as copas das duas regiões se misturam juntos.
         ctx.globalAlpha = pass === 'top' && blend > 0 ? 1 - blend : 1;
-        paint(ctx, current, layer(current), localView, motion, pass);
+        paint(ctx, current, layer(current), localView, motion, pass, vegetation?.sectorAt(current, tileX, tileY), tileX, tileY);
         if (blend > 0) {
           ctx.globalAlpha = blend;
-          paint(ctx, next, layer(next), localView, motion, pass);
+          paint(ctx, next, layer(next), localView, motion, pass, vegetation?.sectorAt(next, tileX, tileY), tileX, tileY);
         }
         ctx.restore();
       }
