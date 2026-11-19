@@ -221,6 +221,8 @@ function toggleCinema(): void {
   try { localStorage.setItem(CINEMA_KEY, cinemaOn.value ? '1' : '0'); } catch { /* vale só nesta sessão */ }
 }
 const hudExpanded = ref(false);
+// Preferência temporária: cada corrida começa com as escolhas manuais.
+const autoDeferUpgrades = ref(false);
 const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
 const detailedSpecialEffects = computed(() => specialEffects.value && !reducedMotion && !effectiveVisual.value.rotomMode);
 /**
@@ -3755,6 +3757,9 @@ function loop(ts: number): void {
       }
       else if (ev.type === 'trainerDown') say(ev.final ? 'CHEFAO DERROTADO!' : 'Treinador derrotado!');
     }
+    if (autoDeferUpgrades.value && !props.pvpRun && deferSurvivorUpgrade(s)) {
+      say('Melhoria guardada. Abra Melhorias no topo para escolher.', 2600);
+    }
   }
   checkPvpRun(s);
   scanEnemySightings(s);
@@ -4092,6 +4097,7 @@ async function beginRun(dexId: number, name: string, picked?: PokemonType, infin
     resetFeedback();
     runUnlocks.value = [];
     pendingUpgrade.value = null;
+    autoDeferUpgrades.value = false;
     blackChestOffer.value = false;
     clearTrainerPresentation();
     paused.value = false;
@@ -4581,6 +4587,10 @@ onBeforeUnmount(() => {
             </header>
             <button type="button" class="primary survivor-pause-resume" @pointerdown.stop @click.stop="togglePause">▶ Retomar partida <small class="gamepad-hint" aria-hidden="true">Start</small></button>
             <div class="survivor-pause-content">
+            <div v-if="!pvpRun" class="survivor-info-section">
+              <button type="button" class="survivor-auto-defer" :aria-pressed="autoDeferUpgrades" @click.stop="autoDeferUpgrades = !autoDeferUpgrades">Guardar automaticamente: {{ autoDeferUpgrades ? 'ligado' : 'desligado' }}</button>
+              <small>Guarda as próximas escolhas de nível. Os itens de baú continuam com escolha imediata.</small>
+            </div>
             <MusicControls v-model:enabled="survivorAudio.enabled" v-model:volume="survivorAudio.volume" v-model:attack-sounds="survivorAudio.attackSounds" :track="survivorMusicTitle(state?.elapsedMs ?? 0, state?.runSeed ?? 0)" :unavailable="musicUnavailable" regional @unlock="unlockMusic" />
             <p class="note">O relógio, os inimigos e os projéteis estão parados.</p>
             <details class="survivor-help" :open="helpOpen" @toggle="helpOpen = ($event.target as HTMLDetailsElement).open">
@@ -4951,7 +4961,7 @@ onBeforeUnmount(() => {
           </div>
         </div>
 
-        <div v-if="pendingUpgrade && upgradeDialogOpen" class="survivor-overlay survivor-upgrade-overlay" role="dialog" aria-label="Escolha uma melhoria">
+        <div v-if="pendingUpgrade && upgradeDialogOpen" class="survivor-overlay survivor-upgrade-overlay" role="dialog" aria-modal="true" aria-label="Escolha uma melhoria">
           <div class="card survivor-upgrades survivor-levelup" @click.self="banMode = false">
             <template v-if="pendingUpgrade.some((u) => u.id.startsWith('held:'))">
               <p class="survivor-kicker">🧰 Baú aberto<template v-if="pendingUpgrade.some((u) => isTransformerOption(u))"> · ✦ com transformador!</template></p>
@@ -4964,6 +4974,11 @@ onBeforeUnmount(() => {
                 <button v-if="canDeferUpgrade" type="button" class="survivor-defer-upgrades" :disabled="upgradeMenuLocked" @pointerdown.stop @click="deferUpgradeSelection">Escolher depois</button>
               </div>
               <h2>Escolha uma melhoria</h2>
+              <p v-if="canDeferUpgrade" class="survivor-rarity-hint">Ao escolher depois, a partida continua. Reabra em Melhorias no topo, com U no teclado ou LB no controle.</p>
+              <div v-if="canDeferUpgrade" class="survivor-info-section">
+                <button type="button" class="survivor-auto-defer" :aria-pressed="autoDeferUpgrades" @pointerdown.stop @click.stop="autoDeferUpgrades = !autoDeferUpgrades">Guardar automaticamente: {{ autoDeferUpgrades ? 'ligado' : 'desligado' }}</button>
+                <small>Vale para os próximos níveis; esta escolha continua aberta. Baús não são guardados.</small>
+              </div>
             </template>
             <div class="survivor-choice-list">
               <button v-for="(u, index) in pendingUpgrade" :key="u.id" type="button" class="survivor-upgrade-btn" :class="[u.rarity ? `rarity-${u.rarity}` : '', { evolve: u.id.startsWith('evolve:'), 'held-item': !!heldIdOfOption(u), 'held-transformer': isTransformerOption(u) }]" :data-gamepad-default="index === 0 ? '' : undefined" :disabled="upgradeMenuLocked || (banMode && !!banBlock(u.id))" :title="banMode ? (banBlock(u.id) ?? 'Banir esta carta') : undefined" @pointerdown.stop @click="chooseUpgrade(u.id, $event)">

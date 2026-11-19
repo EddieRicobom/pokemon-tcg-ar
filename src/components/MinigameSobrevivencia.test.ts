@@ -214,6 +214,9 @@ describe('Torre de Sobrevivência', () => {
     frame(performance.now() + 60);
     await nextTick();
     const offer = run.pendingUpgrade;
+    const dialog = host!.querySelector<HTMLElement>('[aria-label="Escolha uma melhoria"]')!;
+    expect(dialog.getAttribute('aria-modal')).toBe('true');
+    expect(dialog.textContent).toContain('Reabra em Melhorias no topo, com U no teclado ou LB no controle.');
     const reopenActions = [
       () => resumeButton()!.click(),
       () => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'u', cancelable: true })),
@@ -237,8 +240,55 @@ describe('Torre de Sobrevivência', () => {
     }
   });
 
+  it('guarda níveis automaticamente só quando ativado e mantém a escolha reaberta', async () => {
+    const { frame, run } = await startRunWithTwoLevels();
+    host!.querySelector<HTMLButtonElement>('.survivor-menu-btn')!.click();
+    await nextTick();
+    const toggle = host!.querySelector<HTMLButtonElement>('.survivor-auto-defer')!;
+    expect(toggle.getAttribute('aria-pressed')).toBe('false');
+    toggle.click();
+    await nextTick();
+    expect(toggle.getAttribute('aria-pressed')).toBe('true');
+    host!.querySelector<HTMLButtonElement>('.survivor-menu-btn')!.click();
+    vi.useFakeTimers();
+    frame(performance.now() + 60);
+    await nextTick();
+    expect(cards()).toHaveLength(0);
+    expect(resumeButton()?.textContent).toContain('Melhorias (2)');
+    const offer = run.deferredUpgrade?.options;
+    resumeButton()!.click();
+    await nextTick();
+    const dialogToggle = host!.querySelector<HTMLButtonElement>('.survivor-upgrade-overlay .survivor-auto-defer')!;
+    expect(dialogToggle.getAttribute('aria-pressed')).toBe('true');
+    dialogToggle.click();
+    dialogToggle.click();
+    frame(performance.now() + 120);
+    await nextTick();
+    expect(run.pendingUpgrade).toBe(offer);
+    await vi.advanceTimersByTimeAsync(320);
+    cards()[0]!.click();
+    await nextTick();
+    expect(cards()).toHaveLength(3);
+    await vi.advanceTimersByTimeAsync(320);
+    cards()[0]!.click();
+    await nextTick();
+    host!.querySelector<HTMLButtonElement>('.survivor-menu-btn')!.click();
+    await nextTick();
+    host!.querySelector<HTMLButtonElement>('.survivor-auto-defer')!.click();
+    host!.querySelector<HTMLButtonElement>('.survivor-menu-btn')!.click();
+    run.player.xp = run.player.xpToNext;
+    frame(performance.now() + 180);
+    await nextTick();
+    expect(run.pendingUpgrade).not.toBeNull();
+    expect(run.deferredUpgrade).toBeNull();
+  });
+
   it('mantém obrigatória a escolha de nível no PvP', async () => {
     const { frame, run } = await startRunWithTwoLevels({ index: 0, total: 3, limitMs: 60_000 });
+    host!.querySelector<HTMLButtonElement>('.survivor-menu-btn')!.click();
+    await nextTick();
+    expect(host!.querySelector('.survivor-auto-defer')).toBeNull();
+    host!.querySelector<HTMLButtonElement>('.survivor-menu-btn')!.click();
     vi.useFakeTimers();
     frame(performance.now() + 60);
     await vi.advanceTimersByTimeAsync(320);

@@ -17,10 +17,10 @@ function quiet(): SurvivorState {
 }
 
 describe('inimigos alfa', () => {
-  it('sorteia 0,2% antes do minuto 3 e 1% a partir dele, sem incluir a borda superior', () => {
+  it('sorteia 0,2% antes do minuto 3 e 1,5% a partir dele, sem incluir a borda superior', () => {
     expect(survivorAlphaChance(179_999)).toBe(0.002);
-    expect(survivorAlphaChance(180_000)).toBe(0.01);
-    for (const [time, chance] of [[179_999, 0.002], [180_000, 0.01]] as const) {
+    expect(survivorAlphaChance(180_000)).toBe(0.015);
+    for (const [time, chance] of [[179_999, 0.002], [180_000, 0.015]] as const) {
       const alpha = enemy();
       rollSurvivorAlpha(alpha, time, () => chance - 0.000001);
       expect(alpha.alpha).toBe(true);

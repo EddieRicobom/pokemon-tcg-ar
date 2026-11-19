@@ -6,7 +6,7 @@ export const SURVIVOR_ALPHA_MULTIPLIER = 2;
 
 /** Chance por nascimento no relógio exibido. A taxa tardia considera a densidade maior das ondas. */
 export function survivorAlphaChance(elapsedMs: number): number {
-  return elapsedMs < SURVIVOR_ALPHA_INCREASE_MS ? 0.002 : 0.01;
+  return elapsedMs < SURVIVOR_ALPHA_INCREASE_MS ? 0.002 : 0.015;
 }
 
 /** Sorteio próprio preserva a sequência de espécies, golpes e recompensas da corrida. */
