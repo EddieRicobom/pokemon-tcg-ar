@@ -43,6 +43,10 @@ import { combatMotion } from '../core/combat-motion';
 import { seededRng } from '../core/battle';
 import {
   applyUpgrade,
+  canDeferSurvivorUpgrade,
+  canResumeSurvivorUpgrade,
+  deferSurvivorUpgrade,
+  resumeSurvivorUpgrade,
   resolveBlackChest,
   BLACK_CHEST_PENALTIES,
   banSurvivorUpgrade,
@@ -957,20 +961,23 @@ function decideBlackChest(accept: boolean): void {
   if (events.some((event) => event.type === 'blackChestEmpty')) say('Seus itens já estão no máximo: o baú negro virou orbes.', 3200);
 }
 const upgradeMenuLocked = ref(false);
-const UPGRADE_OPEN_DELAY_MS = 1000;
+const UPGRADE_OPEN_DELAY_MS = 320;
 let upgradeMenuLockTimer: ReturnType<typeof setTimeout> | null = null;
-watch(pendingUpgrade, (offer) => {
+function unlockUpgradeMenu(): void {
   if (upgradeMenuLockTimer) clearTimeout(upgradeMenuLockTimer);
   upgradeMenuLockTimer = null;
-  upgradeMenuLocked.value = Boolean(offer);
-  if (offer) {
-    upgradeMenuLockTimer = setTimeout(() => {
-      upgradeMenuLockTimer = null;
-      upgradeMenuLocked.value = false;
-      focusFirstSurvivorAction();
-    }, UPGRADE_OPEN_DELAY_MS);
-  }
-});
+  upgradeMenuLocked.value = false;
+}
+
+/** Uma abertura ou uma segunda escolha seguida pode coincidir com toques da ação anterior. */
+function protectUpgradeOpening(): void {
+  unlockUpgradeMenu();
+  upgradeMenuLocked.value = true;
+  upgradeMenuLockTimer = setTimeout(() => {
+    unlockUpgradeMenu();
+    focusFirstSurvivorAction();
+  }, UPGRADE_OPEN_DELAY_MS);
+}
 const availableUpgradeRerolls = computed(() => state.value?.player.upgradeRerolls ?? 0);
 const summary = ref<SurvivorSummary | null>(null);
 // Apenas o resultado usa este registro; não adiciona trabalho visual ao HUD da corrida.
@@ -1073,6 +1080,13 @@ const favoriteIds = ref<Set<string>>(new Set());
 const FAVORITES_KEY = 'tcg-ar-survivor-favorites-v1';
 /** Evoluindo: o jogo espera o sprite da nova forma carregar (com o brilho na tela) antes de continuar. */
 const evolving = ref<string | null>(null);
+const upgradeDialogOpen = computed(() => !!pendingUpgrade.value && !evolving.value);
+watch(upgradeDialogOpen, (open) => {
+  if (open) {
+    joyUp();
+    protectUpgradeOpening();
+  } else unlockUpgradeMenu();
+});
 /** Espécies que têm sprite no pacote local (`village-sprite-meta.json`): a carta "Evoluir" só oferece estas. */
 let spriteSpecies: Set<number> | null = null;
 async function loadSpriteSpecies(): Promise<Set<number>> {
@@ -1251,11 +1265,12 @@ function focusSurvivorAction(action: HTMLElement): void {
   action.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
 }
 
-function focusFirstSurvivorAction(): void {
+function focusFirstSurvivorAction(preserveFocus = false): void {
   void nextTick(() => {
     const dialog = activeSurvivorDialog();
-    if (!dialog) return;
+    if (!dialog || (upgradeMenuLocked.value && dialog.classList.contains('survivor-upgrade-overlay'))) return;
     const actions = survivorDialogActions(dialog);
+    if (preserveFocus && actions.some((action) => document.activeElement === action)) return;
     const action = actions.find((element) => element.hasAttribute('data-gamepad-default')) ?? actions[0];
     if (action) focusSurvivorAction(action);
   });
@@ -1323,6 +1338,10 @@ function onKey(e: KeyboardEvent): void {
     return;
   }
   const confirm = e.key.toLowerCase() === 'z';
+  if (upgradeDialogOpen.value && e.type === 'keydown' && e.repeat && (confirm || e.key === ' ' || e.key === 'Enter')) {
+    e.preventDefault();
+    return;
+  }
   const nativeActivation = target?.closest('button, a[href], input, summary');
   if (e.type === 'keydown' && (confirm || (e.key === ' ' || e.key === 'Enter') && !nativeActivation) && confirmSurvivorDialog()) {
     e.preventDefault();
@@ -1334,6 +1353,7 @@ function onKey(e: KeyboardEvent): void {
   }
   if ((e.key === 'e' || e.key === 'E') && e.type === 'keydown' && !e.repeat) { e.preventDefault(); queueSpecial(); return; }
   if ((e.key === 'f' || e.key === 'F') && e.type === 'keydown' && !e.repeat) { e.preventDefault(); queueSupreme(); return; }
+  if (e.key.toLowerCase() === 'u' && e.type === 'keydown' && !e.repeat && reopenDeferredUpgrade()) { e.preventDefault(); return; }
   if (e.key === 'r' || e.key === 'R') {
     if (e.type === 'keyup') {
       if (!gamepadCharging) releaseCharge();
@@ -1386,6 +1406,10 @@ function onGamepadButton(event: Event): void {
     return;
   }
   if (detail.handled || !detail.pressed || !canUseGamepadInRun()) return;
+  if (detail.button === 4) {
+    detail.handled = reopenDeferredUpgrade();
+    return;
+  }
   if (detail.button === 2 && bonkRun.value) queueBonkJump();
   else if (detail.button === 3) queueSupreme();
   else if (detail.button === 7 && chargeStyle.value) {
@@ -1417,7 +1441,7 @@ function onGamepadMenu(event: Event): void {
 
 function joyDown(e: PointerEvent): void {
   if (finishRunOutro()) return;
-  if (e.button !== 0 || joystick.active || paused.value || shadowCutsceneOpen.value || !ready.value || summary.value || pickOptions.value || specialModalOpen.value) return;
+  if (e.button !== 0 || joystick.active || paused.value || shadowCutsceneOpen.value || !ready.value || summary.value || pickOptions.value || specialModalOpen.value || upgradeDialogOpen.value) return;
   // Botões das cartas (escolha, upgrades, resumo) continuam sendo botões: o joystick não pega esse toque.
   if ((e.target as HTMLElement | null)?.closest?.('button, .card')) return;
   unlockSound();
@@ -3756,19 +3780,19 @@ function loop(ts: number): void {
   draw();
 }
 
-function chooseUpgrade(id: string): void {
-  if (!state.value || upgradeMenuLocked.value) return;
+function chooseUpgrade(id: string, event: MouseEvent): void {
+  if (event.detail > 1 || !state.value || upgradeMenuLocked.value || !upgradeDialogOpen.value) return;
+  const picked = pendingUpgrade.value?.find((option) => option.id === id);
+  if (!picked) return;
   if (banMode.value) { banUpgradeCard(id); return; }
-  const pickedBuff = props.pvpRun ? pendingUpgrade.value?.find((option) => option.id === id) : undefined;
   const tierBefore = survivorProjectileTier(state.value.player);
   const events = applyUpgrade(state.value, id);
-  if (pickedBuff) emit('pvpBuff', { id: pickedBuff.id, name: pickedBuff.name.slice(0, 40), rarity: pickedBuff.rarity ?? 'normal' });
+  if (props.pvpRun) emit('pvpBuff', { id: picked.id, name: picked.name.slice(0, 40), rarity: picked.rarity ?? 'normal' });
   playSound('success');
   const tierAfter = survivorProjectileTier(state.value.player);
   if (state.value.player.move.category === 'projetil' && tierAfter > tierBefore) {
     say(`✦ Seus projéteis evoluíram: ${PROJECTILE_TIER_NAMES[tierAfter]} (nível ${tierAfter}/4)!`, 3200);
   }
-  pendingUpgrade.value = null;
   for (const ev of events) {
     if (ev.type === 'evolve') void evolveTo(ev.dexId, ev.name);
     if (ev.type === 'supportEvolve') {
@@ -3779,12 +3803,15 @@ function chooseUpgrade(id: string): void {
       say(`${ev.name} evoluiu e fortaleceu o seu apoio!`, 2600);
     }
     if (ev.type === 'secondAttack') say(`⚔ ${ev.name} entrou na luta: agora você tem um segundo ataque automático!`, 3200);
+    if (ev.type === 'levelBonus') say(`✨ ${ev.text}`, 3000);
     if (ev.type === 'heldItem') {
       const def = HELD_ITEM_BY_ID[ev.id];
       const form = state.value ? def.perCategory?.[state.value.player.move.category] : undefined;
       say(def.transformer ? `✦ ${ev.name}${ev.copies > 1 ? ` ×${ev.copies}` : ''} transformou o seu golpe!${form ? ` ${form}` : ''}` : `🎒 ${ev.name}${ev.copies > 1 ? ` ×${ev.copies}` : ''}: o efeito já vale nos seus golpes.`, def.transformer ? 4200 : 2600);
     }
   }
+  pendingUpgrade.value = state.value.pendingUpgrade;
+  if (upgradeDialogOpen.value) protectUpgradeOpening();
 }
 
 /** Modo banir: o próximo toque numa carta a bane em vez de escolhê-la. */
@@ -3806,16 +3833,40 @@ function banUpgradeCard(id: string): void {
   pendingUpgrade.value = state.value.pendingUpgrade;
   banMode.value = false;
   triggerRef(state);
+  focusFirstSurvivorAction(true);
   playSound('survivor-pickup');
   say(`🚫 Carta banida até o fim da corrida. Restam ${state.value.bansLeft ?? 0}.`, 2600);
 }
 watch(pendingUpgrade, () => { banMode.value = false; });
 
-function rerollUpgradeSelection(): void {
-  if (upgradeMenuLocked.value || !state.value || !rerollSurvivorUpgradeOffer(state.value)) return;
+function rerollUpgradeSelection(event: MouseEvent): void {
+  if (event.detail > 1 || upgradeMenuLocked.value || !state.value || !rerollSurvivorUpgradeOffer(state.value)) return;
   pendingUpgrade.value = state.value.pendingUpgrade;
+  focusFirstSurvivorAction(true);
   playSound('survivor-pickup');
   say('⭐ Desejo de Jirachi: oferta renovada!', 2200);
+}
+
+const canDeferUpgrade = computed(() => !props.pvpRun && !!state.value && canDeferSurvivorUpgrade(state.value));
+const canReopenUpgrade = computed(() => !props.pvpRun && !!state.value && ready.value && !paused.value && !leaveConfirm.value
+  && !summary.value && !evolving.value && !blackChestOffer.value && !typeAffinityOffer.value && canResumeSurvivorUpgrade(state.value));
+
+function deferUpgradeSelection(): void {
+  if (!state.value || !canDeferUpgrade.value || upgradeMenuLocked.value || !deferSurvivorUpgrade(state.value)) return;
+  pendingUpgrade.value = null;
+  lastTs = performance.now();
+}
+
+function reopenDeferredUpgrade(): boolean {
+  if (!state.value || !canReopenUpgrade.value || !resumeSurvivorUpgrade(state.value)) return false;
+  heldKeys.clear();
+  gamepadKeys.clear();
+  specialQueued = false;
+  supremeQueued = false;
+  bonkJumpQueued = false;
+  cancelCharge();
+  pendingUpgrade.value = state.value.pendingUpgrade;
+  return true;
 }
 
 function togglePause(): void {
@@ -4365,9 +4416,7 @@ onBeforeUnmount(() => {
   if (artifactNoticeTimer) clearTimeout(artifactNoticeTimer);
   if (damageFeedbackTimer) clearTimeout(damageFeedbackTimer);
   clearTrainerPresentation();
-  if (upgradeMenuLockTimer) clearTimeout(upgradeMenuLockTimer);
-  upgradeMenuLockTimer = null;
-  upgradeMenuLocked.value = false;
+  unlockUpgradeMenu();
   heldKeys.clear();
   sound.dispose();
   music.dispose();
@@ -4424,6 +4473,7 @@ onBeforeUnmount(() => {
             <span>XP {{ state.player.xp }}/{{ state.player.xpToNext }}</span>
           </div>
           <div class="survivor-stats">
+            <button v-if="canReopenUpgrade && state.deferredUpgrade" type="button" class="chip survivor-resume-upgrades" aria-keyshortcuts="U" title="Escolher melhorias guardadas · U no teclado ou L1/LB no controle" @pointerdown.stop @click.stop="reopenDeferredUpgrade">Melhorias ({{ state.upgradesOwed + 1 }})</button>
             <span v-if="state.player.terastal" class="chip survivor-tera-chip" :aria-label="`Terastalização ${TYPE_LABELS_PT[state.player.terastal.type]}: ${Math.ceil(state.player.terastal.remainingMs / 1000)} segundos restantes`" :title="`Terastalização ${TYPE_LABELS_PT[state.player.terastal.type]}`">💎 {{ TYPE_GLYPHS[state.player.terastal.type] }} {{ TYPE_LABELS_PT[state.player.terastal.type] }} · {{ Math.ceil(state.player.terastal.remainingMs / 1000) }}s</span>
             <span v-if="(state.player.healBlockMs ?? 0) > 0" class="chip survivor-heal-block" role="status">🚫 CURA BLOQUEADA · {{ Math.ceil((state.player.healBlockMs ?? 0) / 1000) }}s</span>
             <span v-if="bonkRun" class="chip survivor-bonk-chip" title="Câmera em terceira pessoa, terreno físico e salto">💥 BONK</span>
@@ -4901,7 +4951,7 @@ onBeforeUnmount(() => {
           </div>
         </div>
 
-        <div v-if="pendingUpgrade" class="survivor-overlay" role="dialog" aria-label="Escolha um upgrade">
+        <div v-if="pendingUpgrade && upgradeDialogOpen" class="survivor-overlay survivor-upgrade-overlay" role="dialog" aria-label="Escolha uma melhoria">
           <div class="card survivor-upgrades survivor-levelup" @click.self="banMode = false">
             <template v-if="pendingUpgrade.some((u) => u.id.startsWith('held:'))">
               <p class="survivor-kicker">🧰 Baú aberto<template v-if="pendingUpgrade.some((u) => isTransformerOption(u))"> · ✦ com transformador!</template></p>
@@ -4909,13 +4959,14 @@ onBeforeUnmount(() => {
               <p class="survivor-rarity-hint">Itens valem até o fim da corrida e se somam: pegar o mesmo de novo empilha o efeito e muda o visual dos golpes.</p>
             </template>
             <template v-else>
-              <p class="survivor-kicker">Nível {{ state?.player.level }}</p>
-              <h2>Subiu de nível!</h2>
-              <p class="survivor-rarity-hint">Cada carta tem uma raridade e um efeito próprio. O Especial continua disponível após o encontro com o guardião.</p>
+              <div class="survivor-levelup-header">
+                <p class="survivor-kicker">Nível {{ state?.player.level }}</p>
+                <button v-if="canDeferUpgrade" type="button" class="survivor-defer-upgrades" :disabled="upgradeMenuLocked" @pointerdown.stop @click="deferUpgradeSelection">Escolher depois</button>
+              </div>
+              <h2>Escolha uma melhoria</h2>
             </template>
-            <p v-if="upgradeMenuLocked" class="survivor-upgrade-delay" role="status" aria-live="polite">Escolha liberada em instantes…</p>
             <div class="survivor-choice-list">
-              <button v-for="u in pendingUpgrade" :key="u.id" type="button" class="survivor-upgrade-btn" :class="[u.rarity ? `rarity-${u.rarity}` : '', { evolve: u.id.startsWith('evolve:'), 'held-item': !!heldIdOfOption(u), 'held-transformer': isTransformerOption(u) }]" :disabled="upgradeMenuLocked || (banMode && !!banBlock(u.id))" :title="banMode ? (banBlock(u.id) ?? 'Banir esta carta') : undefined" @pointerdown.stop @click="chooseUpgrade(u.id)">
+              <button v-for="(u, index) in pendingUpgrade" :key="u.id" type="button" class="survivor-upgrade-btn" :class="[u.rarity ? `rarity-${u.rarity}` : '', { evolve: u.id.startsWith('evolve:'), 'held-item': !!heldIdOfOption(u), 'held-transformer': isTransformerOption(u) }]" :data-gamepad-default="index === 0 ? '' : undefined" :disabled="upgradeMenuLocked || (banMode && !!banBlock(u.id))" :title="banMode ? (banBlock(u.id) ?? 'Banir esta carta') : undefined" @pointerdown.stop @click="chooseUpgrade(u.id, $event)">
                 <span class="survivor-upgrade-icon" aria-hidden="true">
                   <img v-if="heldIdOfOption(u) && !heldSpriteFailed.has(heldIdOfOption(u)!)" class="survivor-held-sprite card" :src="heldItemSpriteUrl(heldIdOfOption(u)!)" alt="" width="48" height="48" @error="onHeldSpriteError(heldIdOfOption(u)!)">
                   <template v-else>{{ upgradeIcon(u) }}</template>

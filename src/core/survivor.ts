@@ -369,6 +369,7 @@ export function createSurvivorState(seed: number, options: CreateSurvivorOptions
     bonk: options.bonk === true,
     infiniteScale: options.infinite === true ? 1.15 : 1,
     pendingUpgrade: null,
+    deferredUpgrade: null,
     pendingBlackChest: null,
     blackChestCurses: 0,
     keys: 0,
@@ -827,7 +828,7 @@ function levelUp(state: SurvivorState, events: SurvivorEvent[]): void {
 
 /** Abre a próxima escolha de upgrade devida, se não houver uma aberta. */
 function offerOwedUpgrade(state: SurvivorState, events?: SurvivorEvent[]): void {
-  if (state.pendingUpgrade || state.upgradesOwed <= 0) return;
+  if (state.pendingUpgrade || state.deferredUpgrade || state.pendingBlackChest != null || state.upgradesOwed <= 0) return;
   state.upgradesOwed -= 1;
   // Olhar treinado (Dojô): só a primeira oferta mostra a carta a mais, e nunca passa do teto de 5.
   const choices = Math.min(MAX_OFFER_CHOICES, Math.max(state.player.upgradeChoices, state.player.upgradeChoices + (state.firstOfferBonus ?? 0)));
@@ -879,6 +880,40 @@ function offerOwedUpgrade(state: SurvivorState, events?: SurvivorEvent[]): void 
     return;
   }
   state.pendingUpgrade = options;
+}
+
+export function canDeferSurvivorUpgrade(state: SurvivorState): boolean {
+  const offer = state.pendingUpgrade;
+  return !state.over && !state.deferredUpgrade && !!offer?.length && !offer.some((option) => option.id.startsWith(HELD_OFFER_PREFIX));
+}
+
+export function deferSurvivorUpgrade(state: SurvivorState): boolean {
+  if (!canDeferSurvivorUpgrade(state) || !state.pendingUpgrade) return false;
+  state.deferredUpgrade = {
+    options: state.pendingUpgrade,
+    supportCandidate: state.supportCandidate,
+    supportCandidateGuaranteed: state.supportCandidateGuaranteed,
+  };
+  state.pendingUpgrade = null;
+  // A escolha de outro encontro não pode descartar um apoio da oferta guardada.
+  state.supportCandidate = null;
+  state.supportCandidateGuaranteed = false;
+  return true;
+}
+
+export function canResumeSurvivorUpgrade(state: SurvivorState): boolean {
+  return !!state.deferredUpgrade && !state.over && !state.pendingUpgrade && state.pendingBlackChest == null
+    && (state.special.phase === 'locked' || state.special.phase === 'ready') && state.shadowEncounter.phase !== 'arrival';
+}
+
+export function resumeSurvivorUpgrade(state: SurvivorState): boolean {
+  const offer = state.deferredUpgrade;
+  if (!offer || !canResumeSurvivorUpgrade(state)) return false;
+  state.pendingUpgrade = offer.options;
+  state.supportCandidate = offer.supportCandidate;
+  state.supportCandidateGuaranteed = offer.supportCandidateGuaranteed;
+  state.deferredUpgrade = null;
+  return true;
 }
 
 function consumeSupportCandidate(state: SurvivorState, candidate: SurvivorSupportCandidate): void {

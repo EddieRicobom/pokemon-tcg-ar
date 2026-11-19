@@ -4,9 +4,9 @@ import type { SurvivorEnemy } from './survivor-types';
 export const SURVIVOR_ALPHA_INCREASE_MS = 180_000;
 export const SURVIVOR_ALPHA_MULTIPLIER = 2;
 
-/** Chance por nascimento, no relógio exibido da corrida. */
+/** Chance por nascimento no relógio exibido. A taxa tardia considera a densidade maior das ondas. */
 export function survivorAlphaChance(elapsedMs: number): number {
-  return elapsedMs < SURVIVOR_ALPHA_INCREASE_MS ? 0.002 : 0.02;
+  return elapsedMs < SURVIVOR_ALPHA_INCREASE_MS ? 0.002 : 0.01;
 }
 
 /** Sorteio próprio preserva a sequência de espécies, golpes e recompensas da corrida. */

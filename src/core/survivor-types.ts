@@ -572,6 +572,12 @@ export interface SurvivorState {
   infiniteScale: number;
   /** Não-nulo pausa o avanço (ver `stepSurvivor`): espera `applyUpgrade`. */
   pendingUpgrade: SurvivorUpgradeOption[] | null;
+  /** Oferta de nível preservada enquanto a corrida avança e outros encontros podem abrir. */
+  deferredUpgrade: {
+    options: SurvivorUpgradeOption[];
+    supportCandidate: SurvivorSupportCandidate | null;
+    supportCandidateGuaranteed: boolean;
+  } | null;
   /** Baú negro aguardando confirmação antes de aplicar as penalidades. */
   pendingBlackChest?: number | null;
   /** Quantos baús negros foram abertos nesta corrida; as duas penalidades se acumulam. */
