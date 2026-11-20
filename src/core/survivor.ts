@@ -3,7 +3,8 @@ import { seededRng } from './battle';
 import { statsOfDex } from './survivor-stats';
 import { rollSurvivorAlpha, survivorAlphaRng, survivorAlphaXpValue } from './survivor-alpha';
 import type { Rng } from './battle';
-import { BASIC_ATTACK_DAMAGE_FACTOR, moveWith, type AttackProfile, type MoveCategory, type SurvivorMove } from './survivor-moves';
+import { attackProfile, BASIC_ATTACK_DAMAGE_FACTOR, moveWith, type AttackProfile, type MoveCategory, type SurvivorMove } from './survivor-moves';
+import { applyStoredAttackStats, createSurvivorAttackSlots, loadSurvivorAttack, otherSurvivorAttack, survivorAttacksSimultaneous, survivorPlayerAttacks, type SurvivorAttackFields, type SurvivorAttackIndex } from './survivor-attack-slots';
 import { destinyLinkRule, HELD_ITEM_BY_ID, HELD_OFFER_PREFIX, heldChargePosition, heldItemText, heldMods, isHeldItemId, mirrorOrbiters, rollHeldOffer, timeBubbleRule } from './survivor-held';
 import type { HeldItemId } from './survivor-held';
 import { survivorBiomeDamageMultiplier, survivorBiomeMovementMultiplier, survivorBiomeProjectileSpeedMultiplier } from './survivor-biomes';
@@ -11,7 +12,7 @@ import { survivorElementalStatus, survivorSynergyFor } from './survivor-synergie
 import { HYPOTHETICAL_TYPE_ACTIVATION_MS, hypotheticalSecondaryTypeFor, hypotheticalTypeRuleFor, type HypotheticalTypeRule } from './survivor-type-mix';
 import { survivorPreparation } from './survivor-preparations';
 import { MAX_OFFER_CHOICES, PURE_LOADOUT } from './survivor-loadout';
-import type { TowerLoadout } from './survivor-loadout';
+import type { SurvivorAttackChoice, TowerLoadout } from './survivor-loadout';
 import { LUNCH_HEAL_CAP_FRACTION, TRAINING_DEFENSE_CAP, TRAINING_SPEED_CAP } from './survivor-lunch';
 import { endSurvivorMega, startSurvivorMega, survivorPlayerStats } from './survivor-mega';
 import type { SurvivorMegaForm } from './survivor-mega';
@@ -40,6 +41,7 @@ import { SURVIVOR_MIGRATION_MS, SURVIVOR_MIGRATION_SPAWN_MULTIPLIER, survivorMig
  */
 
 export * from './survivor-types';
+export { SURVIVOR_SIMULTANEOUS_ATTACKS_MS, survivorPlayerAttacks, type SurvivorAttackIndex } from './survivor-attack-slots';
 import { createBonkObstacles } from './survivor-bonk';
 import {
   ADAPTIVE_START, adaptiveTarget, applyLevelBonus, damageRanking, emptyRunStats, LEVEL_BONUS_TEXT, recordDamage, sampleTimeline, stepAdaptive,
@@ -211,6 +213,8 @@ export interface CreateSurvivorOptions {
   move?: SurvivorMove;
   /** Números pelos stats da espécie (ver `attackProfile`); sem isto, os números padrão do motor. */
   profile?: AttackProfile;
+  /** Segundo golpe próprio disponível durante a corrida. */
+  secondAttack?: SurvivorAttackChoice;
   /** Golpe secundário real (por exemplo, o segundo tipo). Se omitido, o motor cria uma técnica interna compatível. */
   secondMove?: SurvivorMove;
   /** Segundo Pokémon real elegível como apoio nesta corrida (compatibilidade com chamadas antigas). */
@@ -254,6 +258,25 @@ function secondaryMoveFor(move: SurvivorMove): SurvivorMove {
   return { ...move, category, name: `${move.name} secundário`, icon: '✦' };
 }
 
+function initialAttack(move: SurvivorMove, profile: AttackProfile | undefined, preparation: ReturnType<typeof survivorPreparation>): SurvivorAttackFields {
+  return {
+    move,
+    attackRadius: profile?.radius ?? 0,
+    projectileSize: profile?.projectileSize ?? 4,
+    attackDamage: (profile?.damage ?? BALANCE.playerDamage) * preparation.damageMultiplier,
+    areaDamageMultiplier: move.category === 'area' ? 0.15 : 1,
+    attackRange: (profile?.range ?? 170) * preparation.rangeMultiplier,
+    attackCooldownMs: profile?.cooldownMs ?? BALANCE.playerCooldownMs,
+    attackTimerMs: 0,
+    projectileSpeed: profile?.projectileSpeed ?? 360,
+    ...(move.category === 'trilha' ? { trailCharge: 0, trailActiveMs: 0, trailPath: [] } : {}),
+    pierce: 0,
+    shots: 1,
+    orbitAngle: 0,
+    upgradeLevels: {},
+  };
+}
+
 export function createSurvivorState(seed: number, options: CreateSurvivorOptions): SurvivorState {
   const move = options.move ?? BASIC_MOVE;
   const fast = options.fast === true && options.infinite !== true;
@@ -268,9 +291,7 @@ export function createSurvivorState(seed: number, options: CreateSurvivorOptions
   const player: SurvivorPlayer = {
     dexId: options.dexId ?? 0,
     stage: 0,
-    move,
-    attackRadius: prof?.radius ?? 0,
-    projectileSize: prof?.projectileSize ?? 4,
+    ...initialAttack(move, prof, preparation),
     x: ARENA_W / 2,
     y: ARENA_H / 2,
     hp: baseMaxHp,
@@ -280,15 +301,6 @@ export function createSurvivorState(seed: number, options: CreateSurvivorOptions
     xp: 0,
     xpToNext: xpForLevel(1),
     xpMultiplier: fast ? FAST_XP_MULTIPLIER : 1,
-    attackDamage: (prof?.damage ?? BALANCE.playerDamage) * preparation.damageMultiplier,
-    areaDamageMultiplier: move.category === 'area' ? 0.15 : 1,
-    attackRange: (prof?.range ?? 170) * preparation.rangeMultiplier,
-    attackCooldownMs: prof?.cooldownMs ?? BALANCE.playerCooldownMs,
-    attackTimerMs: 0,
-    projectileSpeed: prof?.projectileSpeed ?? 360,
-    ...(move.category === 'trilha' ? { trailCharge: 0, trailActiveMs: 0, trailPath: [] } : {}),
-    pierce: 0,
-    shots: 1,
     invulnMs: 0,
     artifactSpeedMs: 0,
     artifactPowerMs: 0,
@@ -297,7 +309,6 @@ export function createSurvivorState(seed: number, options: CreateSurvivorOptions
     artifactFocusMs: 0,
     facing: 1,
     aimAngle: 0,
-    orbitAngle: 0,
     pickupRadius: PICKUP_RADIUS * preparation.pickupRadiusMultiplier * (1 + loadout.pickupBonus),
     upgradeChoices: 3,
     upgradeRerolls: Math.min(MAX_STARTING_REROLLS_STOCK, loadout.startingRerolls),
@@ -314,7 +325,6 @@ export function createSurvivorState(seed: number, options: CreateSurvivorOptions
     bonkAirJumps: 0,
     bonkGravityFactor: 1,
     bonkMode: options.bonk === true,
-    upgradeLevels: {},
     held: {},
     critChance: 0.05,
     ...options.player,
@@ -402,8 +412,30 @@ export function createSurvivorState(seed: number, options: CreateSurvivorOptions
     hypotheticalSecondaryType: options.hypotheticalSecondaryType ?? hypotheticalSecondaryTypeFor(move.type, seed),
     hypotheticalSecondaryActive: false,
   };
+  if (options.secondAttack) {
+    const { move: alternateMove, profile: alternateProfile } = options.secondAttack;
+    const stored = initialAttack(alternateMove, alternateProfile, preparation);
+    for (const upgrade of SURVIVOR_UPGRADES) {
+      if (!isAttackUpgrade(upgrade) && player.upgradeLevels[upgrade.id] !== undefined) stored.upgradeLevels[upgrade.id] = player.upgradeLevels[upgrade.id]!;
+    }
+    state.attackSlots = createSurvivorAttackSlots(stored, alternateProfile);
+  }
   if (options.mega) startSurvivorMega(state, options.mega);
   return state;
+}
+
+/** Alterna o golpe ativo. Nenhuma carga em andamento vira ataque ao trocar. */
+export function switchSurvivorAttack(state: SurvivorState): boolean {
+  const slots = state.attackSlots;
+  if (!slots || state.over || state.pendingUpgrade || state.pendingBlackChest != null || state.supreme.windupMs > 0) return false;
+  if (!survivorAttacksSimultaneous(state)) {
+    cancelTeleportHold(state.charge);
+    state.charge.rapidShotsPending = 0;
+  }
+  slots.active = otherSurvivorAttack(slots.active);
+  loadSurvivorAttack(state, slots.active);
+  state.supreme.type = state.player.terastal?.baseMove.type ?? state.player.move.type;
+  return true;
 }
 
 /** Ativa a afinidade oferecida pelo primeiro treinador; rejeita tipos que não pertencem à espécie. */
@@ -445,8 +477,8 @@ function earlyCurve(elapsedMs: number, start: number): number {
 }
 
 function closeRangeDamageMultiplier(state: SurvivorState): number {
-  const category = state.player.move.category;
-  return category === 'aura' || category === 'orbit' || category === 'cone' ? BALANCE.closeRangeDamageMultiplier : 1;
+  const closeRange = (category: MoveCategory | undefined): boolean => category === 'aura' || category === 'orbit' || category === 'cone';
+  return closeRange(state.player.move.category) || (survivorAttacksSimultaneous(state) && closeRange(state.attackSlots?.stored.move.category)) ? BALANCE.closeRangeDamageMultiplier : 1;
 }
 
 function spawnPoint(rng: Rng, player: Pick<SurvivorPlayer, 'x' | 'y'>, boss: boolean): { x: number; y: number } {
@@ -617,7 +649,7 @@ function addEnemy(state: SurvivorState, events: SurvivorEvent[], enemy: Survivor
 }
 
 /** Sorteia raridade primeiro; o tamanho do catálogo não altera a chance de cada faixa. */
-function rollUpgradeRarity(rng: Rng, pool: readonly SurvivorUpgrade[], rareChanceBonus = 0): SurvivorUpgradeRarity {
+function rollUpgradeRarity(rng: Rng, pool: readonly Pick<SurvivorUpgrade, 'rarity'>[], rareChanceBonus = 0): SurvivorUpgradeRarity {
   const rarities = (Object.keys(SURVIVOR_UPGRADE_RARITIES) as SurvivorUpgradeRarity[])
     .filter((rarity) => pool.some((upgrade) => upgrade.rarity === rarity));
   const total = rarities.reduce((sum, rarity) => sum + SURVIVOR_UPGRADE_RARITIES[rarity].weight, 0);
@@ -654,24 +686,27 @@ export interface SurvivorUpgradeRollOptions {
   rareChanceBonus?: number;
 }
 
-export function rollUpgrades(
-  rng: Rng,
-  count = 3,
-  move: SurvivorMove = BASIC_MOVE,
-  player?: SurvivorPlayer,
-  options?: SurvivorUpgradeRollOptions,
-): SurvivorUpgradeOption[] {
-  const level = player?.level ?? 1;
-  const excludedIds = new Set(options?.excludeIds ?? []);
-  const minimumRank = options?.minimumRarity === undefined ? 0 : SURVIVOR_RARITY_ORDER.indexOf(options.minimumRarity);
-  const alreadyAncestral = SURVIVOR_UPGRADES.some((upgrade) => upgrade.rarity === 'ancestral' && (player?.upgradeLevels[upgrade.id] ?? 0) > 0);
-  const pool = SURVIVOR_UPGRADES.filter((u) =>
-    (!u.for || u.for.includes(move.category))
+function isAttackUpgrade(upgrade: SurvivorUpgrade): boolean {
+  switch (upgrade.id) {
+    case 'crit': case 'crit-power': case 'crit-finish': case 'retaliation-wave': case 'steel-plate': case 'light-footwork':
+    case 'water-current': case 'fighting-stride': case 'flying-tailwind': case 'ground-firm': case 'rock-armor': case 'fairy-charm':
+      return false;
+    case 'ancestral-flow': case 'ancestral-tempest': case 'projectile-deflection':
+      return true;
+    default:
+      return upgrade.family === 'ataque' || upgrade.family === 'elemento';
+  }
+}
+
+function isAncestralChosen(levels?: Record<string, number>): boolean {
+  return SURVIVOR_UPGRADES.some((upgrade) => upgrade.rarity === 'ancestral' && (levels?.[upgrade.id] ?? 0) > 0);
+}
+
+function eligibleUpgrade(u: SurvivorUpgrade, move: SurvivorMove, player?: Readonly<SurvivorPlayer>, alreadyAncestral = false): boolean {
+  return (!u.for || u.for.includes(move.category))
     && (!u.type || u.type === move.type)
     && (!u.bonkOnly || player?.bonkMode === true)
-    && level >= SURVIVOR_UPGRADE_RARITIES[u.rarity].minLevel
-    && SURVIVOR_RARITY_ORDER.indexOf(u.rarity) >= minimumRank
-    && !excludedIds.has(u.id)
+    && (player?.level ?? 1) >= SURVIVOR_UPGRADE_RARITIES[u.rarity].minLevel
     && (!u.requires || (player?.upgradeLevels[u.requires] ?? 0) > 0)
     && (u.rarity !== 'ancestral' || !alreadyAncestral)
     && (player?.upgradeLevels[u.id] ?? 0) < (u.maxLevels ?? Number.POSITIVE_INFINITY)
@@ -683,25 +718,87 @@ export function rollUpgrades(
     && (!player || u.id !== 'pierce' || player.pierce < 4)
     && (!player || u.id !== 'heal-30' || player.hp < player.maxHp)
     && (!player || u.id !== 'jirachi-reroll' || player.upgradeRerolls < MAX_STARTING_REROLLS_STOCK)
-    && (!player || !u.id.startsWith('guard-') || statsOfDex(player.dexId) !== null),
-  );
+    && (!player || !u.id.startsWith('guard-') || statsOfDex(player.dexId) !== null);
+}
+
+function describeUpgrade(upgrade: SurvivorUpgrade, move: SurvivorMove, value?: number): SurvivorUpgradeOption {
+  const copy = value !== undefined ? upgrade.describeValue?.(move, value) : undefined;
+  const description = copy ?? upgrade.describe?.(move) ?? { name: upgrade.name, description: upgrade.description };
+  return { id: upgrade.id, family: upgrade.family, rarity: upgrade.rarity, ...(upgrade.icon ? { icon: upgrade.icon } : {}), ...(value === undefined ? {} : { value }), ...description };
+}
+
+export function rollUpgrades(
+  rng: Rng,
+  count = 3,
+  move: SurvivorMove = BASIC_MOVE,
+  player?: SurvivorPlayer,
+  options?: SurvivorUpgradeRollOptions,
+): SurvivorUpgradeOption[] {
+  return rollUpgradesForAttacks(rng, count, [{ move, player }], options);
+}
+
+function rollUpgradesForAttacks(rng: Rng, count: number, attacks: readonly { move: SurvivorMove; player?: Readonly<SurvivorPlayer>; index?: SurvivorAttackIndex }[], options?: SurvivorUpgradeRollOptions, alreadyAncestral = attacks.some((attack) => isAncestralChosen(attack.player?.upgradeLevels))): SurvivorUpgradeOption[] {
+  const excludedIds = new Set(options?.excludeIds ?? []);
+  const minimumRank = options?.minimumRarity === undefined ? 0 : SURVIVOR_RARITY_ORDER.indexOf(options.minimumRarity);
+  const pool = SURVIVOR_UPGRADES.flatMap((u) => {
+    if (excludedIds.has(u.id) || SURVIVOR_RARITY_ORDER.indexOf(u.rarity) < minimumRank) return [];
+    const attack = attacks.find(({ move, player }) => eligibleUpgrade(u, move, player, alreadyAncestral));
+    return attack ? [{ upgrade: u, rarity: u.rarity, attack }] : [];
+  });
   const picked: SurvivorUpgradeOption[] = [];
   for (let i = 0; i < count && pool.length > 0; i++) {
     const rarity = rollUpgradeRarity(rng, pool, options?.rareChanceBonus);
     const matching = pool.filter((upgrade) => upgrade.rarity === rarity);
-    const u = matching[Math.floor(rng() * matching.length)]!;
-    pool.splice(pool.indexOf(u), 1);
+    const entry = matching[Math.floor(rng() * matching.length)]!;
+    const { upgrade: u, attack } = entry;
+    pool.splice(pool.indexOf(entry), 1);
     const value = u.valueRange
       ? u.valueRange[0] + Math.floor(rng() * (u.valueRange[1] - u.valueRange[0] + 1))
       : undefined;
-    const copy = value !== undefined ? u.describeValue?.(move, value) : undefined;
-    const description = copy ?? u.describe?.(move) ?? { name: u.name, description: u.description };
-    picked.push({ id: u.id, family: u.family, rarity, ...(u.icon ? { icon: u.icon } : {}), ...(value === undefined ? {} : { value }), ...description });
+    const option = describeUpgrade(u, attack.move, value);
+    if (isAttackUpgrade(u) && attack.index !== undefined) option.attackIndex = attack.index;
+    picked.push(option);
     if (rarity === 'ancestral') {
       for (let j = pool.length - 1; j >= 0; j--) if (pool[j]!.rarity === 'ancestral') pool.splice(j, 1);
     }
   }
   return picked;
+}
+
+function rollRunUpgrades(state: SurvivorState, count: number, options: SurvivorUpgradeRollOptions): SurvivorUpgradeOption[] {
+  const attacks = survivorPlayerAttacks(state);
+  if (!attacks) return rollUpgrades(state.rng, count, state.player.terastal?.baseMove ?? state.player.move, state.player, options);
+  const first = state.attackSlots?.pending ?? attacks.active;
+  const indexes = attacks.simultaneous ? [first, otherSurvivorAttack(first)] : [first];
+  return rollUpgradesForAttacks(state.rng, count, indexes.map((index) => {
+    const player = attacks.players[index];
+    return { index, player, move: player.terastal?.baseMove ?? player.move };
+  }), options, attacks.players.some((player) => isAncestralChosen(player.upgradeLevels)));
+}
+
+/** Alvos válidos para esta carta aberta. Cartas globais e ofertas especiais não têm alvo. */
+export function survivorUpgradeAttackTargets(state: SurvivorState, id: string): SurvivorAttackIndex[] {
+  const attacks = survivorPlayerAttacks(state);
+  const option = state.pendingUpgrade?.find((candidate) => candidate.id === id);
+  const upgrade = SURVIVOR_UPGRADES.find((candidate) => candidate.id === id);
+  if (!attacks || !option || !upgrade || !isAttackUpgrade(upgrade)) return [];
+  const first = option.attackIndex ?? state.attackSlots?.pending ?? attacks.active;
+  if (!attacks.simultaneous) return [first];
+  const indexes = [first, otherSurvivorAttack(first)];
+  const alreadyAncestral = attacks.players.some((player) => isAncestralChosen(player.upgradeLevels));
+  return indexes.filter((index) => {
+    const player = attacks.players[index];
+    return eligibleUpgrade(upgrade, player.terastal?.baseMove ?? player.move, player, alreadyAncestral);
+  });
+}
+
+export function survivorUpgradeForAttack(state: SurvivorState, id: string, attackIndex: SurvivorAttackIndex): SurvivorUpgradeOption | null {
+  const attacks = survivorPlayerAttacks(state);
+  const option = state.pendingUpgrade?.find((candidate) => candidate.id === id);
+  const upgrade = SURVIVOR_UPGRADES.find((candidate) => candidate.id === id);
+  if (!attacks || !option || !upgrade || !survivorUpgradeAttackTargets(state, id).includes(attackIndex)) return null;
+  const player = attacks.players[attackIndex];
+  return { ...describeUpgrade(upgrade, player.terastal?.baseMove ?? player.move, option.value), attackIndex };
 }
 
 function rerollMinimumRarity(player: SurvivorPlayer, currentFloor: SurvivorUpgradeRarity): SurvivorUpgradeRarity {
@@ -739,7 +836,7 @@ export function rerollSurvivorUpgradeOffer(state: SurvivorState): boolean {
     return SURVIVOR_RARITY_ORDER.indexOf(rarity) < SURVIVOR_RARITY_ORDER.indexOf(lowest) ? rarity : lowest;
   }, 'ancestral');
   const banned = state.bannedUpgradeIds ?? [];
-  const naturalRerolled = rollUpgrades(state.rng, rerollCount, state.player.terastal?.baseMove ?? state.player.move, state.player, {
+  const naturalRerolled = rollRunUpgrades(state, rerollCount, {
     excludeIds: [...current.map((option) => option.id), ...banned],
   });
   let rerolled = naturalRerolled;
@@ -749,7 +846,7 @@ export function rerollSurvivorUpgradeOffer(state: SurvivorState): boolean {
       return SURVIVOR_RARITY_ORDER.indexOf(rarity) > SURVIVOR_RARITY_ORDER.indexOf(floor);
     });
     if (!hasHigherRarity) {
-      const guaranteed = rollUpgrades(state.rng, rerollCount, state.player.terastal?.baseMove ?? state.player.move, state.player, {
+      const guaranteed = rollRunUpgrades(state, rerollCount, {
         excludeIds: [...current.map((option) => option.id), ...banned],
         minimumRarity: rerollMinimumRarity(state.player, floor),
       });
@@ -766,7 +863,7 @@ export function survivorBanBlockReason(state: SurvivorState, id: string): string
   if ((state.bansLeft ?? 0) <= 0) return 'Sem banimentos restantes.';
   // Só cartas do catálogo: evolução, apoio e segundo golpe não são upgrades sorteados.
   if (!SURVIVOR_UPGRADES.some((upgrade) => upgrade.id === id)) return 'Esta oferta especial não pode ser banida.';
-  if ((state.player.upgradeLevels[id] ?? 0) > 0) return 'Você já tem esta carta nesta corrida.';
+  if ((state.player.upgradeLevels[id] ?? 0) > 0 || (state.attackSlots?.stored.upgradeLevels[id] ?? 0) > 0) return 'Você já tem esta carta nesta corrida.';
   return null;
 }
 
@@ -778,7 +875,7 @@ export function banSurvivorUpgrade(state: SurvivorState, id: string): boolean {
   if (survivorBanBlockReason(state, id) !== null) return false;
   const current = state.pendingUpgrade!;
   const banned = state.bannedUpgradeIds ?? [];
-  const [replacement] = rollUpgrades(state.rng, 1, state.player.terastal?.baseMove ?? state.player.move, state.player, { excludeIds: [...current.map((option) => option.id), ...banned, id] });
+  const [replacement] = rollRunUpgrades(state, 1, { excludeIds: [...current.map((option) => option.id), ...banned, id] });
   if (!replacement) return false;
   state.pendingUpgrade = current.map((option) => (option.id === id ? replacement : option));
   state.bannedUpgradeIds = [...banned, id];
@@ -833,7 +930,7 @@ function offerOwedUpgrade(state: SurvivorState, events?: SurvivorEvent[]): void 
   // Olhar treinado (Dojô): só a primeira oferta mostra a carta a mais, e nunca passa do teto de 5.
   const choices = Math.min(MAX_OFFER_CHOICES, Math.max(state.player.upgradeChoices, state.player.upgradeChoices + (state.firstOfferBonus ?? 0)));
   state.firstOfferBonus = 0;
-  const options = rollUpgrades(state.rng, choices, state.player.terastal?.baseMove ?? state.player.move, state.player, { excludeIds: state.bannedUpgradeIds ?? [] });
+  const options = rollRunUpgrades(state, choices, { excludeIds: state.bannedUpgradeIds ?? [] });
   const evolve = evolutionOffer(state);
   if (evolve) options.splice(options.length - 1, 1, evolve);
   else if (!state.supportCandidate && !state.secondAttackOffered && state.player.level >= 6 && state.supportCandidates.length > 0) {
@@ -880,6 +977,7 @@ function offerOwedUpgrade(state: SurvivorState, events?: SurvivorEvent[]): void 
     return;
   }
   state.pendingUpgrade = options;
+  if (state.attackSlots) state.attackSlots.pending = state.attackSlots.active;
 }
 
 export function canDeferSurvivorUpgrade(state: SurvivorState): boolean {
@@ -895,6 +993,10 @@ export function deferSurvivorUpgrade(state: SurvivorState): boolean {
     supportCandidateGuaranteed: state.supportCandidateGuaranteed,
   };
   state.pendingUpgrade = null;
+  if (state.attackSlots) {
+    state.attackSlots.deferred = state.attackSlots.pending ?? state.attackSlots.active;
+    state.attackSlots.pending = undefined;
+  }
   // A escolha de outro encontro não pode descartar um apoio da oferta guardada.
   state.supportCandidate = null;
   state.supportCandidateGuaranteed = false;
@@ -910,6 +1012,10 @@ export function resumeSurvivorUpgrade(state: SurvivorState): boolean {
   const offer = state.deferredUpgrade;
   if (!offer || !canResumeSurvivorUpgrade(state)) return false;
   state.pendingUpgrade = offer.options;
+  if (state.attackSlots) {
+    state.attackSlots.pending = state.attackSlots.deferred;
+    state.attackSlots.deferred = undefined;
+  }
   state.supportCandidate = offer.supportCandidate;
   state.supportCandidateGuaranteed = offer.supportCandidateGuaranteed;
   state.deferredUpgrade = null;
@@ -926,7 +1032,7 @@ function consumeSupportCandidate(state: SurvivorState, candidate: SurvivorSuppor
  * Aplica o upgrade escolhido e libera o jogo (ver `pendingUpgrade`). `id` fora do catálogo não faz nada. Se ainda
  * houver níveis devidos (subiu mais de um de uma vez), a próxima escolha abre em seguida.
  */
-export function applyUpgrade(state: SurvivorState, id: string): SurvivorEvent[] {
+export function applyUpgrade(state: SurvivorState, id: string, attackIndex?: SurvivorAttackIndex): SurvivorEvent[] {
   const events: SurvivorEvent[] = [];
   const hpBeforeUpgrade = state.player.hp;
   const offeredOption = state.pendingUpgrade?.find((option) => option.id === id);
@@ -934,7 +1040,7 @@ export function applyUpgrade(state: SurvivorState, id: string): SurvivorEvent[] 
   if (id.startsWith(EVOLVE_PREFIX)) {
     // Só evolui para a forma que foi oferecida nesta escolha (nunca para um id qualquer).
     const dexId = Number(id.slice(EVOLVE_PREFIX.length));
-    const next = offered ? state.evolutions(state.player.dexId).find((o) => o.dexId === dexId) : undefined;
+    const next = offered ? state.evolutions(state.player.dexId, state.player.terastal?.baseMove ?? state.player.move).find((o) => o.dexId === dexId) : undefined;
     if (next) {
       // A forma Mega é da espécie de agora: evoluir encerra a Mega antes (Floette, por exemplo, ainda vira Florges).
       endSurvivorMega(state);
@@ -985,9 +1091,20 @@ export function applyUpgrade(state: SurvivorState, id: string): SurvivorEvent[] 
     const upgrade = SURVIVOR_UPGRADES.find((u) => u.id === id);
     // Upgrades comuns também precisam ser uma escolha real da rodada. Isso impede que uma
     // chamada atrasada ou manipulada aplique um bônus que nunca foi oferecido.
-    if (upgrade && offered && (state.player.upgradeLevels[id] ?? 0) < (upgrade.maxLevels ?? Number.POSITIVE_INFINITY)) {
-      upgrade.apply(state.player, offeredOption?.value);
-      state.player.upgradeLevels[id] = (state.player.upgradeLevels[id] ?? 0) + 1;
+    if (upgrade && offered) {
+      const slots = state.attackSlots;
+      const targets = slots && isAttackUpgrade(upgrade) ? survivorUpgradeAttackTargets(state, id) : null;
+      const target = targets ? attackIndex ?? targets[0] : undefined;
+      if (targets && (target === undefined || !targets.includes(target))) return events;
+      if (target !== undefined) loadSurvivorAttack(state, target);
+      const p = state.player;
+      if ((p.upgradeLevels[id] ?? 0) < (upgrade.maxLevels ?? Number.POSITIVE_INFINITY)) {
+        if (id === 'light-footwork') applyStoredAttackStats(state, upgrade.apply);
+        upgrade.apply(p, offeredOption.value);
+        p.upgradeLevels[id] = (p.upgradeLevels[id] ?? 0) + 1;
+        if (slots && (!isAttackUpgrade(upgrade) || id === 'patient-shooter')) slots.stored.upgradeLevels[id] = p.upgradeLevels[id]!;
+      }
+      if (slots) loadSurvivorAttack(state, slots.active);
     }
   }
   if ((state.player.healBlockMs ?? 0) > 0) state.player.hp = Math.min(state.player.hp, hpBeforeUpgrade);
@@ -996,6 +1113,7 @@ export function applyUpgrade(state: SurvivorState, id: string): SurvivorEvent[] 
   if (offeredSupport && id !== 'second-attack') state.supportCandidate = null;
   state.supportCandidateGuaranteed = false;
   state.pendingUpgrade = null;
+  if (state.attackSlots) state.attackSlots.pending = undefined;
   offerOwedUpgrade(state, events);
   return events;
 }
@@ -1009,27 +1127,43 @@ function evolvePlayer(state: SurvivorState, next: SurvivorEvolutionOption): void
   const old = state.profile;
   const now = next.profile;
   const ratio = (a: number, b: number): number => (a > 0 && b > 0 ? b / a : 1);
+  const other = state.attackSlots?.stored;
+  if (state.attackSlots && other) {
+    const before = state.attackSlots.storedProfile;
+    const move = other.terastal?.baseMove ?? other.move;
+    const stats = statsOfDex(next.dexId);
+    const after = state.evolutions(p.dexId, move).find((option) => option.dexId === next.dexId)?.profile ?? (stats ? attackProfile(move, stats) : undefined);
+    evolveAttack(other, before, after);
+    if (after) state.attackSlots.storedProfile = after;
+  }
   p.dexId = next.dexId;
   p.stage += 1;
+  evolveAttack(p, old, now);
   if (old && now) {
     p.maxHp = Math.round(p.maxHp * ratio(old.maxHp, now.maxHp)) + 30;
-    p.attackDamage = round1(p.attackDamage * ratio(old.damage, now.damage) * 1.15);
-    p.attackCooldownMs = Math.max(120, Math.round(p.attackCooldownMs * ratio(old.cooldownMs, now.cooldownMs)));
-    p.attackRadius = round1(p.attackRadius * ratio(old.radius, now.radius) * 1.1);
-    p.attackRange = round1(p.attackRange * 1.1);
     p.speed = round1(p.speed * ratio(old.walkSpeed, now.walkSpeed));
-    p.projectileSpeed = round1(p.projectileSpeed * ratio(old.projectileSpeed, now.projectileSpeed));
-    p.projectileSize = now.projectileSize;
     state.profile = now;
   } else {
     p.maxHp += 30;
-    p.attackDamage = round1(p.attackDamage * 1.35);
-    p.attackRadius = round1(p.attackRadius * 1.15);
-    p.attackRange = round1(p.attackRange * 1.1);
   }
   healSurvivor(p, p.maxHp);
   p.hp = Math.min(p.hp, p.maxHp);
   state.fx.push({ kind: 'evolve', x: p.x, y: p.y, r: 60, color: '#ffffff', ageMs: 0, lifeMs: 900 });
+}
+
+function evolveAttack(attack: SurvivorAttackFields, old: AttackProfile | null, now: AttackProfile | undefined): void {
+  const ratio = (a: number, b: number): number => (a > 0 && b > 0 ? b / a : 1);
+  attack.attackRange = round1(attack.attackRange * 1.1);
+  if (old && now) {
+    attack.attackDamage = round1(attack.attackDamage * ratio(old.damage, now.damage) * 1.15);
+    attack.attackCooldownMs = Math.max(120, Math.round(attack.attackCooldownMs * ratio(old.cooldownMs, now.cooldownMs)));
+    attack.attackRadius = round1(attack.attackRadius * ratio(old.radius, now.radius) * 1.1);
+    attack.projectileSpeed = round1(attack.projectileSpeed * ratio(old.projectileSpeed, now.projectileSpeed));
+    attack.projectileSize = now.projectileSize;
+  } else {
+    attack.attackDamage = round1(attack.attackDamage * 1.35);
+    attack.attackRadius = round1(attack.attackRadius * 1.15);
+  }
 }
 
 const EFFECT_MS = { burn: 2000, slow: 1500, stun: 400, bossStun: 150 } as const;
@@ -1114,7 +1248,11 @@ function grantHeldItem(state: SurvivorState, id: HeldItemId, events: SurvivorEve
   p.held ??= {};
   const copies = (p.held[id] ?? 0) + 1;
   p.held[id] = copies;
-  HELD_ITEM_BY_ID[id].applyStats?.(p);
+  const apply = HELD_ITEM_BY_ID[id].applyStats;
+  if (apply) {
+    applyStoredAttackStats(state, apply);
+    apply(p);
+  }
   p.heldMods = heldMods(p.held);
   p.heldLeechBudget ??= 0;
   state.fx.push({ kind: 'evolve', x: p.x, y: p.y, r: 38, color: HELD_ITEM_BY_ID[id].color, ageMs: 0, lifeMs: 600 });
@@ -1255,7 +1393,7 @@ function applyHeldOnHit(state: SurvivorState, e: SurvivorEnemy, damage: number, 
       if (root) root.ticksLeft = Math.max(1, Math.round(3 * duration));
     }
     if (e.hp > 0 && mods.stickyChance > 0 && (state.heldMines?.length ?? 0) < MAX_HELD_MINES && state.rng() < mods.stickyChance) {
-      (state.heldMines ??= []).push({ id: state.nextId++, enemyId: e.id, x: e.x, y: e.y, timerMs: 1000, damage: round1(damage * 1.2), radius: 48 });
+      (state.heldMines ??= []).push({ id: state.nextId++, attackIndex: state.attackSlots?.loaded, enemyId: e.id, x: e.x, y: e.y, timerMs: 1000, damage: round1(damage * 1.2), radius: 48 });
     }
     const chainChance = mods.electricChainBonus && p.move.type === 'electric' ? Math.min(0.9, mods.chainChance * 2) : mods.chainChance;
     if (chainChance > 0 && state.rng() < chainChance) {
@@ -1341,7 +1479,7 @@ function queueHeldShards(state: SurvivorState, e: SurvivorEnemy, damage: number,
     queue.push({
       id: state.nextId++, x: e.x, y: e.y, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed,
       damage: round1(damage * 0.35), pierce: 0, lifeMs: 420, hit: [e.id], size: Math.max(3, p.projectileSize * 0.7), collisionRadius: 6,
-      move: p.move, distanceFromPlayer: 0, noHeld: true,
+      move: p.move, distanceFromPlayer: 0, noHeld: true, attackIndex: state.attackSlots?.loaded,
       look: { tier: 0, piercing: false, critical: false, held: { colors: [HELD_ITEM_BY_ID[itemId].color], spikes: false, crown: false, sparks: false, star: itemId === 'po-prateado', wings: false, heavy: 0, ...(itemId === 'presa-afiada' ? { fang: true } : {}) } },
     });
   }
@@ -1370,6 +1508,7 @@ function stepHeldMines(state: SurvivorState, dtMs: number): void {
   heldGuard++;
   try {
     for (const mine of ready) {
+      if (state.attackSlots) loadSurvivorAttack(state, mine.attackIndex ?? state.attackSlots.active);
       for (const e of state.enemies) {
         if (e.hp <= 0 || Math.hypot(e.x - mine.x, e.y - mine.y) > mine.radius + e.radius) continue;
         hitEnemy(state, e, mine.damage, { x: mine.x, y: mine.y }, state.player.move, false, 0);
@@ -1378,6 +1517,7 @@ function stepHeldMines(state: SurvivorState, dtMs: number): void {
     }
   } finally {
     heldGuard--;
+    if (state.attackSlots) loadSurvivorAttack(state, state.attackSlots.active);
   }
 }
 
@@ -1487,7 +1627,7 @@ function spawnHeldShot(state: SurvivorState, x: number, y: number, angle: number
     id: state.nextId++, x, y, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed,
     damage: round1(damage), pierce: p.pierce + teraPierce, lifeMs: Math.max(900, Math.ceil((p.attackRange + 60) / Math.max(1, speed) * 1000)), hit: [],
     canChain: p.move.terastal && p.move.effect === 'saltar',
-    size: p.projectileSize, collisionRadius: 5 * (p.projectileHitRadiusFactor ?? 1), move: p.move, distanceFromPlayer: 0, ...(trigger ? {} : { noHeld: true }),
+    size: p.projectileSize, collisionRadius: 5 * (p.projectileHitRadiusFactor ?? 1), move: p.move, distanceFromPlayer: 0, attackIndex: state.attackSlots?.loaded, ...(trigger ? {} : { noHeld: true }),
     look: survivorProjectileLook(p),
     ...(trigger ? heldHoming(p) : {}),
   });
@@ -1649,13 +1789,15 @@ function heldOrbitCopies(state: SurvivorState, dtMs: number, damage: number, hit
   const p = state.player;
   if (mods.mirror > 0) {
     const mirrored = mirrorOrbiters(p, mods.mirror);
+    const alternate = state.attackSlots?.loaded === 1;
     heldGuard++;
     try {
       for (const e of state.enemies) {
-        if (e.hp <= 0 || (e.mirrorOrbitHitMs ?? 0) > 0) continue;
+        if (e.hp <= 0 || (alternate ? (e.alternateMirrorOrbitNextHitMs ?? 0) > state.elapsedMs : (e.mirrorOrbitHitMs ?? 0) > 0)) continue;
         const orbiter = mirrored.find((candidate) => Math.hypot(e.x - candidate.x, e.y - candidate.y) <= hitRadius + e.radius);
         if (!orbiter) continue;
-        e.mirrorOrbitHitMs = intervalMs;
+        if (alternate) e.alternateMirrorOrbitNextHitMs = state.elapsedMs + intervalMs;
+        else e.mirrorOrbitHitMs = intervalMs;
         hitEnemy(state, e, damage * mirrorFactor(mods.mirror), p, p.move, false, Math.hypot(e.x - p.x, e.y - p.y));
         state.fx.push({ kind: 'orbit-hit', x: e.x, y: e.y, r: Math.max(10, e.radius), color: HELD_ITEM_BY_ID['orbe-grisea'].color, ageMs: 0, lifeMs: 220, moveType: p.move.type });
       }
@@ -1721,7 +1863,7 @@ function maybeTimeBubble(state: SurvivorState, e: SurvivorEnemy, damage: number,
   // Uma explosão acerta vários de uma vez: uma bolha só por centro.
   if (bubbles.some((b) => b.ageMs < 100 && Math.hypot(b.x - x, b.y - y) < 6)) return;
   p.heldBubbleAtMs = state.elapsedMs;
-  bubbles.push({ id: state.nextId++, x, y, radius: rule.radius, ageMs: 0, lifeMs: TIME_BUBBLE_LIFE_MS, damage: round1(damage * 0.6), repeats: copies });
+  bubbles.push({ id: state.nextId++, attackIndex: state.attackSlots?.loaded, x, y, radius: rule.radius, ageMs: 0, lifeMs: TIME_BUBBLE_LIFE_MS, damage: round1(damage * 0.6), repeats: copies });
 }
 
 function stepTimeBubbles(state: SurvivorState, dtMs: number): void {
@@ -1742,9 +1884,11 @@ function stepTimeBubbles(state: SurvivorState, dtMs: number): void {
   if (popped.length === 0) return;
   state.timeBubbles = bubbles.filter((b) => !popped.includes(b));
   for (const bubble of popped) {
+    if (state.attackSlots) loadSurvivorAttack(state, bubble.attackIndex ?? state.attackSlots.active);
     for (let i = 0; i < bubble.repeats; i++) heldAreaStrike(state, bubble.x, bubble.y, bubble.radius, bubble.damage);
     state.fx.push({ kind: 'bubble-pop', x: bubble.x, y: bubble.y, r: bubble.radius, color: HELD_ITEM_BY_ID['orbe-adamante'].color, ageMs: 0, lifeMs: 420, count: bubble.repeats });
   }
+  if (state.attackSlots) loadSurvivorAttack(state, state.attackSlots.active);
 }
 
 /** Laço do Destino: liga o alvo aos vizinhos e espalha parte do dano pelos ligados. Roda dentro do `heldGuard`. */
@@ -1774,7 +1918,7 @@ function createGravityWell(state: SurvivorState, x: number, y: number, radius: n
   const wells = (state.gravityWells ??= []);
   if (wells.length >= MAX_GRAVITY_WELLS) return;
   if (wells.some((w) => w.ageMs < 100 && Math.hypot(w.x - x, w.y - y) < 6)) return;
-  wells.push({ id: state.nextId++, x: clamp(x, 10, ARENA_W - 10), y: clamp(y, 10, ARENA_H - 10), radius, ageMs: 0, lifeMs, pull, damage: round1(damage) });
+  wells.push({ id: state.nextId++, attackIndex: state.attackSlots?.loaded, x: clamp(x, 10, ARENA_W - 10), y: clamp(y, 10, ARENA_H - 10), radius, ageMs: 0, lifeMs, pull, damage: round1(damage) });
 }
 
 /** Puxa um inimigo em direção a um ponto (chefões resistem), sem passar do ponto. */
@@ -1807,9 +1951,11 @@ function stepGravityWells(state: SurvivorState, dt: number, dtMs: number): void 
   if (done.length === 0) return;
   state.gravityWells = wells.filter((w) => !done.includes(w));
   for (const well of done) {
+    if (state.attackSlots) loadSurvivorAttack(state, well.attackIndex ?? state.attackSlots.active);
     heldAreaStrike(state, well.x, well.y, well.radius * 0.45, well.damage);
     state.fx.push({ kind: 'implode', x: well.x, y: well.y, r: well.radius, color: HELD_ITEM_BY_ID['bola-ferro'].color, ageMs: 0, lifeMs: 380 });
   }
+  if (state.attackSlots) loadSurvivorAttack(state, state.attackSlots.active);
 }
 
 /** Gravidade contínua: aura que suga, órbita que prende e trilha que arrasta para cima dela. */
@@ -1860,7 +2006,7 @@ function stepGravityFields(state: SurvivorState, dt: number): void {
 function queueHeldStrike(state: SurvivorState, strike: Omit<SurvivorHeldStrike, 'id'>): void {
   const queue = (state.heldQueue ??= []);
   if (queue.length >= MAX_HELD_QUEUE) return;
-  queue.push({ id: state.nextId++, ...strike });
+  queue.push({ id: state.nextId++, attackIndex: state.attackSlots?.loaded, ...strike });
 }
 
 function stepHeldQueue(state: SurvivorState): void {
@@ -1871,6 +2017,7 @@ function stepHeldQueue(state: SurvivorState): void {
   state.heldQueue = queue.filter((s) => s.atMs > state.elapsedMs);
   const p = state.player;
   for (const strike of due) {
+    if (state.attackSlots) loadSurvivorAttack(state, strike.attackIndex ?? state.attackSlots.active);
     if (strike.kind === 'blast') {
       heldAreaStrike(state, strike.x, strike.y, strike.radius, strike.damage);
       state.fx.push({ kind: 'blast', x: strike.x, y: strike.y, r: strike.radius, color: p.move.color, ageMs: 0, lifeMs: 420, moveType: p.move.type });
@@ -1902,6 +2049,7 @@ function stepHeldQueue(state: SurvivorState): void {
       state.fx.push({ kind: 'rush', x: p.x, y: p.y, r: strike.radius, color: p.move.color, ageMs: 0, lifeMs: 360, moveType: p.move.type, fromX, fromY, toX: p.x, toY: p.y });
     }
   }
+  if (state.attackSlots) loadSurvivorAttack(state, state.attackSlots.active);
 }
 
 /**
@@ -1910,9 +2058,10 @@ function stepHeldQueue(state: SurvivorState): void {
  */
 function chargeHeldShots(state: SurvivorState, count: number, damage: number, mode: 'gun' | 'volley', holdMs: number): void {
   const charges = (state.heldCharges ??= []);
-  if (charges.length > 0) return;
+  const attackIndex = state.attackSlots?.loaded;
+  if (charges.some((charge) => charge.attackIndex === attackIndex)) return;
   for (let i = 0; i < count; i++) {
-    charges.push({ id: state.nextId++, slot: i, total: count, releaseAtMs: state.elapsedMs + holdMs + (mode === 'gun' ? i * 70 : 0), damage: round1(damage), mode });
+    charges.push({ id: state.nextId++, attackIndex, slot: i, total: count, releaseAtMs: state.elapsedMs + holdMs + (mode === 'gun' ? i * 70 : 0), damage: round1(damage), mode });
   }
 }
 
@@ -1923,14 +2072,19 @@ function stepHeldCharges(state: SurvivorState): void {
   if (due.length === 0) return;
   state.heldCharges = charges.filter((c) => c.releaseAtMs > state.elapsedMs);
   const p = state.player;
-  const [target] = nearestEnemies(state, p.attackRange * 1.2, 1);
-  const base = target ? Math.atan2(target.y - p.y, target.x - p.x) : survivorAimAngle(p);
-  for (const charge of due) {
-    const pos = heldChargePosition(p, charge, state.elapsedMs);
-    const spread = charge.mode === 'volley' && charge.total > 1 ? (charge.slot / (charge.total - 1) - 0.5) * 0.9 : (state.rng() - 0.5) * 0.12;
-    spawnHeldShot(state, pos.x, pos.y, base + spread, charge.damage, 1.15, true);
+  for (const attackIndex of new Set(due.map((charge) => charge.attackIndex))) {
+    if (state.attackSlots) loadSurvivorAttack(state, attackIndex ?? state.attackSlots.active);
+    const [target] = nearestEnemies(state, p.attackRange * 1.2, 1);
+    const base = target ? Math.atan2(target.y - p.y, target.x - p.x) : survivorAimAngle(p);
+    const batch = due.filter((charge) => charge.attackIndex === attackIndex);
+    for (const charge of batch) {
+      const pos = heldChargePosition(p, charge, state.elapsedMs);
+      const spread = charge.mode === 'volley' && charge.total > 1 ? (charge.slot / (charge.total - 1) - 0.5) * 0.9 : (state.rng() - 0.5) * 0.12;
+      spawnHeldShot(state, pos.x, pos.y, base + spread, charge.damage, 1.15, true);
+    }
+    if (target && !state.heldCharges.some((charge) => charge.attackIndex === attackIndex)) heldShotCopies(state, target, batch[0]?.damage ?? 0);
   }
-  if (target && state.heldCharges.length === 0) heldShotCopies(state, target, due[0]?.damage ?? 0);
+  if (state.attackSlots) loadSurvivorAttack(state, state.attackSlots.active);
 }
 
 /** Área, cone, feixe e teleporte com gravidade ou carga: chamados depois do golpe normal. */
@@ -2463,13 +2617,14 @@ function stepTrail(state: SurvivorState, movedPx: number, dtMs: number, activate
   heldTrailCopies(state, dtMs, newPoint, previousPoint, damage);
   const mirrorPath = p.trailMirrorPath ?? [];
   const tickMs = Math.max(160, TRAIL_TICK_MS * (p.trailCadenceFactor ?? 1) * (p.artifactFocusMs > 0 ? 0.8 : 1));
+  const hitClock = state.attackSlots?.loaded === 1 ? 'alternateTrailNextHitMs' : 'trailNextHitMs';
   let hits = 0;
   for (const e of state.enemies) {
     if (e.hp <= 0) continue;
     const touching = p.trailPath.some((point) => Math.hypot(e.x - point.x, e.y - point.y) <= p.attackRadius + e.radius)
       || mirrorPath.some((point) => Math.hypot(e.x - point.x, e.y - point.y) <= p.attackRadius + e.radius);
-    if (!touching || state.elapsedMs < (e.trailNextHitMs ?? 0)) continue;
-    e.trailNextHitMs = state.elapsedMs + tickMs;
+    if (!touching || state.elapsedMs < (e[hitClock] ?? 0)) continue;
+    e[hitClock] = state.elapsedMs + tickMs;
     hitEnemy(state, e, damage, { x: e.x, y: e.y }, p.move, true, 0);
     hits++;
   }
@@ -2482,7 +2637,7 @@ function nearestEnemies(state: SurvivorState, range: number, count: number, coun
   const priority = p.targetPriority;
   return state.enemies
     .map((e) => ({ e, d: Math.hypot(e.x - p.x, e.y - p.y) }))
-    .filter((x) => x.d <= range + (countBody ? x.e.radius : 0))
+    .filter((x) => x.e.hp > 0 && x.d <= range + (countBody ? x.e.radius : 0))
     .sort((a, b) => {
       if (priority === 'boss') {
         const aBoss = a.e.boss || a.e.grade === 'chefao' || a.e.trainerId !== undefined;
@@ -2540,7 +2695,7 @@ function fireProjectiles(state: SurvivorState, target: SurvivorEnemy): void {
       hit: [],
       canChain: move.effect === 'saltar',
       size: p.projectileSize, collisionRadius: 5 * (p.projectileHitRadiusFactor ?? 1),
-      move,
+      move, attackIndex: state.attackSlots?.loaded,
       distanceFromPlayer: Math.hypot(target.x - p.x, target.y - p.y),
       look,
       ...heldHoming(p),
@@ -2562,7 +2717,7 @@ function fireRapidShot(state: SurvivorState, target: SurvivorEnemy): void {
       vx: Math.cos(angle) * p.projectileSpeed, vy: Math.sin(angle) * p.projectileSpeed,
       damage: artifactDamage(state) * 0.62,
       pierce: p.pierce + (p.move.effect === 'atravessar' ? 1 : 0), lifeMs: Math.max(1600, Math.ceil((p.attackRange + 30) / Math.max(1, p.projectileSpeed) * 1000) + 50), hit: [],
-      canChain: p.move.effect === 'saltar', size: p.projectileSize, collisionRadius: 5 * (p.projectileHitRadiusFactor ?? 1), move: p.move,
+      canChain: p.move.effect === 'saltar', size: p.projectileSize, collisionRadius: 5 * (p.projectileHitRadiusFactor ?? 1), move: p.move, attackIndex: state.attackSlots?.loaded,
       distanceFromPlayer: Math.hypot(target.x - p.x, target.y - p.y), look,
       ...heldHoming(p),
     });
@@ -2588,7 +2743,7 @@ function fireFocusShot(state: SurvivorState, target: SurvivorEnemy): void {
     hit: [],
     canChain: move.terastal && move.effect === 'saltar',
     size: round1(p.projectileSize * FOCUS_SHOT_SIZE_MULTIPLIER),
-    move,
+    move, attackIndex: state.attackSlots?.loaded,
     distanceFromPlayer: Math.hypot(target.x - p.x, target.y - p.y),
     look: survivorProjectileLook(p),
     ...heldHoming(p),
@@ -2667,6 +2822,52 @@ function releaseTeleport(state: SurvivorState, action: Extract<NonNullable<Retur
 function chargeStyleOf(state: SurvivorState): ChargeStyle | null {
   const category = state.player.move.category;
   return category === 'foco' || category === 'teleporte' ? category : null;
+}
+
+function survivorChargeHeld(input: SurvivorInput, index: SurvivorAttackIndex | undefined, selected: boolean): boolean {
+  if (index !== undefined && input.chargeByAttack) return input.chargeByAttack[index] && !input.cancelChargeByAttack?.[index];
+  return selected && input.charge === true && (index === undefined || !input.cancelCharge);
+}
+
+function stepAttackControls(state: SurvivorState, input: SurvivorInput, movedPx: number, dtMs: number, events: SurvivorEvent[], selected: boolean): void {
+  const p = state.player;
+  const attackIndex = state.attackSlots?.loaded;
+  const held = survivorChargeHeld(input, attackIndex, selected);
+  const cancelled = attackIndex !== undefined && input.cancelChargeByAttack ? input.cancelChargeByAttack[attackIndex] : selected && input.cancelCharge;
+  stepTrail(state, movedPx, dtMs, held);
+  state.charge.moveRatio = dtMs > 0 ? movedPx * 1000 / dtMs / RUSH_REFERENCE_SPEED : 0;
+  if (cancelled) cancelTeleportHold(state.charge);
+  const style = chargeStyleOf(state);
+  const bonus = style === 'foco' ? (p.upgradeLevels[CHARGE_FOCUS_RATE_ID] ?? 0) : style === 'teleporte' ? (p.upgradeLevels[CHARGE_RUSH_LENGTH_ID] ?? 0) : 0;
+  const action = stepChargeMeter(state.charge, style, held, movedPx, dtMs, bonus, p.attackCooldownMs * (p.artifactFocusMs > 0 ? 0.8 : 1));
+  if (action?.kind === 'focus-release') {
+    const name = fireFocusBeam(state, action.level);
+    events.push({ type: 'chargeRelease', style: 'foco', name, level: action.level });
+  } else if (action?.kind === 'teleport-release') {
+    p.attackTimerMs = 0;
+    if (releaseTeleport(state, action)) events.push({ type: 'chargeRelease', style: 'teleporte', name: action.wave ? 'Onda total' : 'Teleporte', level: action.level });
+  }
+}
+
+function stepAutomaticAttack(state: SurvivorState, dtMs: number): void {
+  const p = state.player;
+  p.attackTimerMs = Math.max(0, p.attackTimerMs - dtMs);
+  const charge = state.charge;
+  if (p.move.category === 'rapido' && charge.rapidShotsPending > 0) {
+    charge.rapidShotDelayMs -= dtMs;
+    while (charge.rapidShotsPending > 0 && charge.rapidShotDelayMs <= 0) {
+      const [target] = nearestEnemies(state, p.attackRange, 1);
+      if (target) fireRapidShot(state, target);
+      charge.rapidShotsPending--;
+      charge.rapidShotDelayMs += RAPID_BURST_SHOT_INTERVAL_MS;
+    }
+  }
+  if (p.attackTimerMs <= 0 && charge.rapidShotsPending <= 0 && p.move.category !== 'trilha' && attack(state)) {
+    const cooldownMs = p.attackCooldownMs * (p.artifactFocusMs > 0 ? 0.8 : 1);
+    p.attackTimerMs = p.move.category === 'rapido' ? Math.max(RAPID_BURST_MIN_CYCLE_MS, cooldownMs) : cooldownMs;
+    heldAfterAttack(state);
+  }
+  if (p.move.category === 'orbit') stepOrbiters(state, dtMs);
 }
 
 /**
@@ -2915,12 +3116,14 @@ function stepOrbiters(state: SurvivorState, dtMs: number): void {
   if (state.vegetationImpact) for (const orbiter of orbiters) state.vegetationImpact({ kind: 'area', x: orbiter.x, y: orbiter.y, radius: hitRadius });
   const intervalMs = survivorOrbitHitIntervalMs(p, cooldownMs);
   const damage = playerAttackDamage(state);
+  const alternate = state.attackSlots?.loaded === 1;
   let hits = 0;
   for (const e of state.enemies) {
-    if (e.hp <= 0 || (e.orbitHitMs ?? 0) > 0) continue;
+    if (e.hp <= 0 || (alternate ? (e.alternateOrbitNextHitMs ?? 0) > state.elapsedMs : (e.orbitHitMs ?? 0) > 0)) continue;
     const orbiter = orbiters.find((candidate) => Math.hypot(e.x - candidate.x, e.y - candidate.y) <= hitRadius + e.radius);
     if (!orbiter) continue;
-    e.orbitHitMs = intervalMs;
+    if (alternate) e.alternateOrbitNextHitMs = state.elapsedMs + intervalMs;
+    else e.orbitHitMs = intervalMs;
     // Órbita afasta os comuns um pouco (com a recarga geral do empurrão): é o escudo que segura as espécies frágeis no começo.
     if (!e.boss && e.grade === 'comum') applyKnockback(e, p, ORBIT_COMMON_PUSH_PX);
     // O empurrão (Planta/Inseto não empurram, mas afinidades podem) sai do jogador, nunca puxa para dentro do giro.
@@ -3183,14 +3386,14 @@ function dropArtifact(state: SurvivorState, x: number, y: number): void {
   state.artifacts.push({ id, x, y, kind });
 }
 
-function beginTerastalization(player: SurvivorPlayer, type: PokemonType): void {
+function beginTerastalization(player: Pick<SurvivorPlayer, 'move' | 'terastal'>, type: PokemonType): void {
   const baseMove = player.terastal?.baseMove ?? player.move;
   const { color, effect, icon } = moveWith(type, baseMove.category, null);
   player.terastal = { type, remainingMs: SURVIVOR_TERASTAL_DURATION_MS, baseMove };
   player.move = { ...baseMove, type, color, effect, icon, terastal: true };
 }
 
-function tickTerastalization(player: SurvivorPlayer, dtMs: number): void {
+function tickTerastalization(player: Pick<SurvivorPlayer, 'move' | 'terastal'>, dtMs: number): void {
   if (!player.terastal) return;
   player.terastal.remainingMs -= dtMs;
   if (player.terastal.remainingMs > 0) return;
@@ -3454,6 +3657,10 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
   p.artifactMagnetMs = Math.max(0, p.artifactMagnetMs - dtMs);
   p.artifactFocusMs = Math.max(0, p.artifactFocusMs - dtMs);
   tickTerastalization(p, dtMs);
+  const slots = state.attackSlots;
+  const simultaneous = !!slots && survivorAttacksSimultaneous(state);
+  const otherAttack = slots ? otherSurvivorAttack(slots.active) : undefined;
+  if (slots) tickTerastalization(slots.stored, dtMs);
   const dashPath = stepSurvivorSpecial(state, input, dtMs, ARENA_W, ARENA_H, PLAYER_RADIUS, (id, damage, target) => {
     gainSupreme(state, (damage / Math.max(1, target.maxHp)) * SUPREME_GAIN.damageDealtPerBar);
     if (state.runStats) recordDamage(state.runStats, SURVIVOR_SPECIALS[id].name, p.move.color, damage);
@@ -3468,8 +3675,9 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
   });
 
   // Movimento do jogador, com a arena como cerca.
-  const chargeStyle = chargeStyleOf(state);
-  const focusSlow = chargeStyle === 'foco' && input.charge === true ? FOCUS_SLOW_MULTIPLIER : 1;
+  const holdingFocus = p.move.category === 'foco' && survivorChargeHeld(input, slots?.active, true)
+    || simultaneous && slots.stored.move.category === 'foco' && survivorChargeHeld(input, otherAttack, false);
+  const focusSlow = holdingFocus ? FOCUS_SLOW_MULTIPLIER : 1;
   const beforeMoveX = p.x;
   const beforeMoveY = p.y;
   const len = Math.hypot(input.dx, input.dy);
@@ -3477,7 +3685,8 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
     const ux = input.dx / len;
     const uy = input.dy / len;
     const terrainSpeed = survivorBiomeMovementMultiplier(state.elapsedMs, p.x, p.y);
-    const artifactSpeed = (p.artifactSpeedMs > 0 ? BALANCE.artifactSpeedMultiplier : 1) * (1 + (p.lunchSpeedBonus ?? 0)) * ((p.trailActiveMs ?? 0) > 0 ? TRAIL_SPEED_MULTIPLIER : 1);
+    const runningTrail = (p.trailActiveMs ?? 0) > 0 || simultaneous && (slots.stored.trailActiveMs ?? 0) > 0;
+    const artifactSpeed = (p.artifactSpeedMs > 0 ? BALANCE.artifactSpeedMultiplier : 1) * (1 + (p.lunchSpeedBonus ?? 0)) * (runningTrail ? TRAIL_SPEED_MULTIPLIER : 1);
     p.x = clamp(p.x + ux * p.speed * artifactSpeed * terrainSpeed * focusSlow * dt, PLAYER_RADIUS, ARENA_W - PLAYER_RADIUS);
     p.y = clamp(p.y + uy * p.speed * artifactSpeed * terrainSpeed * focusSlow * dt, PLAYER_RADIUS, ARENA_H - PLAYER_RADIUS);
     if (Math.abs(ux) > 0.01) p.facing = ux < 0 ? -1 : 1;
@@ -3489,17 +3698,20 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
   if (p.move.category === 'cone') aimConeAtNearest(state, playerAttackRange(state));
   // Barra de carga: só anda com o golpe de Foco ou Rápido. A investida do especial não conta como corrida.
   const movedPx = state.special.selected === 'dash' && state.special.activeMs > 0 ? 0 : Math.hypot(p.x - beforeMoveX, p.y - beforeMoveY);
-  stepTrail(state, movedPx, dtMs, input.charge === true);
-  state.charge.moveRatio = dt > 0 ? movedPx / dt / RUSH_REFERENCE_SPEED : 0;
-  if (input.cancelCharge) cancelTeleportHold(state.charge);
-  const chargeBonus = chargeStyle === 'foco' ? (p.upgradeLevels[CHARGE_FOCUS_RATE_ID] ?? 0) : chargeStyle === 'teleporte' ? (p.upgradeLevels[CHARGE_RUSH_LENGTH_ID] ?? 0) : 0;
-  const chargeAction = stepChargeMeter(state.charge, chargeStyle, input.charge === true, movedPx, dtMs, chargeBonus, p.attackCooldownMs * (p.artifactFocusMs > 0 ? 0.8 : 1));
-  if (chargeAction?.kind === 'focus-release') {
-    const name = fireFocusBeam(state, chargeAction.level);
-    events.push({ type: 'chargeRelease', style: 'foco', name, level: chargeAction.level });
-  } else if (chargeAction?.kind === 'teleport-release') {
-    p.attackTimerMs = 0;
-    if (releaseTeleport(state, chargeAction)) events.push({ type: 'chargeRelease', style: 'teleporte', name: chargeAction.wave ? 'Onda total' : 'Teleporte', level: chargeAction.level });
+  stepAttackControls(state, input, movedPx, dtMs, events, true);
+  if (slots && simultaneous && otherAttack !== undefined) {
+    const beforeSecondaryAim = p.aimAngle;
+    loadSurvivorAttack(state, otherAttack);
+    stepAttackControls(state, input, movedPx, dtMs, events, false);
+    loadSurvivorAttack(state, slots.active);
+    p.aimAngle = beforeSecondaryAim;
+  } else if (slots) {
+    const alternate = slots.stored;
+    alternate.attackTimerMs = Math.max(0, alternate.attackTimerMs - dtMs);
+    slots.storedCharge.teleportCooldownMs = Math.max(0, slots.storedCharge.teleportCooldownMs - dtMs);
+    if (alternate.trailActiveMs) alternate.trailActiveMs = Math.max(0, alternate.trailActiveMs - dtMs);
+    if (alternate.trailPath?.length) alternate.trailPath = alternate.trailPath.filter((point) => state.elapsedMs - point.bornMs < TRAIL_LIFE_MS);
+    if (alternate.trailMirrorPath?.length) alternate.trailMirrorPath = alternate.trailMirrorPath.filter((point) => state.elapsedMs - point.bornMs < TRAIL_LIFE_MS);
   }
   if (p.invulnMs > 0) p.invulnMs = Math.max(0, p.invulnMs - dtMs);
   if ((p.regenPerSec ?? 0) > 0 && p.hp > 0) healSurvivor(p, (p.regenPerSec ?? 0) * dt);
@@ -3627,10 +3839,11 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
   // No Relógio parado eles ficam suspensos no ar, sem andar nem ferir: o tempo parou para tudo que é inimigo.
   const hostileShotsFrozen = state.special.selected === 'stasis' && state.special.activeMs > 0;
   if (!hostileShotsFrozen) state.hostileProjectiles = state.hostileProjectiles.filter((proj) => {
-    const nearAura = p.move.category === 'aura'
-      && Math.hypot(proj.x - p.x, proj.y - p.y) <= p.attackRadius + proj.size;
-    const psychicField = p.move.type === 'psychic' && hasUpgrade(p, 'psychic-field')
-      && Math.hypot(proj.x - p.x, proj.y - p.y) <= Math.max(90, p.attackRadius || 90);
+    const distance = Math.hypot(proj.x - p.x, proj.y - p.y);
+    const nearAura = p.move.category === 'aura' && distance <= p.attackRadius + proj.size
+      || simultaneous && slots.stored.move.category === 'aura' && distance <= slots.stored.attackRadius + proj.size;
+    const psychicField = p.move.type === 'psychic' && hasUpgrade(p, 'psychic-field') && distance <= Math.max(90, p.attackRadius)
+      || simultaneous && slots.stored.move.type === 'psychic' && (slots.stored.upgradeLevels['psychic-field'] ?? 0) > 0 && distance <= Math.max(90, slots.stored.attackRadius);
     const speedMultiplier = (nearAura ? BALANCE.auraProjectileSpeedMultiplier : 1) * (psychicField ? 0.9 : 1);
     proj.x += proj.vx * speedMultiplier * dt;
     proj.y += proj.vy * speedMultiplier * dt;
@@ -3647,24 +3860,15 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
     return true;
   });
 
-  // Autoataque com o golpe do tipo (projétil, aura ou área).
-  p.attackTimerMs = Math.max(0, p.attackTimerMs - dtMs);
-  // Rajada: os dois tiros seguintes acontecem no tempo certo, sem duplicar p.shots no mesmo quadro.
-  if (p.move.category === 'rapido' && state.charge.rapidShotsPending > 0) {
-    state.charge.rapidShotDelayMs -= dtMs;
-    while (state.charge.rapidShotsPending > 0 && state.charge.rapidShotDelayMs <= 0) {
-      const [target] = nearestEnemies(state, p.attackRange, 1);
-      if (target) fireRapidShot(state, target);
-      state.charge.rapidShotsPending--;
-      state.charge.rapidShotDelayMs += RAPID_BURST_SHOT_INTERVAL_MS;
-    }
+  stepAutomaticAttack(state, dtMs);
+  if (slots && simultaneous && otherAttack !== undefined) {
+    const beforeSecondaryAim = p.aimAngle;
+    loadSurvivorAttack(state, otherAttack);
+    stepAutomaticAttack(state, dtMs);
+    stepGravityFields(state, dt);
+    loadSurvivorAttack(state, slots.active);
+    p.aimAngle = beforeSecondaryAim;
   }
-  if (p.attackTimerMs <= 0 && state.charge.rapidShotsPending <= 0 && p.move.category !== 'trilha' && attack(state)) {
-    const cooldownMs = p.attackCooldownMs * (p.artifactFocusMs > 0 ? 0.8 : 1);
-    p.attackTimerMs = p.move.category === 'rapido' ? Math.max(RAPID_BURST_MIN_CYCLE_MS, cooldownMs) : cooldownMs;
-    heldAfterAttack(state);
-  }
-  if (p.move.category === 'orbit') stepOrbiters(state, dtMs);
   if (state.supports.length > 0) {
     // Formação visual: cada apoio tem uma posição própria e alcança o jogador
     // com a mesma velocidade normal, sem criar vida ou hitbox adicional.
@@ -3722,14 +3926,16 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
       const dx = e.x - proj.x;
       const dy = e.y - proj.y;
       if (Math.abs(dx) < radius && Math.abs(dy) < radius && !proj.hit.includes(e.id) && Math.hypot(dx, dy) < radius) {
+        if (proj.attackIndex !== undefined) loadSurvivorAttack(state, proj.attackIndex);
         if (focusShot) state.charge.level = Math.min(1, state.charge.level + FOCUS_HIT_CHARGE);
         if (proj.noHeld) heldGuard++;
         try {
           hitEnemy(state, e, proj.damage, { x: proj.x - proj.vx * 0.05, y: proj.y - proj.vy * 0.05 }, proj.move, true, proj.distanceFromPlayer ?? Math.hypot(e.x - p.x, e.y - p.y), true);
+          drain(state, 1, proj.move ?? state.player.move);
         } finally {
           if (proj.noHeld) heldGuard--;
+          if (slots && proj.attackIndex !== undefined) loadSurvivorAttack(state, slots.active);
         }
-        drain(state, 1, proj.move ?? state.player.move);
         proj.hit.push(e.id);
         if (proj.canChain) {
           // Salta uma vez para o inimigo mais próximo deste (que ainda não foi atingido), com 70% do dano.
@@ -3740,7 +3946,7 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
           if (next) {
             const ang = Math.atan2(next.y - e.y, next.x - e.x);
             const speed = Math.hypot(proj.vx, proj.vy);
-            chained.push({ id: state.nextId++, x: e.x, y: e.y, vx: Math.cos(ang) * speed, vy: Math.sin(ang) * speed, damage: round1(proj.damage * 0.7), pierce: 0, lifeMs: 600, hit: [...proj.hit], canChain: false, size: proj.size, collisionRadius: proj.collisionRadius, move: proj.move, source: proj.source, distanceFromPlayer: proj.distanceFromPlayer, look: proj.look });
+            chained.push({ id: state.nextId++, x: e.x, y: e.y, vx: Math.cos(ang) * speed, vy: Math.sin(ang) * speed, damage: round1(proj.damage * 0.7), pierce: 0, lifeMs: 600, hit: [...proj.hit], canChain: false, size: proj.size, collisionRadius: proj.collisionRadius, move: proj.move, source: proj.source, attackIndex: proj.attackIndex, distanceFromPlayer: proj.distanceFromPlayer, look: proj.look });
           }
         }
         if (proj.pierce <= 0) return false;
@@ -3871,7 +4077,8 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
       // A marmita de Peixe não multiplica o ritmo acelerado: vale o maior dos dois.
       const multiplier = Math.max(p.xpMultiplier ?? 1, p.lunch?.active ? 1 + p.lunch.effect.xpBonus : 1);
       const orbValue = orb.doubleXp ? orb.value * 2 : orb.value;
-      const xpWithCarry = (orb.alpha ? survivorAlphaXpValue(p.level, p.xp, xpForLevel) : orbValue * multiplier * BALANCE.xpOrbMultiplier) + (p.xpCarry ?? 0);
+      const xp = orb.alpha ? survivorAlphaXpValue(p.level, p.xp, xpForLevel) : orbValue * multiplier * BALANCE.xpOrbMultiplier;
+      const xpWithCarry = xp * 0.5 + (p.xpCarry ?? 0);
       const boostedValue = normalizeSurvivorXp(xpWithCarry);
       p.xpCarry = Math.max(0, xpWithCarry - boostedValue);
       p.xp = normalizeSurvivorXp(p.xp + boostedValue);
@@ -3886,6 +4093,7 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
     if (Math.hypot(artifact.x - p.x, artifact.y - p.y) > pickupRadius) return true;
     if (artifact.kind === 'terastal') {
       beginTerastalization(p, artifact.teraType);
+      if (slots) beginTerastalization(slots.stored, artifact.teraType);
       state.fx.push({ kind: 'artifact', artifact: 'terastal', x: p.x, y: p.y, r: 42, color: p.move.color, moveType: artifact.teraType, ageMs: 0, lifeMs: 1000 });
       events.push({ type: 'artifactCollected', kind: 'terastal', teraType: artifact.teraType });
       return false;

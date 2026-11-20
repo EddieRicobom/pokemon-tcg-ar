@@ -59,6 +59,10 @@ import {
   chooseSurvivorTypeAffinity,
   rerollSurvivorUpgradeOffer,
   stepSurvivor,
+  survivorPlayerAttacks,
+  survivorUpgradeAttackTargets,
+  survivorUpgradeForAttack,
+  switchSurvivorAttack,
   survivorCoins,
   survivorDefenseReduction,
   survivorScore,
@@ -761,6 +765,71 @@ const shadowBossSprite = ref<string | null>(null);
 let specialQueued = false;
 /** Botão de carga (Foco e Teleporte) apertado agora; o motor lê se está segurado a cada passo. */
 const chargeHeld = ref(false);
+const secondChargePointerHeld = ref(false);
+const secondChargeKeyHeld = ref(false);
+const secondChargeGamepadHeld = ref(false);
+const secondChargeButtonHeld = ref(false);
+const secondChargeHeld = computed(() => secondChargePointerHeld.value || secondChargeKeyHeld.value || secondChargeGamepadHeld.value || secondChargeButtonHeld.value);
+let secondChargePointerId: number | null = null;
+let secondCancelChargeQueued = false;
+const playerAttacks = computed(() => state.value ? survivorPlayerAttacks(state.value) : null);
+const otherManualAttack = computed(() => {
+  const attacks = playerAttacks.value;
+  if (!attacks?.simultaneous) return null;
+  const index: 0 | 1 = attacks.active === 0 ? 1 : 0;
+  const category = attacks.moves[index].category;
+  return category === 'foco' || category === 'teleporte' || category === 'trilha' ? { index, move: attacks.moves[index] } : null;
+});
+function switchAttack(): void {
+  if (!state.value || state.value.over || paused.value || pendingUpgrade.value || evolving.value || specialModalOpen.value) return;
+  if (state.value.pendingBlackChest != null || state.value.supreme.windupMs > 0) return;
+  if (!switchSurvivorAttack(state.value)) return;
+  // O motor já cancela a carga do golpe anterior sem disparar ao trocá-lo.
+  chargePointerId = null;
+  chargeHeld.value = false;
+  secondChargePointerId = null;
+  secondChargePointerHeld.value = false;
+  secondChargeKeyHeld.value = false;
+  secondChargeGamepadHeld.value = false;
+  secondChargeButtonHeld.value = false;
+  gamepadCharging = false;
+  cancelChargeQueued = false;
+  secondCancelChargeQueued = false;
+}
+const otherManualChargeLabel = computed(() => {
+  const attacks = playerAttacks.value;
+  const other = otherManualAttack.value;
+  if (!attacks || !other) return '';
+  const charge = attacks.charges[other.index];
+  if (other.move.category === 'teleporte' && charge.teleportCooldownMs > 0) return `${Math.ceil(charge.teleportCooldownMs / 1000)}s`;
+  if (other.move.category === 'trilha' && (attacks.players[other.index].trailActiveMs ?? 0) > 0) return 'DESENHE';
+  return `${Math.floor(otherManualChargeMeter.value * 100)}%`;
+});
+const otherManualChargeMeter = computed(() => {
+  const attacks = playerAttacks.value;
+  const other = otherManualAttack.value;
+  if (!attacks || !other) return 0;
+  const charge = attacks.charges[other.index];
+  if (other.move.category === 'trilha') return attacks.players[other.index].trailCharge ?? 0;
+  return other.move.category === 'teleporte' ? Math.min(1, charge.teleportHoldMs / 1200) : charge.level;
+});
+function pressSecondCharge(event: PointerEvent): void {
+  if (!otherManualAttack.value || !canUseGamepadInRun() || secondChargePointerId !== null || event.button !== 0 || !(event.currentTarget instanceof HTMLElement)) return;
+  event.currentTarget.setPointerCapture?.(event.pointerId);
+  secondChargePointerId = event.pointerId;
+  unlockSound();
+  secondChargePointerHeld.value = true;
+}
+function releaseSecondCharge(event: PointerEvent): void {
+  if (event.pointerId !== secondChargePointerId) return;
+  secondChargePointerId = null;
+  secondChargePointerHeld.value = false;
+}
+function cancelSecondCharge(event: PointerEvent): void {
+  if (event.pointerId !== secondChargePointerId) return;
+  releaseSecondCharge(event);
+  if (!secondChargeHeld.value) secondCancelChargeQueued = true;
+}
 let chargePointerId: number | null = null;
 const autoCharge = ref(false);
 let cancelChargeQueued = false;
@@ -800,6 +869,12 @@ function releaseCharge(event?: PointerEvent): void {
 function cancelCharge(): void {
   chargePointerId = null;
   chargeHeld.value = false;
+  secondChargePointerId = null;
+  secondChargePointerHeld.value = false;
+  secondChargeKeyHeld.value = false;
+  secondChargeGamepadHeld.value = false;
+  secondChargeButtonHeld.value = false;
+  secondCancelChargeQueued = true;
   gamepadCharging = false;
   cancelChargeQueued = true;
 }
@@ -1324,6 +1399,7 @@ function confirmSurvivorDialog(): boolean {
 function onKey(e: KeyboardEvent): void {
   // Cartões acessíveis do seletor já tratam Enter/Espaço localmente.
   // Ao chegar na janela, o mesmo evento não deve escolher a opção duas vezes.
+  if (e.type === 'keyup' && e.key.toLowerCase() === 't' && secondChargeKeyHeld.value) { secondChargeKeyHeld.value = false; e.preventDefault(); return; }
   if (e.defaultPrevented) return;
   if (e.type === 'keydown' && e.key === 'Escape') {
     e.preventDefault();
@@ -1351,6 +1427,14 @@ function onKey(e: KeyboardEvent): void {
   }
   if (blackChestOffer.value) {
     if (dir) heldKeys.delete(dir);
+    return;
+  }
+  if (e.key.toLowerCase() === 'g' && e.type === 'keydown' && !e.repeat && canUseGamepadInRun() && playerAttacks.value && !playerAttacks.value.simultaneous) {
+    switchAttack(); e.preventDefault(); return;
+  }
+  if (e.key.toLowerCase() === 't' && otherManualAttack.value && canUseGamepadInRun()) {
+    secondChargeKeyHeld.value = e.type === 'keydown';
+    e.preventDefault();
     return;
   }
   if ((e.key === 'e' || e.key === 'E') && e.type === 'keydown' && !e.repeat) { e.preventDefault(); queueSpecial(); return; }
@@ -1401,6 +1485,7 @@ function onGamepadAction(event: Event): void {
 
 function onGamepadButton(event: Event): void {
   const detail = (event as CustomEvent<{ handled: boolean; button: number; pressed: boolean }>).detail;
+  if (detail.button === 5 && !detail.pressed && secondChargeKeyHeld.value) { secondChargeKeyHeld.value = false; detail.handled = true; return; }
   if (detail.button === 7 && !detail.pressed && gamepadCharging) {
     gamepadCharging = false;
     releaseCharge();
@@ -1412,7 +1497,9 @@ function onGamepadButton(event: Event): void {
     detail.handled = reopenDeferredUpgrade();
     return;
   }
-  if (detail.button === 2 && bonkRun.value) queueBonkJump();
+  if (detail.button === 6 && playerAttacks.value && !playerAttacks.value.simultaneous) switchAttack();
+  else if (detail.button === 5 && otherManualAttack.value) secondChargeGamepadHeld.value = true;
+  else if (detail.button === 2 && bonkRun.value) queueBonkJump();
   else if (detail.button === 3) queueSupreme();
   else if (detail.button === 7 && chargeStyle.value) {
     if (!chargeHeld.value) {
@@ -2241,6 +2328,36 @@ function drawBonkScene(s: SurvivorState, physics: BonkPhysics): void {
   if (move.category === 'aura') drawElementAuraField(c, s.player, move.type, toScreen, animMs, detailed);
   else if (move.category === 'cone') drawConeGuide(c, s.player, s.player.attackRange, move.type, toScreen, 1 - s.player.attackTimerMs / Math.max(1, s.player.attackCooldownMs));
   else if (move.category === 'orbit') drawOrbitPath(c, s.player, move.type, toScreen);
+  const bonkAttacks = survivorPlayerAttacks(s);
+  if (bonkAttacks?.simultaneous) {
+    const other = bonkAttacks.players[bonkAttacks.active === 0 ? 1 : 0];
+    if (other.move.category === 'aura') drawElementAuraField(c, other, other.move.type, toScreen, animMs, detailed);
+    else if (other.move.category === 'cone') drawConeGuide(c, other, other.attackRange, other.move.type, toScreen, 1 - other.attackTimerMs / Math.max(1, other.attackCooldownMs));
+    else if (other.move.category === 'orbit') {
+      drawOrbitPath(c, other, other.move.type, toScreen);
+      for (const [index] of survivorOrbiters(other).entries()) drawElementOrbiter(c, other, other.move.type, toScreen, index, animMs, detailed);
+    }
+  }
+  // A trilha usa os pontos reais do motor projetados no chão da câmera BONK.
+  const bonkTrailPlayers = bonkAttacks?.simultaneous ? bonkAttacks.players : [s.player];
+  for (const player of bonkTrailPlayers) {
+    if (player.move.category !== 'trilha' || effectiveVisual.value.rotomMode) continue;
+    const path = player.trailPath ?? [];
+    c.save();
+    c.strokeStyle = player.move.color;
+    c.lineCap = 'round';
+    for (let i = 1; i < path.length; i++) {
+      const a = path[i - 1]!; const b = path[i]!;
+      const age = s.elapsedMs - a.bornMs;
+      if (age >= 3500) continue;
+      const from = toScreen(a.x, a.y); const to = toScreen(b.x, b.y);
+      if (!from || !to) continue;
+      c.globalAlpha = Math.max(0, 1 - age / 3500) * .7;
+      c.lineWidth = Math.max(1, player.attackRadius * (from.s + to.s) * .45);
+      c.beginPath(); c.moveTo(from.x, from.y); c.lineTo(to.x, to.y); c.stroke();
+    }
+    c.restore();
+  }
   // Marcas dos transformadores no chão: a arte é a da visão de cima, deitada na perspectiva da câmera.
   const onGround = (point: { x: number; y: number }, paint: () => void): void => {
     const ground = drawPoint(point);
@@ -2712,6 +2829,19 @@ function draw(): void {
   else if (move.category === 'orbit') drawOrbitPath(ctx, s.player, move.type, flat);
   else if (move.category === 'foco' || move.category === 'teleporte') drawChargeAura(ctx, s, detailed);
   if (move.category === 'trilha') drawElementTrail(ctx, s, detailed);
+  const simultaneousAttacks = survivorPlayerAttacks(s);
+  if (simultaneousAttacks?.simultaneous) {
+    const otherIndex = simultaneousAttacks.active === 0 ? 1 : 0;
+    const other = simultaneousAttacks.players[otherIndex];
+    const otherState = { ...s, player: other, charge: simultaneousAttacks.charges[otherIndex] };
+    if (other.move.category === 'aura') drawElementAuraField(ctx, other, other.move.type, flat, animMs, detailed);
+    else if (other.move.category === 'cone') drawConeGuide(ctx, other, other.attackRange, other.move.type, flat, 1 - other.attackTimerMs / Math.max(1, other.attackCooldownMs));
+    else if (other.move.category === 'orbit') {
+      drawOrbitPath(ctx, other, other.move.type, flat);
+      for (const [index] of survivorOrbiters(other).entries()) drawElementOrbiter(ctx, other, other.move.type, flat, index, animMs, detailed);
+    } else if (other.move.category === 'foco' || other.move.category === 'teleporte') drawChargeAura(ctx, otherState, detailed);
+    if (other.move.category === 'trilha') drawElementTrail(ctx, otherState, detailed);
+  }
   drawSupportTrails(ctx, s, detailed);
   if (move.category === 'trilha' && s.player.trailMirrorPath?.length) drawTrailPath(ctx, s, s.player.trailMirrorPath, HELD_ITEM_BY_ID['orbe-grisea'].color, s.player.attackRadius, detailed);
   // Transformadores no chão: buracos negros e bolhas de tempo ficam por baixo dos Pokémon.
@@ -3552,6 +3682,10 @@ function loop(ts: number): void {
         special: first && specialQueued,
         supreme: first && supremeQueued,
         charge: chargeHeld.value || (autoCharge.value && !!chargeStyle.value && autoChargeHeld(chargeStyle.value, s.charge)),
+        ...(playerAttacks.value ? { chargeByAttack: (playerAttacks.value.active === 0
+          ? [chargeHeld.value || (autoCharge.value && !!chargeStyle.value && autoChargeHeld(chargeStyle.value, s.charge)), secondChargeHeld.value]
+          : [secondChargeHeld.value, chargeHeld.value || (autoCharge.value && !!chargeStyle.value && autoChargeHeld(chargeStyle.value, s.charge))]) as [boolean, boolean],
+          cancelChargeByAttack: (playerAttacks.value.active === 0 ? [first && cancelChargeQueued, first && secondCancelChargeQueued] : [first && secondCancelChargeQueued, first && cancelChargeQueued]) as [boolean, boolean] } : {}),
         cancelCharge: first && cancelChargeQueued,
         visibleEnemies: s.elapsedMs + steps.stepMs >= dangerUnlockMs ? visibleEnemyCountForDanger(s) : undefined,
         ...(bonkRun.value && bonkPhysics.value ? { aimAngle: bonkPhysics.value.cameraYaw } : {}),
@@ -3571,6 +3705,7 @@ function loop(ts: number): void {
     specialQueued = false;
     supremeQueued = false;
     cancelChargeQueued = false;
+    secondCancelChargeQueued = false;
     if (bonkRun.value && bonkPhysics.value && beforeBonkPosition && s.pendingBlackChest == null) {
       stepBonkPhysics(bonkPhysics.value, s.player, beforeBonkPosition, { dx, dy, jump: bonkJumpQueued }, simulationDt);
       // Inimigos também respeitam rochas e paredes; a altura do jogador não deve abrir a parede para eles.
@@ -3785,13 +3920,23 @@ function loop(ts: number): void {
   draw();
 }
 
+const upgradeAttackTarget = ref<0 | 1>(0);
+function upgradeTargets(id: string): (0 | 1)[] { return state.value ? survivorUpgradeAttackTargets(state.value, id) : []; }
+function targetForUpgrade(id: string): 0 | 1 | undefined {
+  const targets = upgradeTargets(id);
+  return targets.includes(upgradeAttackTarget.value) ? upgradeAttackTarget.value : targets[0];
+}
+function displayedUpgrade(u: SurvivorUpgradeOption): SurvivorUpgradeOption {
+  const target = targetForUpgrade(u.id);
+  return state.value && target !== undefined ? survivorUpgradeForAttack(state.value, u.id, target) ?? u : u;
+}
 function chooseUpgrade(id: string, event: MouseEvent): void {
   if (event.detail > 1 || !state.value || upgradeMenuLocked.value || !upgradeDialogOpen.value) return;
   const picked = pendingUpgrade.value?.find((option) => option.id === id);
   if (!picked) return;
   if (banMode.value) { banUpgradeCard(id); return; }
   const tierBefore = survivorProjectileTier(state.value.player);
-  const events = applyUpgrade(state.value, id);
+  const events = applyUpgrade(state.value, id, targetForUpgrade(id));
   if (props.pvpRun) emit('pvpBuff', { id: picked.id, name: picked.name.slice(0, 40), rarity: picked.rarity ?? 'normal' });
   playSound('success');
   const tierAfter = survivorProjectileTier(state.value.player);
@@ -3842,7 +3987,7 @@ function banUpgradeCard(id: string): void {
   playSound('survivor-pickup');
   say(`🚫 Carta banida até o fim da corrida. Restam ${state.value.bansLeft ?? 0}.`, 2600);
 }
-watch(pendingUpgrade, () => { banMode.value = false; });
+watch(pendingUpgrade, () => { banMode.value = false; upgradeAttackTarget.value = playerAttacks.value?.active ?? 0; });
 
 function rerollUpgradeSelection(event: MouseEvent): void {
   if (event.detail > 1 || upgradeMenuLocked.value || !state.value || !rerollSurvivorUpgradeOffer(state.value)) return;
@@ -4097,11 +4242,12 @@ async function beginRun(dexId: number, name: string, picked?: PokemonType, infin
     resetFeedback();
     runUnlocks.value = [];
     pendingUpgrade.value = null;
+    upgradeAttackTarget.value = 0;
     autoDeferUpgrades.value = false;
     blackChestOffer.value = false;
     clearTrainerPresentation();
     paused.value = false;
-    const { move, profile, secondMove, hypotheticalSecondaryType } = survivorAttackOf(dexId, picked, swapped, omegaCategory);
+    const { move, profile, secondMove, secondAttack, hypotheticalSecondaryType } = survivorAttackOf(dexId, picked, swapped, omegaCategory);
     runSeenDex.clear();
     // A Vila entrega o loadout (e gasta a sorte do Carteiro) antes de a corrida existir; vale no Survival e no BONK.
     // No PvP nada da Vila entra (nem sorte, nem marmita, nem treino): as duas pessoas começam iguais.
@@ -4115,7 +4261,7 @@ async function beginRun(dexId: number, name: string, picked?: PokemonType, infin
     // A Mega só entra se o fragmento saiu mesmo da mochila; ele volta se a corrida for abandonada logo no começo.
     runOmegaShardTaken = mega !== null && !pureWanted.value && takeRunOmegaShard();
     const runMega = runOmegaShardTaken ? mega : null;
-    state.value = createSurvivorState(runSeed, { ...(props.pvpRun ? { noHeld: true } : {}), kindCount: REGIONAL_KIND_COUNT, enemyDexId: regionalEnemyDexId, move, profile, secondMove, ...(hypotheticalSecondaryType ? { hypotheticalSecondaryType } : {}), supportCandidates, dexId, evolutions: evolutionsFor, infinite, bonk, preparation, typeAffinityChoices, fast, loadout: runLoadout, ...(runMega ? { mega: runMega } : {}), adaptive: adaptiveWanted.value && !props.pvpRun });
+    state.value = createSurvivorState(runSeed, { ...(props.pvpRun ? { noHeld: true } : {}), kindCount: REGIONAL_KIND_COUNT, enemyDexId: regionalEnemyDexId, move, profile, secondMove, secondAttack, ...(hypotheticalSecondaryType ? { hypotheticalSecondaryType } : {}), supportCandidates, dexId, evolutions: evolutionsFor, infinite, bonk, preparation, typeAffinityChoices, fast, loadout: runLoadout, ...(runMega ? { mega: runMega } : {}), adaptive: adaptiveWanted.value && !props.pvpRun });
     landscapeVegetation = bonk ? undefined : createSurvivorVegetation(SURVIVOR_LANDSCAPE_CELL, SURVIVOR_LANDSCAPE_CHUNK_SIZE, ARENA_W, ARENA_H);
     if (landscapeVegetation) {
       const run = state.value;
@@ -4262,12 +4408,12 @@ const attackOptions = computed(() => {
   const { current, alternative } = survivorAttackChoices(choice.opt.dexId, choice.picked);
   const typeChanged = alternative.move.type !== current.move.type;
   return [
-    { key: 'current', swapped: false, title: 'Ficar com o atual', move: current.move, bars: profileBars(current.move, current.profile), note: 'O golpe que o Pokémon tem hoje.' },
+    { key: 'current', swapped: false, title: 'Começar com este', move: current.move, bars: profileBars(current.move, current.profile), note: 'Você poderá trocar de golpe durante a corrida. Aos 10 minutos (cerca de 5 min reais no ritmo acelerado), os dois atacam juntos.' },
     {
-      key: 'alternative', swapped: true, title: 'Trocar pelo secundário', move: alternative.move, bars: profileBars(alternative.move, alternative.profile),
+      key: 'alternative', swapped: true, title: 'Começar com este', move: alternative.move, bars: profileBars(alternative.move, alternative.profile),
       note: typeChanged
-        ? `Troca também o tipo: a Mistura (9 min) e a Afinidade passam a dar o efeito de ${TYPE_LABELS_PT[current.move.type]}, e o golpe atual vira o segundo ataque.`
-        : 'Mesmo tipo: a Mistura e a Afinidade continuam como estão, e o golpe atual vira o segundo ataque.',
+        ? `Troca também o tipo: a Mistura (9 min) e a Afinidade passam a dar o efeito de ${TYPE_LABELS_PT[current.move.type]}, e o golpe atual continua disponível para troca.`
+        : 'Mesmo tipo: a Mistura e a Afinidade continuam como estão, e o golpe atual continua disponível para troca.',
     },
   ];
 });
@@ -4457,6 +4603,14 @@ onBeforeUnmount(() => {
           </button>
         </div>
 
+        <button v-if="ready && state && playerAttacks && !playerAttacks.simultaneous && !summary && !pendingUpgrade && !evolving && !leaveConfirm && !specialModalOpen"
+          type="button" class="survivor-attack-switch" :style="{ '--move': state.player.move.color }"
+          :aria-label="playerAttacks.simultaneous ? `Ambos os golpes ativos. Melhorias para ${state.player.move.name}; toque para escolher o outro alvo de melhorias` : `Golpe ativo: ${state.player.move.name}, ${MOVE_CATEGORY_LABELS_PT[state.player.move.category]}; toque para trocar; tecla G ou LT no controle`"
+          @pointerdown.stop.prevent @click.stop="switchAttack()">
+          <strong>{{ playerAttacks.simultaneous ? 'AMBOS ATIVOS' : 'TROCAR GOLPE' }}</strong>
+          <small>{{ playerAttacks.simultaneous ? 'Melhorias: ' : '' }}{{ state.player.move.name }} · {{ MOVE_CATEGORY_LABELS_PT[state.player.move.category] }} ⇄ G / LT</small>
+        </button>
+        <div v-if="ready && playerAttacks?.simultaneous && !summary" class="survivor-attack-switch" style="--move: #f5d46e" role="status"><strong>AMBOS OS GOLPES ATIVOS</strong><small>{{ playerAttacks.moves[0].name }} ({{ MOVE_CATEGORY_LABELS_PT[playerAttacks.moves[0].category] }}) + {{ playerAttacks.moves[1].name }} ({{ MOVE_CATEGORY_LABELS_PT[playerAttacks.moves[1].category] }})</small></div>
         <div v-if="toast" class="survivor-toast" role="status" aria-live="polite">{{ toast }}</div>
         <div v-if="artifactNotice" class="survivor-artifact-notice" role="status" aria-live="polite">
           <span class="survivor-artifact-notice-icon" aria-hidden="true"><img v-if="artifactNotice.image" :src="artifactNotice.image" alt="" /><template v-else>{{ artifactNotice.icon }}</template></span>
@@ -4599,6 +4753,8 @@ onBeforeUnmount(() => {
                 <li v-if="bonkRun"><b>Andar:</b> arraste para cima para avançar e para os lados para virar a câmera. Teclado: setas ou WASD. Controle: direcional ou analógico.</li>
                 <li v-else><b>Andar:</b> arraste em qualquer lugar da tela. Teclado: setas ou WASD. Controle: direcional ou analógico.</li>
                 <li><b>Atacar:</b> automático, em quem chegar perto.</li>
+                <li v-if="playerAttacks"><b>Trocar golpe:</b> toque em TROCAR GOLPE, use G ou LT no controle. Aos 10 minutos os dois ficam ativos.</li>
+                <li v-if="otherManualAttack"><b>Segundo golpe manual:</b> segure e solte o segundo botão, T ou R1 no controle.</li>
                 <li v-if="bonkRun"><b>Pular:</b> botão PULAR, toque duplo na tela, Q, Espaço ou X no controle. Dá para pular de novo no ar enquanto sobrar bolinha no botão.</li>
                 <li><b>Especial:</b> botão do canto, tecla E ou A no controle. Libera aos 3 minutos e recarrega sozinho.</li>
                 <li><b>Golpe Supremo:</b> o medidor enche com abates e dano. Quando encher, toque em SUPREMO, pressione F ou use Y no controle.</li>
@@ -4631,7 +4787,7 @@ onBeforeUnmount(() => {
           <div v-if="attackChoice" class="card survivor-pick survivor-attack-choice" role="group" :aria-label="`Ataque de ${attackChoice.opt.name}`">
             <template v-if="!omegaAttackChoice">
             <h2>{{ attackChoice.opt.name }}: qual ataque?</h2>
-            <p class="note">Fique com o ataque atual ou troque pelo secundário, calculado pelos atributos do Pokémon.</p>
+            <p class="note">Escolha o golpe inicial. Você poderá alternar durante a corrida; aos 10 minutos (cerca de 5 min reais no ritmo acelerado), os dois atacam juntos. As melhorias indicam o golpe beneficiado.</p>
             <div class="survivor-pick-grid">
               <button v-for="option in attackOptions" :key="option.key" type="button" class="survivor-pick-btn survivor-attack-option" :class="{ disabled: pickBusy }" :style="{ '--move': option.move.color }" @click="confirmAttack(option.swapped)">
                 <span class="survivor-attack-head">
@@ -4861,18 +5017,29 @@ onBeforeUnmount(() => {
 
         <button v-if="ready && state && chargeStyle && !summary && !pickOptions && !pendingUpgrade && !evolving && !leaveConfirm && !specialModalOpen"
           type="button" class="survivor-auto-charge" :class="{ 'is-on': autoCharge }" :aria-pressed="autoCharge"
-          :aria-label="autoCharge ? 'Desativar carga automática' : 'Ativar carga automática'"
+          :aria-label="autoCharge ? 'Desativar carga automática do golpe principal' : 'Ativar carga automática do golpe principal'"
           @click.stop="autoCharge = !autoCharge">AUTO {{ autoCharge ? '●' : '○' }}</button>
 
         <button v-if="ready && state && chargeStyle && !summary && !pickOptions && !pendingUpgrade && !evolving && !leaveConfirm && !specialModalOpen"
           type="button" class="survivor-charge-button" :class="{ 'is-held': chargeHeld, 'is-full': state.charge.level >= 1 || (chargeStyle === 'teleporte' && state.charge.teleportHoldMs >= 1200), 'is-rush': chargeStyle === 'teleporte' && state.charge.teleportHoldMs >= 1200 }"
           :style="{ '--special-color': state.player.move.color, '--charge': `${chargeMeter * 100}%` }"
           :aria-label="chargeStyle === 'foco' ? `Foco: segure para carregar, solte para disparar; carga ${Math.floor(state.charge.level * 100)}%; tecla R` : chargeStyle === 'trilha' ? `Trilha: ande para carregar; ${chargeLabel}; toque para desenhar` : `Teleporte: segure para carregar e solte para usar; ${chargeLabel}; tecla R`"
-          @pointerdown.stop.prevent="pressCharge" @pointerup.stop.prevent="releaseCharge" @pointercancel="cancelChargePointer" @lostpointercapture="cancelChargePointer">
+          @pointerdown.stop.prevent="pressCharge" @pointerup.stop.prevent="releaseCharge" @pointercancel="cancelChargePointer" @lostpointercapture="cancelChargePointer"
+          @keydown.space.stop.prevent="pressCharge()" @keyup.space.stop.prevent="releaseCharge()" @keydown.enter.stop.prevent="pressCharge()" @keyup.enter.stop.prevent="releaseCharge()">
           <span class="special-icon" aria-hidden="true">{{ chargeStyle === 'foco' ? '◎' : chargeStyle === 'trilha' ? '〰' : '»' }}</span>
           <strong>{{ chargeLabel }}</strong>
-          <small>{{ chargeStyle === 'foco' ? 'Foco' : chargeStyle === 'trilha' ? 'Trilha' : 'Teleporte' }}</small>
+          <small>{{ playerAttacks?.simultaneous ? MOVE_CATEGORY_LABELS_PT[state.player.move.category] : chargeStyle === 'foco' ? 'Foco' : chargeStyle === 'trilha' ? 'Trilha' : 'Teleporte' }}</small>
           <small class="gamepad-hint" aria-hidden="true">RT</small>
+        </button>
+
+        <button v-if="ready && state && otherManualAttack && !summary && !pickOptions && !pendingUpgrade && !evolving && !leaveConfirm && !specialModalOpen"
+          type="button" class="survivor-charge-button survivor-second-charge" :class="{ 'is-held': secondChargeHeld }"
+          :style="{ '--special-color': otherManualAttack.move.color, '--charge': `${otherManualChargeMeter * 100}%` }"
+          :aria-label="`${otherManualAttack.move.name}, ${MOVE_CATEGORY_LABELS_PT[otherManualAttack.move.category]}: ${otherManualChargeLabel}; segure e solte para usar; tecla T ou R1 no controle`"
+          @pointerdown.stop.prevent="pressSecondCharge" @pointerup.stop.prevent="releaseSecondCharge" @pointercancel="cancelSecondCharge" @lostpointercapture="cancelSecondCharge"
+          @blur="secondChargeButtonHeld = false" @keydown.space.stop.prevent="secondChargeButtonHeld = true" @keyup.space.stop.prevent="secondChargeButtonHeld = false" @keydown.enter.stop.prevent="secondChargeButtonHeld = true" @keyup.enter.stop.prevent="secondChargeButtonHeld = false">
+          <span class="special-icon" aria-hidden="true">{{ otherManualAttack.move.category === 'foco' ? '◎' : otherManualAttack.move.category === 'trilha' ? '〰' : '»' }}</span>
+          <strong>{{ otherManualChargeLabel }}</strong><small>{{ MOVE_CATEGORY_LABELS_PT[otherManualAttack.move.category] }} · T / R1</small>
         </button>
 
         <button v-if="ready && state && !summary && !pickOptions && !pendingUpgrade && !evolving && !leaveConfirm && !specialModalOpen"
@@ -4974,6 +5141,10 @@ onBeforeUnmount(() => {
                 <button v-if="canDeferUpgrade" type="button" class="survivor-defer-upgrades" :disabled="upgradeMenuLocked" @pointerdown.stop @click="deferUpgradeSelection">Escolher depois</button>
               </div>
               <h2>Escolha uma melhoria</h2>
+              <div v-if="playerAttacks?.simultaneous && state" class="survivor-upgrade-target" role="group" aria-label="Alvo das melhorias de ataque">
+                <strong>Melhorias de ataque para:</strong>
+                <button v-for="(move, index) in playerAttacks.moves" :key="index" type="button" :aria-pressed="upgradeAttackTarget === index" @click.stop="upgradeAttackTarget = index as 0 | 1">{{ move.icon }} {{ move.name }} · {{ MOVE_CATEGORY_LABELS_PT[move.category] }}</button>
+              </div>
               <p v-if="canDeferUpgrade" class="survivor-rarity-hint">Ao escolher depois, a partida continua. Reabra em Melhorias no topo, com U no teclado ou LB no controle.</p>
               <div v-if="canDeferUpgrade" class="survivor-info-section">
                 <button type="button" class="survivor-auto-defer" :aria-pressed="autoDeferUpgrades" @pointerdown.stop @click.stop="autoDeferUpgrades = !autoDeferUpgrades">Guardar automaticamente: {{ autoDeferUpgrades ? 'ligado' : 'desligado' }}</button>
@@ -4993,7 +5164,8 @@ onBeforeUnmount(() => {
                     <span>{{ SURVIVOR_UPGRADE_RARITIES[u.rarity].label }}</span>
                   </span>
                   <span v-if="u.family" class="survivor-upgrade-family">{{ SURVIVOR_UPGRADE_FAMILIES[u.family].icon }} {{ SURVIVOR_UPGRADE_FAMILIES[u.family].label }}</span>
-                  <strong>{{ u.name }}</strong><small>{{ u.description }}</small>
+                  <strong>{{ displayedUpgrade(u).name }}</strong><small>{{ displayedUpgrade(u).description }}</small>
+                  <small v-if="playerAttacks">{{ upgradeTargets(u.id).length ? `Alvo: ${playerAttacks.moves[targetForUpgrade(u.id) ?? 0].name} · ${MOVE_CATEGORY_LABELS_PT[playerAttacks.moves[targetForUpgrade(u.id) ?? 0].category]}` : 'Efeito geral' }}</small>
                   <small v-if="isTransformerOption(u) && heldFormText(u)" class="survivor-transformer-form"><b>No seu golpe ({{ MOVE_CATEGORY_LABELS_PT[state?.player.move.category ?? 'projetil'] }}):</b> {{ heldFormText(u) }}</small>
                   <small v-if="banMode && banBlock(u.id)" class="survivor-ban-reason">Não dá para banir: {{ banBlock(u.id) }}</small>
                 </span>

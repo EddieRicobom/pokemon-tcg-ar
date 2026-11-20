@@ -1,5 +1,6 @@
 import type { Rng } from './battle';
 import type { AttackProfile, MoveCategory, SurvivorMove } from './survivor-moves';
+import type { SurvivorAttackIndex, SurvivorAttackSlots } from './survivor-attack-slots';
 import type { ChargeStyle, SurvivorChargeState } from './survivor-charge';
 import type { PokemonType } from './pokemon-data';
 import type { SurvivorSpecialState } from './survivor-specials';
@@ -232,13 +233,14 @@ export const DIGITAL_DANGER_VISIBLE_RADIUS = 520;
 export type SurvivorEnemyGrade = 'comum' | 'elite' | 'chefao';
 
 export interface SurvivorEnemy {
-  /** Alfa: o dobro de tamanho, HP e dano; deixa um orbe que concede um nível completo. */
+  /** Alfa: o dobro de tamanho, HP e dano; deixa um orbe que vale metade do XP do nível atual. */
   alpha?: boolean;
   /** Caiu pelo Golpe Supremo: não recarrega o medidor. */
   supremeHit?: boolean;
   digitalThreat?: boolean;
   /** Próximo pulso da Trilha neste inimigo, no relógio da corrida. */
   trailNextHitMs?: number;
+  alternateTrailNextHitMs?: number;
   /** Metrônomo: acertos seguidos neste inimigo e quando foi o último. */
   heldHits?: number;
   heldLastHitMs?: number;
@@ -253,6 +255,7 @@ export interface SurvivorEnemy {
   linkMs?: number;
   /** Orbe Grísea: intervalo entre toques do anel espelhado da órbita. */
   mirrorOrbitHitMs?: number;
+  alternateMirrorOrbitNextHitMs?: number;
   id: number;
   /** Espécie fixada no nascimento, independente dos atributos de combate. */
   dexId?: number;
@@ -285,6 +288,7 @@ export interface SurvivorEnemy {
   knockbackCooldownMs?: number;
   /** Ms até um orbital poder acertar este inimigo de novo. */
   orbitHitMs?: number;
+  alternateOrbitNextHitMs?: number;
   wetMs?: number;
   seededMs?: number;
   /** Acúmulos de frio. O congelamento é curto e tem intervalo por alvo. */
@@ -341,6 +345,8 @@ export interface SurvivorHostileProjectile {
 }
 
 export interface SurvivorProjectile {
+  /** Golpe do jogador que criou este disparo, inclusive se ele trocar enquanto o disparo viaja. */
+  attackIndex?: SurvivorAttackIndex;
   id: number;
   x: number;
   y: number;
@@ -431,13 +437,15 @@ export interface SurvivorOrb {
   x: number;
   y: number;
   value: number;
-  /** Recompensa alfa: o valor de um nível é resolvido ao coletar, sem bônus de XP. */
+  /** Recompensa alfa: metade do XP de um nível, calculada ao coletar sem bônus de XP. */
   alpha?: boolean;
   /** Orbe raro que concede o dobro do valor base ao ser coletado. Opcional para compatibilidade com estados antigos. */
   doubleXp?: boolean;
 }
 
 export interface SurvivorUpgradeOption {
+  /** Golpe que originou esta oferta; serve como destino inicial quando há dois alvos. */
+  attackIndex?: SurvivorAttackIndex;
   id: string;
   name: string;
   description: string;
@@ -486,6 +494,8 @@ export interface SurvivorElementalTerrain {
 }
 
 export interface SurvivorState {
+  /** Golpes próprios do Pokémon, além dos apoios recrutados durante a partida. */
+  attackSlots?: SurvivorAttackSlots;
   /** A partida pode resolver cortes e quebras no cenario usando a geometria dos golpes. */
   vegetationImpact?: (hit: import('./survivor-vegetation').SurvivorVegetationHit) => void;
   /** Desativa encontros automáticos no laboratório isolado. */
@@ -657,6 +667,9 @@ export interface SurvivorInput {
   charge?: boolean;
   /** Cancela um hold de Teleporte sem transformá-lo em soltura. */
   cancelCharge?: boolean;
+  /** Controles independentes dos golpes próprios, na ordem da seleção inicial. */
+  chargeByAttack?: readonly [boolean, boolean];
+  cancelChargeByAttack?: readonly [boolean, boolean];
   /** Vetor de direção do analógico/arraste; não precisa estar normalizado (0,0 = parado). */
   dx: number;
   dy: number;
@@ -870,6 +883,7 @@ export interface SurvivorChest {
 }
 
 export interface SurvivorHeldMine {
+  attackIndex?: SurvivorAttackIndex;
   id: number;
   enemyId: number;
   x: number;
@@ -880,6 +894,7 @@ export interface SurvivorHeldMine {
 }
 
 export interface SurvivorTimeBubble {
+  attackIndex?: SurvivorAttackIndex;
   id: number;
   x: number;
   y: number;
@@ -892,6 +907,7 @@ export interface SurvivorTimeBubble {
 }
 
 export interface SurvivorGravityWell {
+  attackIndex?: SurvivorAttackIndex;
   id: number;
   x: number;
   y: number;
@@ -905,6 +921,7 @@ export interface SurvivorGravityWell {
 }
 
 export interface SurvivorHeldStrike {
+  attackIndex?: SurvivorAttackIndex;
   id: number;
   kind: 'blast' | 'cone' | 'beam' | 'jump';
   atMs: number;
@@ -919,6 +936,7 @@ export interface SurvivorHeldStrike {
 }
 
 export interface SurvivorHeldCharge {
+  attackIndex?: SurvivorAttackIndex;
   id: number;
   slot: number;
   total: number;

@@ -79,6 +79,8 @@ describe('Torre de Sobrevivência', () => {
     pokemon.focus();
     expect(keyboard(pokemon, ' ').defaultPrevented).toBe(true);
     await vi.waitFor(() => expect(document.activeElement).toBe(host!.querySelector('.survivor-attack-option')));
+    expect(host!.querySelector('.survivor-attack-choice')!.textContent).toContain('5 min reais');
+    expect(host!.querySelectorAll('.survivor-attack-option .survivor-pick-kind')).toHaveLength(2);
     keyboard(document.activeElement as HTMLElement, 'Escape');
     await vi.waitFor(() => expect(document.activeElement).toBe(host!.querySelector('[data-gamepad-default]')));
 
@@ -206,6 +208,19 @@ describe('Torre de Sobrevivência', () => {
     await nextTick();
     expect(cards()).toHaveLength(0);
     expect(run.pendingUpgrade).toBeNull();
+  });
+
+  it('troca o golpe por teclado e controle antes de abrir melhorias', async () => {
+    const { run } = await startRunWithTwoLevels();
+    expect(run.attackSlots?.active).toBe(0);
+    const key = new KeyboardEvent('keydown', { key: 'g', bubbles: true, cancelable: true });
+    window.dispatchEvent(key);
+    expect(key.defaultPrevented).toBe(true);
+    expect(run.attackSlots?.active).toBe(1);
+    const detail = { handled: false, pressed: true, button: 6 };
+    window.dispatchEvent(new CustomEvent('tcg-gamepad-button', { detail }));
+    expect(detail.handled).toBe(true);
+    expect(run.attackSlots?.active).toBe(0);
   });
 
   it('guarda a oferta e permite reabrir pelo HUD, teclado ou controle', async () => {

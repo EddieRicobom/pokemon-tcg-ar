@@ -606,16 +606,17 @@ describe('stepSurvivor', () => {
     s.player.xpToNext = 100;
     s.orbs.push({ id: 999, x: s.player.x, y: s.player.y, value: 16 });
     stepSurvivor(s, { dx: 0, dy: 0 }, 16);
-    expect(s.player.xp).toBe(14); // 16 × 1,5 × 65%, convertido para a unidade par abaixo
+    expect(s.player.xp).toBe(6);
+    expect(s.player.xp + (s.player.xpCarry ?? 0)).toBeCloseTo(16 * 1.5 * 0.65 / 2);
     expect(s.player.xp % 2).toBe(0);
   });
 
-  it('reduz a XP dos orbes em 35% no total, sem perder os restos fracionários', () => {
+  it('reduz à metade o ganho efetivo de XP sem perder os restos fracionários', () => {
     const s = quiet(createSurvivorState(4, { kindCount: 1 }));
     s.player.xpToNext = 1_000;
     for (let id = 0; id < 10; id++) s.orbs.push({ id, x: s.player.x, y: s.player.y, value: 8 });
     stepSurvivor(s, { dx: 0, dy: 0 }, 16);
-    expect(s.player.xp).toBe(52); // 10 × 8 × 65%
+    expect(s.player.xp).toBe(26); // 10 × 8 × 65% × 50%
     expect(s.player.xpCarry).toBeCloseTo(0);
   });
 
@@ -690,7 +691,8 @@ describe('stepSurvivor', () => {
     s.orbs[0]!.x = s.player.x;
     s.orbs[0]!.y = s.player.y;
     stepSurvivor(s, { dx: 0, dy: 0 }, 16);
-    expect(s.player.xp).toBe(10); // 16 de XP dobrada × 65%, preservando a unidade par
+    expect(s.player.xp).toBe(4);
+    expect(s.player.xp + (s.player.xpCarry ?? 0)).toBeCloseTo(16 * 0.65 / 2);
   });
 });
 
