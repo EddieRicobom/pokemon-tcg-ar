@@ -1,4 +1,5 @@
 import data from './data/pokemon-megas.json';
+import { otherSurvivorAttack, type SurvivorAttackFields } from './survivor-attack-slots';
 import { attackProfile } from './survivor-moves';
 import { statsOfDex } from './survivor-stats';
 import { speciesName } from './survivor-evolution';
@@ -44,9 +45,18 @@ export interface SurvivorMegaState {
   label: string;
   stats: BaseStats;
   active: boolean;
-  ratios: { maxHp: number; damage: number; cooldownMs: number; radius: number; walkSpeed: number; projectileSpeed: number };
-  /** Tamanho do disparo antes da Mega (não é proporcional: volta exatamente). */
+  maxHpRatio: number;
+  walkSpeedRatio: number;
+  attacks: readonly [MegaAttackScale, MegaAttackScale?];
+}
+
+interface MegaAttackScale {
+  damage: number;
+  cooldownMs: number;
+  radius: number;
+  projectileSpeed: number;
   baseProjectileSize: number;
+  megaProjectileSize: number;
 }
 
 interface RawForm { dex: number; id: number; name: string; variant: string | null; stats: number[]; animated: boolean; still: boolean }
@@ -113,6 +123,20 @@ export function survivorMegaStatDelta(form: SurvivorMegaForm): { stat: keyof Bas
 const round1 = (n: number): number => Math.round(n * 10) / 10;
 const ratio = (a: number, b: number): number => (a > 0 && b > 0 ? b / a : 1);
 
+function megaAttackScale(attack: SurvivorAttackFields, baseStats: BaseStats, megaStats: BaseStats): MegaAttackScale {
+  const move = attack.terastal?.baseMove ?? attack.move;
+  const before = attackProfile(move, baseStats);
+  const after = attackProfile(move, megaStats);
+  return {
+    damage: ratio(before.damage, after.damage),
+    cooldownMs: ratio(before.cooldownMs, after.cooldownMs),
+    radius: ratio(before.radius, after.radius),
+    projectileSpeed: ratio(before.projectileSpeed, after.projectileSpeed),
+    baseProjectileSize: attack.projectileSize,
+    megaProjectileSize: after.projectileSize,
+  };
+}
+
 /**
  * Entra na forma Mega: cada número do jogador muda na proporção entre o perfil dos stats da espécie e o da forma Mega
  * (como na evolução, mas sem bônus). A vida sobe junto, mantendo a fração. Sem stats da espécie, não aplica (false).
@@ -124,31 +148,37 @@ export function startSurvivorMega(state: SurvivorState, form: SurvivorMegaForm):
   if (!baseStats) return false;
   const before = attackProfile(p.move, baseStats);
   const after = attackProfile(p.move, form.stats);
-  const ratios = {
-    maxHp: ratio(before.maxHp, after.maxHp),
-    damage: ratio(before.damage, after.damage),
-    cooldownMs: ratio(before.cooldownMs, after.cooldownMs),
-    radius: ratio(before.radius, after.radius),
-    walkSpeed: ratio(before.walkSpeed, after.walkSpeed),
-    projectileSpeed: ratio(before.projectileSpeed, after.projectileSpeed),
+  const slots = state.attackSlots;
+  const loadedAttack = megaAttackScale(p, baseStats, form.stats);
+  const storedAttack = slots ? megaAttackScale(slots.stored, baseStats, form.stats) : undefined;
+  const attacks: SurvivorMegaState['attacks'] = storedAttack && slots?.loaded === 1 ? [storedAttack, loadedAttack] : [loadedAttack, storedAttack];
+  p.mega = {
+    formId: form.formId, label: form.label, stats: form.stats, active: true, attacks,
+    maxHpRatio: ratio(before.maxHp, after.maxHp), walkSpeedRatio: ratio(before.walkSpeed, after.walkSpeed),
   };
-  p.mega = { formId: form.formId, label: form.label, stats: form.stats, active: true, ratios, baseProjectileSize: p.projectileSize };
-  scalePlayer(state, ratios, after.projectileSize);
+  scalePlayer(state, p.mega, true);
   return true;
 }
 
-function scalePlayer(state: SurvivorState, r: SurvivorMegaState['ratios'], projectileSize: number): void {
+function scalePlayer(state: SurvivorState, mega: SurvivorMegaState, entering: boolean): void {
   const p = state.player;
+  const scale = (value: number): number => entering ? value : ratio(value, 1);
   const hpBefore = p.hp;
   const fraction = p.maxHp > 0 ? p.hp / p.maxHp : 1;
-  p.maxHp = Math.max(1, Math.round(p.maxHp * r.maxHp));
+  p.maxHp = Math.max(1, Math.round(p.maxHp * scale(mega.maxHpRatio)));
   p.hp = Math.min(p.maxHp, Math.max(p.hp > 0 ? 1 : 0, Math.round(p.maxHp * fraction)), (p.healBlockMs ?? 0) > 0 ? hpBefore : Infinity);
-  p.attackDamage = round1(p.attackDamage * r.damage);
-  p.attackCooldownMs = Math.max(120, Math.round(p.attackCooldownMs * r.cooldownMs));
-  p.attackRadius = round1(p.attackRadius * r.radius);
-  p.speed = round1(p.speed * r.walkSpeed);
-  p.projectileSpeed = round1(p.projectileSpeed * r.projectileSpeed);
-  p.projectileSize = projectileSize;
+  p.speed = round1(p.speed * scale(mega.walkSpeedRatio));
+  function scaleAttack(attack: SurvivorAttackFields, ratios: MegaAttackScale | undefined): void {
+    if (!ratios) return;
+    attack.attackDamage = round1(attack.attackDamage * scale(ratios.damage));
+    attack.attackCooldownMs = Math.max(120, Math.round(attack.attackCooldownMs * scale(ratios.cooldownMs)));
+    attack.attackRadius = round1(attack.attackRadius * scale(ratios.radius));
+    attack.projectileSpeed = round1(attack.projectileSpeed * scale(ratios.projectileSpeed));
+    attack.projectileSize = entering ? ratios.megaProjectileSize : ratios.baseProjectileSize;
+  }
+  const slots = state.attackSlots;
+  scaleAttack(p, mega.attacks[slots?.loaded ?? 0]);
+  if (slots) scaleAttack(slots.stored, mega.attacks[otherSurvivorAttack(slots.loaded)]);
 }
 
 /** Volta à forma normal, usado só quando o Pokémon evolui (desfaz as razões; upgrades pegos durante a Mega continuam valendo). */
@@ -156,12 +186,7 @@ export function endSurvivorMega(state: SurvivorState): boolean {
   const mega = state.player.mega;
   if (!mega?.active) return false;
   mega.active = false;
-  const r = mega.ratios;
-  const inverse = (n: number): number => (n > 0 ? 1 / n : 1);
-  scalePlayer(state, {
-    maxHp: inverse(r.maxHp), damage: inverse(r.damage), cooldownMs: inverse(r.cooldownMs), radius: inverse(r.radius),
-    walkSpeed: inverse(r.walkSpeed), projectileSpeed: inverse(r.projectileSpeed),
-  }, mega.baseProjectileSize);
+  scalePlayer(state, mega, false);
   return true;
 }
 

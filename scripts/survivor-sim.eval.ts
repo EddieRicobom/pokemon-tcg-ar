@@ -10,7 +10,8 @@ import type { Rng } from '../src/core/battle';
 import { attackProfile, moveFor } from '../src/core/survivor-moves';
 import { statsOfDex } from '../src/core/survivor-stats';
 import { LAST_DEX, typesOfDex } from '../src/core/species-filter';
-import { applyUpgrade, ARENA_H, ARENA_W, createSurvivorState, stepSurvivor } from '../src/core/survivor';
+import { SURVIVOR_ALPHA_INCREASE_MS } from '../src/core/survivor-alpha';
+import { applyUpgrade, ARENA_H, ARENA_W, createSurvivorState, resolveBlackChest, stepSurvivor } from '../src/core/survivor';
 import { chooseSurvivorSpecial, chooseSurvivorSpecialBranch } from '../src/core/survivor-specials';
 import type { SurvivorInput, SurvivorState } from '../src/core/survivor';
 
@@ -69,6 +70,9 @@ interface Run {
   oneShotFromFull: boolean;
   defenseCards: number;
   moveCategory: string;
+  alphaSpawned: number;
+  alphaDefeated: number;
+  upgradeInterruptions: number;
 }
 
 function play(seed: number, pick: (s: SurvivorState, rng: Rng) => string, noBoss = false): Run {
@@ -89,6 +93,9 @@ function play(seed: number, pick: (s: SurvivorState, rng: Rng) => string, noBoss
   const rng = seededRng(seed ^ 0x5eed);
   let bossesSpawned = 0;
   let bossesKilled = 0;
+  let alphaSpawned = 0;
+  let alphaDefeated = 0;
+  let upgradeInterruptions = 0;
   let steps = 0;
   while (!s.over && s.elapsedMs < CAP_MS) {
     if (++steps > (CAP_MS / DT) * 3) throw new Error(`Simulação parada aos ${s.elapsedMs} ms (${s.special.phase})`);
@@ -104,8 +111,19 @@ function play(seed: number, pick: (s: SurvivorState, rng: Rng) => string, noBoss
       chooseSurvivorSpecialBranch(s, 'shield-permanent');
       continue;
     }
+    if (s.pendingBlackChest != null) {
+      resolveBlackChest(s, false);
+      continue;
+    }
     const bossesBefore = s.enemies.filter((e) => e.boss).length;
     const events = stepSurvivor(s, bot(s), DT);
+    if (s.elapsedMs >= SURVIVOR_ALPHA_INCREASE_MS) {
+      for (const event of events) {
+        if (event.type === 'alphaSpawn') alphaSpawned++;
+        if (event.type === 'alphaDefeated') alphaDefeated++;
+      }
+      if (s.pendingUpgrade) upgradeInterruptions++;
+    }
     if (events.some((e) => e.type === 'bossSpawn')) bossesSpawned++;
     const bossesAfter = s.enemies.filter((e) => e.boss).length;
     const spawnedNow = events.filter((e) => e.type === 'bossSpawn').length;
@@ -118,6 +136,7 @@ function play(seed: number, pick: (s: SurvivorState, rng: Rng) => string, noBoss
     oneShotFromFull: s.over && !!s.lastHit && s.lastHit.hpBefore >= s.player.maxHp && s.lastHit.damage >= s.lastHit.hpBefore,
     defenseCards: ['guard-physical', 'guard-special', 'guard-balanced'].reduce((count, id) => count + (s.player.upgradeLevels[id] ?? 0), 0),
     moveCategory: move.category,
+    alphaSpawned, alphaDefeated, upgradeInterruptions,
   };
 }
 
@@ -138,6 +157,9 @@ function report(label: string, runs: Run[]): void {
   const sawBoss = runs.filter((r) => r.bossesSpawned > 0);
   const killedFirst = sawBoss.filter((r) => r.bossesKilled > 0).length;
   const capped = runs.filter((r) => r.survivedMs >= CAP_MS).length;
+  const lateMinutes = runs.reduce((sum, r) => sum + Math.max(0, r.survivedMs - SURVIVOR_ALPHA_INCREASE_MS), 0) / 60_000;
+  const perLateMinute = (metric: 'alphaSpawned' | 'alphaDefeated' | 'upgradeInterruptions') =>
+    lateMinutes ? Number((runs.reduce((sum, r) => sum + r[metric], 0) / lateMinutes).toFixed(2)) : 0;
   const out = {
     corridas: runs.length,
     sobrevivenciaS: { p10: Math.round(pct(t, 0.1)), mediana: Math.round(pct(t, 0.5)), p90: Math.round(pct(t, 0.9)) },
@@ -149,6 +171,13 @@ function report(label: string, runs: Run[]): void {
     golpeFinalDeChefe: `${Math.round((runs.filter((r) => r.diedFromBoss).length / runs.length) * 100)}%`,
     morteComVidaCheia: `${Math.round((runs.filter((r) => r.oneShotFromFull).length / runs.length) * 100)}%`,
     cartasDeDefesaMediana: pct(runs.map((r) => r.defenseCards).sort((a, b) => a - b), 0.5),
+    chegouAosMinutos: Object.fromEntries([3, 5, 10, 15, 18, 20].filter((minutes) => minutes * 60_000 <= CAP_MS)
+      .map((minutes) => [minutes, runs.filter((r) => r.survivedMs >= minutes * 60_000).length])),
+    porMinutoDepoisDe3Min: {
+      alfasNascidos: perLateMinute('alphaSpawned'),
+      alfasDerrotados: perLateMinute('alphaDefeated'),
+      interrupcoesParaMelhoria: perLateMinute('upgradeInterruptions'),
+    },
     limiteMin: CAP_MS / 60_000,
     chegouAoLimite: `${Math.round((capped / runs.length) * 100)}%`,
     porFormaDeGolpe: Object.fromEntries([...new Set(runs.map((run) => run.moveCategory))].sort().map((category) => {

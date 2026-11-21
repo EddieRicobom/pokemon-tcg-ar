@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { createSurvivorState, stepSurvivor, survivorDefenseReduction } from './survivor';
-import { attackProfile, moveFor } from './survivor-moves';
+import { createSurvivorState, stepSurvivor, survivorDefenseReduction, survivorPlayerAttacks, switchSurvivorAttack } from './survivor';
+import { attackProfile, moveFor, moveWith } from './survivor-moves';
 import { statsOfDex } from './survivor-stats';
 import { typesOfDex } from './species-filter';
 import { emptyVillage } from './village/life';
@@ -97,6 +97,28 @@ describe('Mega na corrida', () => {
     expect(state.player.attackCooldownMs).toBe(normal.player.attackCooldownMs);
     expect(state.player.projectileSize).toBe(normal.player.projectileSize);
     expect(survivorDefenseReduction(state.player, 'contato')).toBe(survivorDefenseReduction(normal.player, 'contato'));
+  });
+
+  it('aplica a Mega aos dois golpes e os restaura após alternar', () => {
+    const stats = statsOfDex(megaX.dexId);
+    const move = moveWith('fire', 'projetil', stats);
+    const alternate = moveWith('flying', 'cone', stats);
+    const profile = attackProfile(move, stats);
+    const alternateProfile = attackProfile(alternate, stats);
+    const state = createSurvivorState(7, {
+      kindCount: 4, dexId: megaX.dexId, move, profile,
+      secondAttack: { move: alternate, profile: alternateProfile }, mega: megaX,
+    });
+    const damageByAttack = [move, alternate].map((attack) => attackProfile(attack, megaX.stats).damage);
+    expect(survivorPlayerAttacks(state)!.players.map((player) => player.attackDamage)).toEqual(damageByAttack);
+    expect(switchSurvivorAttack(state)).toBe(true);
+    expect(state.player.attackDamage).toBe(damageByAttack[1]);
+    expect(endSurvivorMega(state)).toBe(true);
+    const [first, second] = survivorPlayerAttacks(state)!.players;
+    expect(first.attackDamage).toBeCloseTo(profile.damage, 0);
+    expect(second.attackDamage).toBeCloseTo(alternateProfile.damage, 0);
+    expect(first.projectileSize).toBe(profile.projectileSize);
+    expect(second.projectileSize).toBe(alternateProfile.projectileSize);
   });
 
   it('a vida mantém a fração ao entrar e sair', () => {

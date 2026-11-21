@@ -6501,6 +6501,13 @@ body.no-scroll .reward-toasts {
 
 /* O HUD não começa o joystick, mas os seus botões precisam receber o toque. */
 .survivor-hud button { pointer-events: auto; touch-action: manipulation; }
+.survivor-stats .survivor-resume-upgrades {
+  min-height: 36px;
+  border-color: #ffe29d;
+  background: #574127;
+  color: #ffe9b2;
+  font-weight: 800;
+}
 .survivor-action-dock {
   display: flex;
   flex: 0 1 auto;
@@ -7188,7 +7195,23 @@ body.no-scroll .reward-toasts {
   touch-action: pan-y;
 }
 .survivor-rarity-hint { margin: 4px 0 10px; font-size: 0.78rem; color: #4a5068; }
-.survivor-upgrade-delay { margin: -2px 0 8px; color: #745b16; font-size: .72rem; font-weight: 700; }
+.survivor-levelup-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+.survivor-levelup-header .survivor-kicker { margin: 0; }
+.survivor-defer-upgrades {
+  min-height: 36px;
+  padding: 4px 12px;
+  border: 1px solid #d8dcf0;
+  border-radius: 8px;
+  background: #f4f6ff;
+  color: #1b2036;
+  font-weight: 700;
+}
 .survivor-rarity-guide { margin: 0 0 8px; padding: 6px 8px; border: 1px solid #d8dcf0; border-radius: 8px; text-align: left; color: #35425c; font-size: 0.72rem; }
 .survivor-rarity-guide summary { cursor: pointer; font-weight: 700; }
 .survivor-rarity-guide p { margin: 6px 0 0; line-height: 1.35; }
@@ -8685,3 +8708,19 @@ body.no-scroll .reward-toasts {
   .survivor-black-card h2, .survivor-black-card p { margin: 2px 0; }
   .survivor-black-penalties { margin: 5px 0; padding-top: 4px; padding-bottom: 4px; }
 }
+
+/* Troca de golpe e ação independente para o segundo golpe simultâneo. */
+.survivor-attack-switch {
+  position: absolute; z-index: 4; left: calc(8px + env(safe-area-inset-left));
+  bottom: calc(56px + env(safe-area-inset-bottom)); max-width: 165px; min-height: 40px;
+  display: grid; padding: 4px 8px; border: 2px solid var(--move); border-radius: 5px;
+  background: #303c3d; color: #fff; box-shadow: 2px 2px 0 #171d1d; touch-action: manipulation;
+}
+.survivor-attack-switch strong { font-size: .62rem; }
+.survivor-attack-switch small { overflow: hidden; font-size: .65rem; text-overflow: ellipsis; white-space: nowrap; }
+.survivor-second-charge { right: calc(var(--sv-edge) + var(--sv-sp) * var(--sv-s) + var(--sv-gap) + env(safe-area-inset-right)); --charge: 0%; }
+
+.survivor-upgrade-target { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 8px 0; }
+.survivor-upgrade-target strong { flex-basis: 100%; font-size: .8rem; }
+.survivor-upgrade-target button { padding: 6px 9px; border: 2px solid #555b58; border-radius: 5px; background: #f5f3dc; color: #252d30; }
+.survivor-upgrade-target button[aria-pressed="true"] { background: #303c3d; color: #ffe9a6; }

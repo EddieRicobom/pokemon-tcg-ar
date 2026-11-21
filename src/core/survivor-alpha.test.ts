@@ -17,10 +17,10 @@ function quiet(): SurvivorState {
 }
 
 describe('inimigos alfa', () => {
-  it('sorteia 0,2% antes do minuto 3 e 2% a partir dele, sem incluir a borda superior', () => {
+  it('sorteia 0,2% antes do minuto 3 e 1,5% a partir dele, sem incluir a borda superior', () => {
     expect(survivorAlphaChance(179_999)).toBe(0.002);
-    expect(survivorAlphaChance(180_000)).toBe(0.02);
-    for (const [time, chance] of [[0, 0.002], [180_000, 0.02]] as const) {
+    expect(survivorAlphaChance(180_000)).toBe(0.015);
+    for (const [time, chance] of [[179_999, 0.002], [180_000, 0.015]] as const) {
       const alpha = enemy();
       rollSurvivorAlpha(alpha, time, () => chance - 0.000001);
       expect(alpha.alpha).toBe(true);
@@ -57,7 +57,7 @@ describe('inimigos alfa', () => {
     expect(stepSurvivor(state, { dx: 0, dy: 0 }, 16).filter((event) => event.type === 'alphaSpawn')).toHaveLength(0);
   });
 
-  it('deixa orbe alfa ao morrer e calcula um nível completo no momento da coleta', () => {
+  it('deixa orbe alfa ao morrer e calcula metade do XP do nível atual no momento da coleta', () => {
     const state = quiet();
     state.enemies.push(enemy({ alpha: true, dexId: 25, hp: 0, x: state.player.x + 300, y: state.player.y }));
     const events = stepSurvivor(state, { dx: 0, dy: 0 }, 16);
@@ -73,9 +73,8 @@ describe('inimigos alfa', () => {
     state.player.xpCarry = 0.5;
     Object.assign(state.orbs[0]!, { x: state.player.x, y: state.player.y, doubleXp: true });
     expect(stepSurvivor(state, { dx: 0, dy: 0 }, 16).filter((event) => event.type === 'alphaDefeated')).toHaveLength(0);
-    expect(state.player.level).toBe(8);
-    expect(state.player.xp).toBe(12);
-    expect(state.player.xpCarry).toBe(0.5);
+    expect(state.player.level).toBe(7);
+    expect(state.player.xp + (state.player.xpCarry ?? 0)).toBe(12.5 + xpForLevel(7) / 2);
     expect(state.orbs).toHaveLength(0);
   });
 
@@ -98,12 +97,12 @@ describe('inimigos alfa', () => {
     expect(events.filter((event) => event.type === 'alphaDefeated' || event.type === 'alphaSpawn')).toHaveLength(0);
   });
 
-  it('cada orbe alfa coletado junto vale um nível, mesmo com o custo crescente', () => {
+  it('dois orbes alfa rendem um nível e o próximo vale metade do novo custo no mesmo quadro', () => {
     const state = quiet();
     state.orbs.push(...[1, 2, 3].map((id) => ({ id, x: state.player.x, y: state.player.y, value: 1, alpha: true })));
     const events = stepSurvivor(state, { dx: 0, dy: 0 }, 16);
-    expect(state.player.level).toBe(4);
-    expect(state.player.xp).toBe(0);
-    expect(events.filter((event) => event.type === 'levelup')).toHaveLength(3);
+    expect(state.player.level).toBe(2);
+    expect(state.player.xp + (state.player.xpCarry ?? 0)).toBe(xpForLevel(2) / 2);
+    expect(events.filter((event) => event.type === 'levelup')).toHaveLength(1);
   });
 });

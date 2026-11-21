@@ -105,27 +105,30 @@ export function survivorAttackChoices(dexId: number, picked?: PokemonType): { cu
  * Com `swapped`, o golpe alternativo vira o principal e o antigo passa a ser o segundo ataque; a Mistura de tipo dos
  * 9 minutos vem do tipo antigo (quando os dois golpes têm tipos diferentes), e a Afinidade é calculada em cima do novo tipo principal.
  */
-export function survivorAttackOf(dexId: number, picked?: PokemonType, swapped = false, categoryOverride?: MoveCategory): { move: SurvivorMove; profile: AttackProfile; types: PokemonType[]; secondMove?: SurvivorMove; hypotheticalSecondaryType?: PokemonType } {
+export function survivorAttackOf(dexId: number, picked?: PokemonType, swapped = false, categoryOverride?: MoveCategory): { move: SurvivorMove; profile: AttackProfile; types: PokemonType[]; secondAttack?: SurvivorAttackChoice; secondMove?: SurvivorMove; hypotheticalSecondaryType?: PokemonType } {
   const stats = statsOfDex(dexId);
   const types = typesOfDex(dexId);
   const ordered = picked ? [picked, ...types.filter((t) => t !== picked)] : types;
   const move = moveFor(ordered, stats);
+  const alternative = alternativeMoveFor(ordered, stats);
+  const main = { move, profile: attackProfile(move, stats) };
+  const secondary = { move: alternative, profile: attackProfile(alternative, stats) };
   if (categoryOverride) {
     const tuned = moveWith(ordered[0] ?? 'normal', categoryOverride, stats);
-    return { move: tuned, profile: attackProfile(tuned, stats), types, secondMove: move };
+    const backup = tuned.category === move.category ? secondary : main;
+    return { move: tuned, profile: attackProfile(tuned, stats), types, secondAttack: backup, secondMove: backup.move };
   }
   if (swapped) {
-    const alternative = alternativeMoveFor(ordered, stats);
     return {
-      move: alternative,
-      profile: attackProfile(alternative, stats),
+      ...secondary,
       types,
+      secondAttack: main,
       secondMove: move,
       ...(move.type !== alternative.type ? { hypotheticalSecondaryType: move.type } : {}),
     };
   }
   const secondType = types.find((type) => type !== picked && type !== move.type);
-  return { move, profile: attackProfile(move, stats), types, ...(secondType ? { secondMove: moveFor([secondType], stats) } : {}) };
+  return { ...main, types, secondAttack: secondary, ...(secondType ? { secondMove: moveFor([secondType], stats) } : {}) };
 }
 
 /**
