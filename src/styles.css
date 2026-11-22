@@ -461,12 +461,27 @@ a:focus-visible {
   cursor: pointer;
 }
 
-/* Ações dos estados vazios: largura toda, na mesma medida. */
+/* Ações dos estados vazios: mesma largura e mesma altura, sem botão "afundado". */
+.first-run-guide .actions.row,
+.trainer-first-run .actions.row,
+.game-shortcuts .actions.row {
+  align-items: stretch;
+}
+
 .first-run-guide .actions.row > *,
 .trainer-first-run .actions.row > *,
 .game-shortcuts .actions.row > * {
   flex: 1 1 130px;
   text-align: center;
+}
+
+/* Em telas estreitas os rótulos longos quebravam em três linhas; melhor empilhar. */
+@media (max-width: 430px) {
+  .first-run-guide .actions.row > *,
+  .trainer-first-run .actions.row > *,
+  .game-shortcuts .actions.row > * {
+    flex-basis: 100%;
+  }
 }
 
 :is(.filter-bar, .team-strip, .stage-sheet, .message) button.link {
@@ -2926,12 +2941,21 @@ body.no-scroll .reward-toasts {
   font-size: 0.88rem;
 }
 
+/* Saldo compacto: moeda e número na mesma linha, com o rótulo embaixo. */
 .pn-hero .pn-energy {
   flex: none;
   display: grid;
-  justify-items: end;
+  grid-template-columns: auto auto;
+  align-items: center;
+  justify-content: end;
+  column-gap: 4px;
   margin: 0;
   color: var(--text);
+}
+
+.pn-hero .pn-energy small {
+  grid-column: 1 / -1;
+  justify-self: end;
 }
 
 .pn-energy strong {
@@ -2983,13 +3007,21 @@ body.no-scroll .reward-toasts {
   color: var(--text);
 }
 
+/* Seis vagas sempre na mesma linha: em telas estreitas as fichas encolhem em vez de quebrar. */
 .pn-slots {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 6px;
+  max-width: 300px;
   margin: 0;
   padding: 0;
   list-style: none;
+}
+
+.pn-slots > li {
+  display: grid;
+  place-items: center;
+  min-width: 0;
 }
 
 .pn-side.mine {
@@ -3003,8 +3035,10 @@ body.no-scroll .reward-toasts {
 .pn-slot {
   display: grid;
   place-items: center;
-  width: 42px;
-  height: 42px;
+  width: 100%;
+  max-width: 42px;
+  height: auto;
+  aspect-ratio: 1;
   padding: 0;
   overflow: hidden;
   border-radius: 50%;
