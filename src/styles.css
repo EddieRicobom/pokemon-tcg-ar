@@ -7052,8 +7052,13 @@ body.no-scroll .reward-toasts {
   place-items: center;
   background: rgba(10, 14, 24, 0.72);
   padding: 12px;
-  z-index: 2;
+  /* Acima dos botões de jogo (3 e 4): pausa, escolha de melhoria e resumo não podem ser cobertos pela HUD. */
+  z-index: 6;
 }
+
+/* As cenas especiais mantêm a ordem própria acima dos diálogos comuns. */
+.survivor-overlay.survivor-guardian { z-index: 9; }
+.survivor-overlay.survivor-shadow-cutscene { z-index: 10; }
 
 .survivor-pick,
 .survivor-upgrades,
@@ -8719,6 +8724,27 @@ body.no-scroll .reward-toasts {
 .survivor-pause-panel :focus-visible { outline: 3px solid #d89e35; outline-offset: 2px; }
 .survivor-pause-panel .survivor-mode button { min-height: 44px; padding: 6px; border: 2px solid #aeb8a8; border-radius: 5px; background: #eef0df; color: #252d30; }
 .survivor-pause-panel .survivor-mode button.active { border-color: #a97e28; background: #f8d879; }
+/* Rótulos longos no cartão de pausa: em vez de estourar a largura, quebram dentro da coluna. */
+.survivor-pause-panel .survivor-info-section > button {
+  flex: 1 1 100%;
+  min-width: 0;
+  font-size: .78rem;
+  line-height: 1.25;
+  white-space: normal;
+  overflow-wrap: break-word;
+}
+.survivor-pause-panel .survivor-mode {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+.survivor-pause-panel .survivor-mode button {
+  min-width: 0;
+  padding: 4px 2px;
+  font-size: .68rem;
+  line-height: 1.15;
+  white-space: normal;
+}
 
 /* Indicadores essenciais agrupados sob o HP; ações e dificuldade ficam sob o mapa. */
 .survivor-stats { gap: 4px; }

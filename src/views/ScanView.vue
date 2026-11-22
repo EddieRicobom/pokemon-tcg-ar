@@ -315,6 +315,11 @@ async function refreshIndexStatus(): Promise<void> {
 
 // Busca manual: plano B quando a leitura automática não acha a carta.
 const manualOpen = ref(false);
+/** Abrir a busca à mão já deixa o cursor no nome: o plano B não começa com um toque a mais. */
+const manualNameEl = ref<HTMLInputElement | null>(null);
+const focusManualName = (): void => { void nextTick(() => manualNameEl.value?.focus()); };
+watch(manualOpen, (open) => { if (open) focusManualName(); });
+watch(sheet, (open) => { if (open === 'manual') focusManualName(); });
 const manualHint = ref(false);
 const manualName = ref('');
 const manualNumber = ref('');
@@ -1367,7 +1372,7 @@ const VERDICT_PT = { aceita: 'aceita', duvida: 'em dúvida', rejeitada: 'rejeita
       >
         <summary v-if="!immersive">Não está lendo? Buscar a carta à mão</summary>
         <label>Nome da carta (inglês, português ou japonês, ex.: Pikachu)
-          <input v-model="manualName" type="text" autocomplete="off" @keyup.enter="searchManual()" />
+          <input ref="manualNameEl" v-model="manualName" type="text" autocomplete="off" @keyup.enter="searchManual()" />
         </label>
         <label>Número da carta (opcional, ex.: 58)
           <input v-model="manualNumber" type="text" inputmode="numeric" autocomplete="off" @keyup.enter="searchManual()" />

@@ -1502,6 +1502,7 @@ onBeforeUnmount(() => {
     >
       <div ref="stageEl" class="svp-stage">
       <div class="svp-floor" :style="floorStyle" aria-hidden="true"></div>
+      <div class="svp-motes" aria-hidden="true"></div>
       <div v-for="u in units" :key="u.key" class="svp-unit" :class="{ mine: u.mine, shield: u.shield, guard: u.guard, hit: u.hit, swap: !!u.swap, down: u.down, low: u.low, 'face-right': u.faceRight, dodge: u.dodge, ready: u.ready }" :style="unitStyle(u)">
         <img v-if="cinemaShadow && !broken.includes(u.dexId)" class="svp-shadow svp-shadow-sprite" :src="pokemonSpriteUrl(u.dexId, u.shiny)" alt="" draggable="false" aria-hidden="true" />
         <span v-else class="svp-shadow svp-shadow-fallback" aria-hidden="true"></span>
@@ -1554,7 +1555,7 @@ onBeforeUnmount(() => {
         <span><small>{{ cutIn.name }}</small><b>{{ cutIn.move }}</b></span>
       </div>
       <p v-if="banner" :key="banner.id" class="svp-banner" :class="banner.tone" role="status">{{ banner.text }}</p>
-      <div v-if="hud.charge" class="svp-charge" role="progressbar" :aria-valuenow="hud.charge.pct" aria-valuemin="0" aria-valuemax="100" :aria-label="hud.charge.label"><small>{{ hud.charge.label }} {{ hud.charge.pct }}%</small><i class="svp-bar"><b :style="{ width: `${hud.charge.pct}%` }"></b></i></div>
+      <div v-if="hud.charge" class="svp-charge" :class="{ full: hud.charge.pct >= 100 }" role="progressbar" :aria-valuenow="hud.charge.pct" aria-valuemin="0" aria-valuemax="100" :aria-label="hud.charge.label"><small>{{ hud.charge.label }} {{ hud.charge.pct }}%</small><i class="svp-bar"><b :style="{ width: `${hud.charge.pct}%` }"></b></i></div>
       <p v-if="hud.count > 0" :key="hud.count" class="svp-count" aria-hidden="true">{{ hud.count }}</p>
       <p v-if="hud.hint" class="svp-hint" :class="{ coach: hud.coach }" role="status">{{ hud.hint }}</p>
       <p v-if="stale" class="svp-hint warn" role="status">Sem sinal do anfitrião há alguns segundos… a luta volta quando a conexão voltar.</p>
@@ -1844,6 +1845,31 @@ onBeforeUnmount(() => {
     repeating-linear-gradient(to bottom, rgba(255, 255, 255, 0.05) 0 8.33%, transparent 8.33% 16.66%),
     linear-gradient(to bottom, #2e5a3c, #1f4130);
   box-shadow: inset 0 0 0 3px rgba(255, 255, 255, 0.12), inset 0 0 46px rgba(0, 0, 0, 0.55);
+}
+
+/* Poeira do estádio: camada leve que sobe devagar, some no Rotom e no movimento reduzido. */
+.svp-motes {
+  position: absolute;
+  inset: 0 0 -96px;
+  pointer-events: none;
+  opacity: 0.32;
+  background-image:
+    radial-gradient(circle, rgba(255, 255, 255, 0.55) 0 1px, transparent 1.8px),
+    radial-gradient(circle, rgba(223, 255, 232, 0.4) 0 1.4px, transparent 2px);
+  background-size: 84px 96px, 137px 96px;
+  background-position: 0 0, 43px 32px;
+  animation: svp-motes 26s linear infinite;
+  will-change: transform;
+}
+
+@keyframes svp-motes {
+  to { transform: translateY(-96px); }
+}
+
+.svp.lite .svp-motes { display: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .svp-motes { animation: none; }
 }
 
 /* Áreas de cada lado, como num campo de verdade. */
@@ -2606,6 +2632,25 @@ onBeforeUnmount(() => {
   color: #fff;
   font-weight: 800;
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+}
+
+/* Carga cheia: a barra respira, para não passar batido no meio da luta. */
+.svp-charge.full small { color: #ffe27a; }
+.svp-charge.full .svp-bar {
+  box-shadow: 0 0 0 2px rgba(255, 226, 122, 0.42), 0 0 14px rgba(255, 226, 122, 0.6);
+}
+.svp-charge.full .svp-bar b {
+  animation: svp-charge-ready 0.85s ease-in-out infinite alternate;
+}
+
+@keyframes svp-charge-ready {
+  to { filter: brightness(1.45); }
+}
+
+.svp.lite .svp-charge.full .svp-bar b { animation: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .svp-charge.full .svp-bar b { animation: none; }
 }
 
 .svp-hint.coach {
