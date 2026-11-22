@@ -354,9 +354,9 @@ onBeforeUnmount(() => {
       <button class="pad-down" type="button" aria-label="Navegar para baixo" @pointerdown.prevent @click="dispatchGamepadEvent('tcg-gamepad-direction', 'down') || moveFocus('down')">▼</button>
     </div>
     <div class="universal-actions" role="group" aria-label="Ações universais">
-      <button class="universal-b" type="button" aria-label="Voltar" @click="goBack">B<small>Voltar</small></button>
-      <button class="universal-a" type="button" aria-label="Confirmar" @click="confirm()">A<small>Confirmar</small></button>
-      <button class="universal-menu-button" type="button" :aria-expanded="menuOpen" aria-label="Menu" @click="menuOpen = !menuOpen">☰<small>Menu</small></button>
+      <button class="universal-b" type="button" aria-label="B Voltar" @click="goBack"><span aria-hidden="true">B</span> <small>Voltar</small></button>
+      <button class="universal-a" type="button" aria-label="A Confirmar" @click="confirm()"><span aria-hidden="true">A</span> <small>Confirmar</small></button>
+      <button class="universal-menu-button" type="button" :aria-expanded="menuOpen" aria-label="Menu" @click="menuOpen = !menuOpen"><span aria-hidden="true">☰</span><small>Menu</small></button>
     </div>
     <nav v-if="menuOpen" class="universal-menu-panel" aria-label="Menu do aplicativo" @keydown.esc.stop.prevent="menuOpen = false" @keydown="onMenuKey">
       <header><strong>Menu</strong><button type="button" aria-label="Fechar menu" @click="menuOpen = false">×</button></header>
