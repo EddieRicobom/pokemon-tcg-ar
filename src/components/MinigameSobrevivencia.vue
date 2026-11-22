@@ -4179,6 +4179,8 @@ async function rollPickOptions(previousIds: readonly string[] = []): Promise<Pic
 
 async function beginRun(dexId: number, name: string, picked?: PokemonType, infinite = false, bonk = false, companion: CardCompanion | null = null, preparation: SurvivorPreparationId = 'classica', supportCandidates: readonly SurvivorSupportCandidate[] = [], typeAffinityChoices: readonly PokemonType[] = [], fast = false, shiny = false, accessory: string | null = null, mega: SurvivorMegaForm | null = null, swapped = false, omegaCategory?: MoveCategory): Promise<void> {
   runCompanion = companion;
+  // Corrida iniciada por fora do seletor (Dojô, Carteiro, bancada): o aviso de "sem companheiro" ficou para trás.
+  noCompanion.value = false;
   runShiny = shiny;
   runEpoch++;
   rareDiscoveries.value = { alphas: {}, terastal: {} };

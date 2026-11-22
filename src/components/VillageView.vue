@@ -506,6 +506,19 @@ let legendaryLoadToken = 0;
 const recapScenes = ref<RecapScene[]>([]);
 const recapIndex = ref(0);
 const recapScene = computed(() => recapScenes.value[recapIndex.value]);
+const recapCardEl = ref<HTMLElement | null>(null);
+/**
+ * Em telas baixas o cartão da história rola. O `autofocus` do botão levava a rolagem para o fim,
+ * escondendo o título e o começo do texto; aqui o foco continua na ação, mas a leitura começa no topo.
+ */
+watch(recapScene, (scene) => {
+  if (!scene) return;
+  void nextTick(() => {
+    const card = recapCardEl.value;
+    card?.querySelector<HTMLButtonElement>('button.primary')?.focus({ preventScroll: true });
+    if (card) card.scrollTop = 0;
+  });
+});
 function finishRecap(): void {
   recapScenes.value = [];
   if (!cutsceneOpen.value && !welcome.value) finishArrival();
@@ -3690,7 +3703,7 @@ onBeforeUnmount(() => {
       <HoOhWishCutscene v-else-if="hoOhWishScene" :sprite-url="hoOhWishScene.spriteUrl" @finish="finishHoOhWish" />
       <LegendaryCutscene v-else-if="legendaryScene && legendaryDefinition" ref="legendarySceneRef" :key="legendaryScene.story.id" :story="legendaryScene.story" :definition="legendaryDefinition" :gif="legendaryScene.gif" :loading="legendaryScene.loading" :replay="legendaryScene.replay" :effects="effectiveVisual.villageFx" :max-fps="effectiveVisual.frameRate === 'auto' ? 0 : Number(effectiveVisual.frameRate)" @finish="finishLegendaryCutscene" />
       <div v-else-if="recapScene" class="village-recap" role="dialog" aria-modal="true" aria-label="Capítulo diário da Vila">
-        <article :key="recapIndex" class="village-recap-card">
+        <article :key="recapIndex" ref="recapCardEl" class="village-recap-card">
           <small>HISTÓRIAS DA VILA · {{ recapIndex + 1 }}/{{ recapScenes.length }}</small>
           <h2>{{ recapScene.title }}</h2>
           <p v-if="recapScene.cast.length" class="hint">Em cena: {{ recapScene.cast.join(' e ') }}</p>
@@ -3699,7 +3712,7 @@ onBeforeUnmount(() => {
           <p v-if="!state.digital.starterGiven" class="recap-first-run">Depois desta abertura, você recebe um companheiro digital para começar a explorar a Vila, mesmo sem carta física.</p>
           <div class="village-choices">
             <button type="button" @click="finishRecap">Pular abertura</button>
-            <button type="button" class="primary" autofocus @click="advanceRecap">{{ recapIndex + 1 < recapScenes.length ? 'Próxima cena' : 'Entrar na Vila' }}</button>
+            <button type="button" class="primary" @click="advanceRecap">{{ recapIndex + 1 < recapScenes.length ? 'Próxima cena' : 'Entrar na Vila' }}</button>
           </div>
         </article>
       </div>
