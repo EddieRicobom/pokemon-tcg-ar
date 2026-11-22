@@ -2105,7 +2105,7 @@ button.link {
 .streak {
   display: flex;
   flex-wrap: nowrap;
-  align-items: center;
+  align-items: flex-start;
   gap: 6px;
   font-size: 0.85rem;
   font-weight: 600;
@@ -2329,6 +2329,14 @@ button.link {
   .trainer-sections button { min-height: 44px; border-radius: 11px; font-size: .95rem; }
   .trainer-head { align-items: flex-start; gap: 14px; }
   .trainer-head .level-ring { width: 84px; height: 84px; margin-top: 6px; }
+}
+
+/* Em telas bem estreitas o anel de nível tirava quase metade da coluna de texto. */
+@media (max-width: 380px) {
+  .trainer-head { gap: 10px; }
+  .trainer-head .level-ring { width: 68px; height: 68px; margin-top: 2px; }
+  .level-ring strong { font-size: 1.55rem; }
+  .level-ring small { font-size: .62rem; }
 }
 
 /* Ferramentas de teste do Escanear, recolhidas com a câmera desligada. */

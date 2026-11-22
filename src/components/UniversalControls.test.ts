@@ -48,4 +48,14 @@ describe('navegação universal por controle', () => {
     expect(check.checked).toBe(true);
     app.unmount();
   });
+
+  it('dá às ações B e A um nome acessível igual ao texto visível', async () => {
+    const root = document.createElement('main'); root.className = 'app'; document.body.append(root);
+    const app = createApp(UniversalControls); app.mount(root); await nextTick();
+    for (const button of root.querySelectorAll<HTMLButtonElement>('.universal-actions .universal-a, .universal-actions .universal-b')) {
+      const visible = (button.textContent ?? '').replace(/\s+/g, ' ').trim();
+      expect(button.getAttribute('aria-label')).toBe(visible);
+    }
+    app.unmount();
+  });
 });
