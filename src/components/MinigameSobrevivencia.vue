@@ -11,7 +11,7 @@ import { SURVIVOR_SUPREMES, survivorSupremeType } from '../core/survivor-supreme
 import { ORB_RAIN_FALL_MS, SURVIVOR_SURGE_LABEL, SWARM_TRAVEL, surgeHudText } from '../core/survivor-surges';
 import type { SurvivorSurge } from '../core/survivor-surges';
 import { flashAlpha, impactFromFx, moveLight, shadowFrom } from '../core/survivor-impacts';
-import { drawCastShadows, drawCinemaBanner, drawImpactFrame, drawKillStreak, drawLights, drawNight, drawPokemonShadow, drawScreenFlash, drawSpeedLines } from '../village/survivor-cinema-art';
+import { drawCastShadows, drawCinemaBanner, drawImpactFrame, drawKillStreak, drawLights, drawNight, drawPokemonShadow, drawScreenFlash, drawSpeedLines, killStreakLayout } from '../village/survivor-cinema-art';
 import { drawTerastal } from '../village/survivor-terastal-art';
 import { drawAlphaTint } from '../village/survivor-alpha-art';
 import { addStreakKills, createKillStreak, resetKillStreak, STREAK_SHOW_AT, stepKillStreak, streakFade, streakPop, streakTier, streakVisible } from '../core/survivor-streak';
@@ -194,6 +194,8 @@ const props = defineProps<{ digital?: { instanceId?: string; dexId: number; name
 const VIEW_SHORT = 360;
 const CAMERA_ZOOM = 1.5;
 const view = reactive({ w: 340, h: 420 });
+/** Altura CSS do palco: o canvas é esticado da view lógica para ela (usado nos textos de tela). */
+let stageCssHeight = 0;
 const stageEl = ref<HTMLElement | null>(null);
 let resizer: ResizeObserver | null = null;
 function fitView(): void {
@@ -204,6 +206,7 @@ function fitView(): void {
   if (W <= 0 || H <= 0) return;
   const fitted = fitSurvivorViewport(W, H, ARENA_W, ARENA_H, VIEW_SHORT, CAMERA_ZOOM);
   if (fitted.w <= 0 || fitted.h <= 0) return;
+  stageCssHeight = H;
   view.w = fitted.w;
   view.h = fitted.h;
   // Mudar o tamanho do canvas apaga o contexto: as configurações voltam no próximo quadro (`draw` refaz tudo).
@@ -3225,7 +3228,7 @@ function drawCinemaOverlay(s: SurvivorState, w: number, h: number, cine: CinemaF
   if (cine.ink) drawImpactFrame(ctx, w, h);
   drawScreenFlash(ctx, w, h, cine.flash, cine.flashColor);
   if (effectiveVisual.value.impactFx && !effectiveVisual.value.rotomMode && streakVisible(killStreak)) {
-    drawKillStreak(ctx, w, h, killStreak.count, streakTier(killStreak.count), streakPop(killStreak), streakFade(killStreak), !reducedMotion);
+    drawKillStreak(ctx, killStreak.count, streakTier(killStreak.count), streakPop(killStreak), streakFade(killStreak), !reducedMotion, killStreakLayout(w, h, stageCssHeight > 0 ? stageCssHeight / h : 1));
   }
   const banner = cinemaCam.banner;
   if (!banner) return;
@@ -4477,11 +4480,14 @@ async function openPicker(): Promise<void> {
   pickBusy.value = true;
   pickOptions.value = null;
   noCompanion.value = false;
+  const epoch = runEpoch;
   try {
     rerollsUsed.value = 0;
     previousPickIds.value = [];
     const options = await rollPickOptions();
-    if (disposed) return;
+    // Uma corrida começou por fora (Dojô, Carteiro, bancada) enquanto as opções carregavam:
+    // o seletor e o aviso de "sem companheiro" não podem aparecer por cima dela.
+    if (disposed || runEpoch !== epoch) return;
     if (options.length === 0) {
       noCompanion.value = true;
       return;
