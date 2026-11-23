@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { activatePinballAbility, createPinballState, launchPinball, nudgePinball, pinballPartnerSkill, PINBALL_BOSS_CORE, PINBALL_BUMPERS, PINBALL_TARGETS, stepPinball } from './pinball';
+import { activatePinballAbility, createPinballState, launchPinball, nudgePinball, pinballPartnerSkill, pinballReward, PINBALL_BOSS_CORE, PINBALL_BUMPERS, PINBALL_TARGETS, stepPinball } from './pinball';
 import type { PinballState } from './pinball';
 
 function hitTarget(s: PinballState, index = 1): void {
@@ -95,7 +95,7 @@ describe('pinball da Vila', () => {
     expect(s.tiltLockMs).toBeLessThan(2200);
   });
 
-  it('três etapas avançam em ordem e o desafio final concede vitória', () => {
+  it('seis etapas e dois chefes levam à vitória', () => {
     const s = createPinballState();
     launchPinball(s);
     for (let i = 0; i < 6; i++) hitTarget(s);
@@ -105,6 +105,7 @@ describe('pinball da Vila', () => {
     for (let i = 0; i < 7; i++) hitBumper(s);
     expect(s.stage).toBe(2);
     expect(s.evolved).toBe(1);
+    expect(s.ballLevel).toBe(2);
     for (let i = 0; i < 3; i++) hitTarget(s);
     expect(s.mode).toBe('bonus');
     for (let i = 0; i < 5; i++) hitBumper(s);
@@ -115,11 +116,27 @@ describe('pinball da Vila', () => {
     hitTarget(s, 1);
     expect(s.bossPhase).toBe(2);
     hitCore(s);
+    hitCore(s);
+    expect(s.stage).toBe(3);
     expect(s.phase).toBe('playing');
+    for (let i = 0; i < 6; i++) hitTarget(s);
+    expect(s.stage).toBe(4);
+    expect(s.caught).toBe(2);
+    expect(s.ballLevel).toBe(3);
+    for (let i = 0; i < 3; i++) hitTarget(s);
+    for (let i = 0; i < 7; i++) hitBumper(s);
+    expect(s.stage).toBe(5);
+    expect(s.evolved).toBe(2);
+    for (let i = 0; i < 3; i++) hitTarget(s);
+    for (let i = 0; i < 5; i++) hitBumper(s);
+    hitTarget(s, 0);
+    hitTarget(s, 0);
+    hitTarget(s, 1);
+    hitCore(s);
     hitCore(s);
     expect(s.phase).toBe('won');
-    expect(s.stage).toBe(3);
-    expect(s.multiplier).toBe(2);
+    expect(s.stage).toBe(6);
+    expect(s.multiplier).toBe(3);
     expect(launchPinball(s)).toBe(false);
   });
 
@@ -240,11 +257,13 @@ describe('pinball da Vila', () => {
     expect(s.caught).toBe(1);
   });
 
-  it('partida guiada atravessa os encontros e vence as três fases do chefe', () => {
+  it('partida guiada atravessa os seis encontros e vence os dois chefes', () => {
     const s = createPinballState();
     launchPinball(s);
+    // Campanha longa na bancada: bolas de sobra para a partida guiada não terminar antes do chefe final.
+    s.balls = 99;
     let frames = 0;
-    while (s.phase !== 'over' && s.phase !== 'won' && frames < 5000) {
+    while (s.phase !== 'over' && s.phase !== 'won' && frames < 15000) {
       stepPinball(s, { left: s.ball.x < 180 && s.ball.y > 460, right: s.ball.x >= 180 && s.ball.y > 460 }, 16);
       if (s.phase === 'between') launchPinball(s);
       expect(Number.isFinite(s.ball.x) && Number.isFinite(s.ball.y)).toBe(true);
@@ -256,5 +275,17 @@ describe('pinball da Vila', () => {
     expect(s.evolved).toBeGreaterThanOrEqual(1);
     expect(s.bossPhase).toBe(2);
     expect(s.score).toBeGreaterThan(10000);
+  });
+
+  it('paga mais na vitória e soma capturas/evoluções, com teto', () => {
+    const base = createPinballState(0);
+    expect(pinballReward({ ...base, phase: 'ready' })).toBe(0);
+    const loss = pinballReward({ ...base, phase: 'over', score: 2400, caught: 2, evolved: 1 });
+    expect(loss).toBe(3);
+    const win = pinballReward({ ...base, phase: 'won', score: 6000, caught: 2, evolved: 1 });
+    expect(win).toBe(25 + 15 + 4 + 3);
+    const late = pinballReward({ ...base, phase: 'won', stage: 5, score: 10_000, caught: 2, evolved: 2 });
+    expect(late).toBe(25 + 40 + 25 + 4 + 6);
+    expect(pinballReward({ ...base, phase: 'won', stage: 5, score: 10_000_000, caught: 99, evolved: 99 })).toBe(120);
   });
 });

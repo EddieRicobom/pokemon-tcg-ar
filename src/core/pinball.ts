@@ -28,9 +28,12 @@ export function pinballPartnerSkill(dexId: number): PinballPartnerSkill | null {
   return { type, typeLabel: TYPE_LABELS_PT[type], ability, ...ABILITIES[ability] };
 }
 export const PINBALL_STAGES = [
-  { title: 'Trilha da Captura', encounter: 'Treinadora Lia · Eevee', objective: 'Acerte 3 alvos para iniciar; depois, 3 para vencer o encontro.', mode: 'capture' },
-  { title: 'Caverna da Evolução', encounter: 'Pesquisador Davi · Riolu', objective: 'Acerte 3 alvos para iniciar; depois, 7 bumpers.', mode: 'evolution' },
-  { title: 'Cume do Bônus', encounter: 'Campeã Selene · Gengar', objective: 'Chefe: escudo, dois alvos e núcleo.', mode: 'bonus' },
+  { title: 'Trilha da Captura', encounter: 'Treinadora Lia · Eevee', objective: 'Acerte 3 alvos para iniciar; depois, 3 para vencer o encontro.', mode: 'capture', tint: '#65dca6' },
+  { title: 'Caverna da Evolução', encounter: 'Pesquisador Davi · Riolu', objective: 'Acerte 3 alvos para iniciar; depois, 7 bumpers.', mode: 'evolution', tint: '#b08cff' },
+  { title: 'Cume do Bônus', encounter: 'Campeã Selene · Gengar', objective: 'Chefe: escudo, dois alvos e núcleo.', mode: 'bonus', tint: '#ff8a8a' },
+  { title: 'Ruínas do Tempo', encounter: 'Guardião Ébano · Sableye', objective: 'Acerte 3 alvos para iniciar; depois, 3 para vencer o encontro.', mode: 'capture', tint: '#8fd3c7' },
+  { title: 'Forja de Ferro', encounter: 'Mestre Bruno · Lucario', objective: 'Acerte 3 alvos para iniciar; depois, 7 bumpers.', mode: 'evolution', tint: '#f0b86a' },
+  { title: 'Coroa do Campeão', encounter: 'Campeão Theo · Dragapult', objective: 'Chefe final: escudo, dois alvos e núcleo.', mode: 'bonus', tint: '#ffe066' },
 ] as const;
 export const PINBALL_BOSS_CORE = { x: 180, y: 366, r: 21 } as const;
 export const PINBALL_BOSS_PHASES = [
@@ -81,6 +84,19 @@ export interface PinballState {
 export interface PinballInput { left: boolean; right: boolean }
 export type PinballEvent = 'bump' | 'flipper' | 'drain' | 'launch' | 'mode' | 'reward' | 'tilt';
 
+/**
+ * Moedas pagas ao fim de uma aventura. Vitória vale mais e as capturas/evoluções do encontro somam;
+ * a derrota paga pouco e só pelo placar, para não transformar repetição em fonte de renda.
+ */
+export function pinballReward(state: Pick<PinballState, 'phase' | 'score' | 'caught' | 'evolved' | 'stage'>): number {
+  if (state.phase !== 'won' && state.phase !== 'over') return 0;
+  const score = Math.max(0, Math.floor(state.score) || 0);
+  if (state.phase === 'over') return Math.min(12, Math.floor(score / 800));
+  const bonus = Math.max(0, state.caught) * 2 + Math.max(0, state.evolved) * 3;
+  const chapter = Math.max(0, Math.floor(state.stage) || 0);
+  return Math.min(120, 25 + chapter * 8 + Math.min(25, Math.floor(score / 400)) + bonus);
+}
+
 export const PINBALL_BUMPERS = [
   { x: 100, y: 190, r: 24 }, { x: 180, y: 150, r: 24 }, { x: 260, y: 190, r: 24 },
   { x: 102, y: 315, r: 17 }, { x: 258, y: 315, r: 17 },
@@ -95,7 +111,7 @@ export function createPinballState(best = 0): PinballState {
     phase: 'ready', stage: 0, ball: { x: 316, y: 515, vx: 0, vy: 0 }, score: 0, best: Math.max(0, best), balls: 3,
     mode: 'normal', modeMs: 0, progress: 0, charge: 0, caught: 0, evolved: 0,
     multiplier: 1, ballLevel: 1, bumperHits: 0, kickback: false, saverMs: 0,
-    tiltHeat: 0, tiltLockMs: 0, message: 'Etapa 1/3: lance a Pokébola!', messageMs: 0,
+    tiltHeat: 0, tiltLockMs: 0, message: `Etapa 1/${PINBALL_STAGES.length}: lance a Pokébola!`, messageMs: 0,
     hitCooldown: Array(PINBALL_BUMPERS.length + PINBALL_TARGETS.length).fill(0),
     flipperCooldownMs: [0, 0], laneCooldownMs: 0, laneHits: 0, combo: 0, comboMs: 0, skillShot: false,
     bossPhase: 0, bossMask: 0, bossCooldownMs: 0, abilityUses: 1, abilityKind: null, abilityMs: 0,
@@ -219,7 +235,7 @@ function enterMode(s: PinballState, mode: Exclude<PinballMode, 'normal'>, events
   s.charge = 0;
   s.bossPhase = 0;
   s.bossMask = 0;
-  announce(s, mode === 'capture' ? 'Eevee: acerte 3 alvos.' : mode === 'evolution' ? 'Riolu: acerte 7 bumpers.' : 'Gengar: quebre o escudo com 5 bumpers.');
+  announce(s, mode === 'capture' ? 'Desafio de captura: acerte 3 alvos.' : mode === 'evolution' ? 'Desafio de evolução: acerte 7 bumpers.' : 'Chefe: quebre o escudo com 5 bumpers.');
   events.push('mode');
 }
 
@@ -231,12 +247,13 @@ function completeMode(s: PinballState, events: PinballEvent[]): void {
   s.stage += 1;
   s.mode = 'normal'; s.modeMs = 0; s.progress = 0; s.charge = 0;
   if (s.stage === 2) s.ballLevel = 2;
+  if (s.stage === 4) s.ballLevel = 3;
   if (s.stage >= PINBALL_STAGES.length) {
     s.phase = 'won';
     announce(s, 'Aventura concluída! Vitória!');
   } else {
     s.saverMs = Math.max(s.saverMs, 5000);
-    announce(s, `Etapa ${s.stage + 1}/3: ${PINBALL_STAGES[s.stage]!.title}!`);
+    announce(s, `Etapa ${s.stage + 1}/${PINBALL_STAGES.length}: ${PINBALL_STAGES[s.stage]!.title}!`);
   }
   events.push('reward');
 }
@@ -285,7 +302,7 @@ function loseBall(s: PinballState, events: PinballEvent[]): void {
   }
   s.balls -= 1;
   events.push('drain');
-  if (s.balls <= 0) { s.phase = 'over'; announce(s, `Aventura encerrada na etapa ${s.stage + 1}/3.`); return; }
+  if (s.balls <= 0) { s.phase = 'over'; announce(s, `Aventura encerrada na etapa ${s.stage + 1}/${PINBALL_STAGES.length}.`); return; }
   s.phase = 'between';
   s.ball = { x: 316, y: 515, vx: 0, vy: 0 };
   s.combo = 0; s.comboMs = 0;
