@@ -149,6 +149,154 @@ function frame(now: number): void {
   draw(now);
 }
 
+const TILE_COLORS = ['#2e6b47', '#b9a373', '#2b6c96', '#4b5058', '#5a5566', '#b0432c', '#2e6b47', '#2e6b47', '#5a5566', '#2c2238', '#8a6136', '#2e6b47', '#2e6b47', '#5a5148'] as const;
+const MAP_COLORS = ['#2e6b47', '#b9a373', '#2b6c96', '#4b5058', '#5a5566', '#b0432c', '#1f4a32', '#26573a', '#3d4048', '#201a2b', '#8a6136', '#3a7a4f', '#3a7a4f', '#5a5148'] as const;
+
+function drawTree(ctx: CanvasRenderingContext2D, x: number, y: number, n: number): void {
+  const sway = Math.sin((n % 100) + x * 0.02) * 1.5;
+  const dark = ['#1f5736', '#245c3c', '#1d5133'][n % 3]!;
+  const light = ['#2f7a48', '#357f4e', '#2b7044'][n % 3]!;
+  ctx.fillStyle = '#00000030';
+  ctx.beginPath(); ctx.ellipse(x + 18, y + 29, 14, 5, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#5a3a26';
+  ctx.fillRect(x + 14, y + 14, 5, 16);
+  ctx.fillStyle = dark;
+  ctx.beginPath(); ctx.arc(x + 16 + sway, y + 3, 11, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(x + 8 + sway, y + 9, 8, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(x + 24 + sway, y + 9, 8, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = light;
+  ctx.beginPath(); ctx.arc(x + 12 + sway, y + 1, 6, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(x + 21 + sway, y + 4, 4, 0, Math.PI * 2); ctx.fill();
+}
+function drawBush(ctx: CanvasRenderingContext2D, x: number, y: number): void {
+  ctx.fillStyle = '#00000024';
+  ctx.beginPath(); ctx.ellipse(x + 16, y + 27, 11, 4, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#2d7047';
+  ctx.beginPath(); ctx.arc(x + 11, y + 22, 7, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(x + 21, y + 22, 7, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(x + 16, y + 18, 7, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#3d8a57';
+  ctx.beginPath(); ctx.arc(x + 14, y + 18, 3, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#b84a4a';
+  ctx.beginPath(); ctx.arc(x + 20, y + 23, 1.6, 0, Math.PI * 2); ctx.fill();
+}
+function drawFlower(ctx: CanvasRenderingContext2D, x: number, y: number, n: number): void {
+  const colors = ['#ffe066', '#ff9db1', '#b9a5ff', '#ffffff'];
+  ctx.fillStyle = '#2a6b45';
+  ctx.fillRect(x + 15, y + 22, 2, 6);
+  ctx.fillStyle = colors[n % colors.length]!;
+  ctx.beginPath(); ctx.arc(x + 16, y + 20, 3, 0, Math.PI * 2); ctx.fill();
+  if (n % 3 === 0) { ctx.fillStyle = '#ffffffaa'; ctx.beginPath(); ctx.arc(x + 13, y + 24, 2, 0, Math.PI * 2); ctx.fill(); }
+}
+function drawMushroom(ctx: CanvasRenderingContext2D, x: number, y: number): void {
+  ctx.fillStyle = '#00000020';
+  ctx.beginPath(); ctx.ellipse(x + 16, y + 27, 7, 3, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#f2e6c8';
+  ctx.fillRect(x + 14, y + 20, 4, 7);
+  ctx.fillStyle = '#b84a4a';
+  ctx.beginPath(); ctx.arc(x + 16, y + 19, 7, Math.PI, 0); ctx.fill();
+  ctx.fillStyle = '#ffffffcc';
+  ctx.beginPath(); ctx.arc(x + 13, y + 16, 1.4, 0, Math.PI * 2); ctx.fill();
+}
+function drawColumn(ctx: CanvasRenderingContext2D, x: number, y: number): void {
+  ctx.fillStyle = '#00000030';
+  ctx.beginPath(); ctx.ellipse(x + 20, y + 28, 10, 4, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#6f6a78';
+  ctx.fillRect(x + 12, y + 8, 12, 20);
+  ctx.fillStyle = '#8d8798';
+  ctx.fillRect(x + 10, y + 5, 16, 4);
+  ctx.fillRect(x + 9, y + 26, 18, 4);
+  ctx.fillStyle = '#4a4552';
+  ctx.fillRect(x + 14, y + 12, 3, 12);
+}
+function drawObsidian(ctx: CanvasRenderingContext2D, x: number, y: number, n: number): void {
+  ctx.fillStyle = '#00000030';
+  ctx.beginPath(); ctx.ellipse(x + 16, y + 27, 10, 4, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#2b1f3d';
+  ctx.beginPath(); ctx.moveTo(x + 8, y + 27); ctx.lineTo(x + 13, y + 10 + (n % 5)); ctx.lineTo(x + 19, y + 27); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#4b3570';
+  ctx.beginPath(); ctx.moveTo(x + 17, y + 27); ctx.lineTo(x + 23, y + 15 + (n % 4)); ctx.lineTo(x + 27, y + 27); ctx.closePath(); ctx.fill();
+  ctx.strokeStyle = '#a37bd6aa'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(x + 13, y + 12); ctx.lineTo(x + 16, y + 26); ctx.stroke();
+}
+function drawBridge(ctx: CanvasRenderingContext2D, x: number, y: number): void {
+  ctx.fillStyle = '#8a6136';
+  ctx.fillRect(x, y, RIFT_TILE, RIFT_TILE);
+  ctx.fillStyle = '#a87b45';
+  for (let i = 0; i < 4; i++) ctx.fillRect(x + 1, y + 3 + i * 8, RIFT_TILE - 2, 5);
+  ctx.fillStyle = '#5a3f25';
+  for (let i = 0; i < 4; i++) ctx.fillRect(x + 1, y + 8 + i * 8, RIFT_TILE - 2, 1.5);
+}
+function drawBoulder(ctx: CanvasRenderingContext2D, x: number, y: number, n: number): void {
+  ctx.fillStyle = '#00000030';
+  ctx.beginPath(); ctx.ellipse(x + 17, y + 27, 12, 4, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#565b63';
+  ctx.beginPath(); ctx.ellipse(x + 16, y + 19, 13, 10, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#767d86';
+  ctx.beginPath(); ctx.ellipse(x + 12 + (n % 3), y + 15, 6, 4, 0, 0, Math.PI * 2); ctx.fill();
+}
+function drawAsh(ctx: CanvasRenderingContext2D, x: number, y: number, n: number): void {
+  ctx.fillStyle = '#5a5148';
+  ctx.fillRect(x, y, RIFT_TILE, RIFT_TILE);
+  ctx.fillStyle = '#6b6055';
+  if (n % 4 === 0) ctx.fillRect(x + (n % 24), y + (n % 20), 3, 2);
+  if (n % 17 === 0) { ctx.fillStyle = '#ff8b3d'; ctx.fillRect(x + 8, y + 9, 2, 2); }
+}
+function drawSlab(ctx: CanvasRenderingContext2D, x: number, y: number, n: number): void {
+  ctx.strokeStyle = '#0000002a';
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(x + 2, y + 2, RIFT_TILE - 4, RIFT_TILE - 4);
+  ctx.strokeStyle = '#ffffff10';
+  ctx.beginPath(); ctx.moveTo(x + 5, y + 8); ctx.lineTo(x + 12, y + 5); ctx.stroke();
+  if (n % 13 === 0) {
+    ctx.fillStyle = '#6e6878';
+    ctx.fillRect(x + 6 + (n % 14), y + 20, 4, 2.5);
+    ctx.fillRect(x + 18, y + 11, 3, 2);
+  }
+  if (n % 29 === 0) {
+    ctx.strokeStyle = '#00000030';
+    ctx.beginPath(); ctx.moveTo(x + 8, y + 9); ctx.lineTo(x + 14, y + 16); ctx.lineTo(x + 11, y + 24); ctx.stroke();
+  }
+}
+function drawWater(ctx: CanvasRenderingContext2D, x: number, y: number, tx: number, ty: number, now: number): void {
+  const wave = Math.sin(now / 420 + tx * 0.7 + ty) * 2;
+  ctx.fillStyle = '#ffffff24';
+  ctx.fillRect(x + 4, y + 12 + wave, 22, 1.5);
+  ctx.fillRect(x + 10, y + 22 - wave, 16, 1.2);
+  ctx.fillStyle = '#5fb4d644';
+  ctx.fillRect(x + 6, y + 5, 8, 1.5);
+}
+function drawHouse(ctx: CanvasRenderingContext2D, x: number, y: number, wall: string, roof: string): void {
+  ctx.fillStyle = '#00000040';
+  ctx.beginPath(); ctx.ellipse(x + 24, y + 38, 28, 8, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = wall;
+  ctx.fillRect(x, y + 12, 48, 26);
+  ctx.fillStyle = roof;
+  ctx.beginPath(); ctx.moveTo(x - 5, y + 13); ctx.lineTo(x + 24, y - 8); ctx.lineTo(x + 53, y + 13); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#5a3a2a';
+  ctx.fillRect(x + 19, y + 22, 10, 16);
+  ctx.fillStyle = '#ffe9a6';
+  ctx.fillRect(x + 6, y + 18, 8, 8);
+  ctx.fillRect(x + 34, y + 18, 8, 8);
+  ctx.fillStyle = '#00000055';
+  ctx.fillRect(x + 9, y + 21, 2, 5);
+  ctx.fillRect(x + 37, y + 21, 2, 5);
+}
+function drawFountain(ctx: CanvasRenderingContext2D, x: number, y: number): void {
+  ctx.fillStyle = '#00000035';
+  ctx.beginPath(); ctx.ellipse(x, y + 12, 34, 12, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#8b8377';
+  ctx.beginPath(); ctx.ellipse(x, y + 6, 30, 12, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#4b8fb3';
+  ctx.beginPath(); ctx.ellipse(x, y + 5, 24, 8, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#bfe8ff';
+  ctx.beginPath(); ctx.arc(x - 6, y + 3, 2, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#8b8377';
+  ctx.fillRect(x - 3, y - 18, 6, 18);
+  ctx.fillStyle = '#6c665d';
+  ctx.beginPath(); ctx.ellipse(x, y - 18, 12, 4, 0, 0, Math.PI * 2); ctx.fill();
+}
+
 function draw(now: number): void {
   const element = canvas.value;
   const ctx = element?.getContext('2d');
@@ -171,7 +319,6 @@ function draw(now: number): void {
   camY = Math.max(h / 2, Math.min(worldH - h / 2, camY));
   const ox = Math.round(w / 2 - camX);
   const oy = Math.round(h / 2 - camY);
-  const color = ['#2e6b47', '#b9a373', '#2b6c96', '#4b5058', '#5a5566', '#a6402c'] as const;
   const fromX = Math.max(0, Math.floor((-ox) / RIFT_TILE));
   const fromY = Math.max(0, Math.floor((-oy) / RIFT_TILE));
   const toX = Math.min(RIFT_W - 1, Math.ceil((w - ox) / RIFT_TILE));
@@ -180,19 +327,50 @@ function draw(now: number): void {
     const tile = riftTile(world, tx, ty);
     const x = tx * RIFT_TILE + ox;
     const y = ty * RIFT_TILE + oy;
-    ctx.fillStyle = color[tile] ?? color[0];
+    ctx.fillStyle = TILE_COLORS[tile] ?? TILE_COLORS[0];
     ctx.fillRect(x, y, RIFT_TILE + 1, RIFT_TILE + 1);
     const n = (tx * 73856093 ^ ty * 19349663) >>> 0;
-    if (tile === 0 && n % 9 === 0) { ctx.fillStyle = '#00000018'; ctx.fillRect(x + (n % 22), y + (n % 26), 3, 3); }
-    if (tile === 1 && n % 7 === 0) { ctx.fillStyle = '#00000012'; ctx.fillRect(x + (n % 24), y + 10, 4, 2); }
-    if (tile === 2) {
-      ctx.fillStyle = '#ffffff22';
-      const wave = Math.sin(now / 420 + tx * 0.7 + ty) * 2;
-      ctx.fillRect(x + 4, y + 12 + wave, 22, 1.5);
+    if (tile === 6) drawTree(ctx, x, y, n);
+    else if (tile === 7) drawBush(ctx, x, y);
+    else if (tile === 8) drawColumn(ctx, x, y);
+    else if (tile === 9) drawObsidian(ctx, x, y, n);
+    else if (tile === 10) drawBridge(ctx, x, y);
+    else if (tile === 11) drawFlower(ctx, x, y, n);
+    else if (tile === 12) drawMushroom(ctx, x, y);
+    else if (tile === 13) drawAsh(ctx, x, y, n);
+    else if (tile === 3) drawBoulder(ctx, x, y, n);
+    else if (tile === 4) drawSlab(ctx, x, y, n);
+    else if (tile === 2) drawWater(ctx, x, y, tx, ty, now);
+    else if (tile === 5) {
+      const pulse = 0.5 + 0.5 * Math.sin(now / 700 + (tx + ty) * 0.6);
+      ctx.fillStyle = `rgba(255, 176, 74, ${0.08 + 0.1 * pulse})`;
+      ctx.fillRect(x + 3, y + 3, RIFT_TILE - 6, RIFT_TILE - 6);
+      if (n % 7 === 0) {
+        ctx.strokeStyle = '#6b1e12';
+        ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.moveTo(x + 4, y + 8); ctx.lineTo(x + 14, y + 13); ctx.lineTo(x + 10, y + 24); ctx.stroke();
+      }
+      if (n % 11 === 0) { ctx.fillStyle = '#ffcf6a'; ctx.fillRect(x + (n % 20), y + (n % 22), 6, 2); }
+    } else if (tile === 1) {
+      if (n % 3 === 0) { ctx.fillStyle = '#00000010'; ctx.fillRect(x + (n % 20), y + 8 + (n % 14), 6, 3); }
+      if (n % 4 === 0) { ctx.fillStyle = '#00000012'; ctx.fillRect(x + (n % 24), y + 10, 4, 2); }
+      if (n % 7 === 0) { ctx.fillStyle = '#00000010'; ctx.beginPath(); ctx.arc(x + 8 + (n % 16), y + 20 + (n % 6), 2, 0, Math.PI * 2); ctx.fill(); }
+      ctx.fillStyle = '#00000020';
+      if (![1, 4, 10].includes(riftTile(world, tx, ty - 1))) ctx.fillRect(x, y, RIFT_TILE, 2);
+      if (![1, 4, 10].includes(riftTile(world, tx, ty + 1))) ctx.fillRect(x, y + RIFT_TILE - 2, RIFT_TILE, 2);
+      if (![1, 4, 10].includes(riftTile(world, tx - 1, ty))) ctx.fillRect(x, y, 2, RIFT_TILE);
+      if (![1, 4, 10].includes(riftTile(world, tx + 1, ty))) ctx.fillRect(x + RIFT_TILE - 2, y, 2, RIFT_TILE);
+    } else if (tile === 0) {
+      if (n % 9 === 0) { ctx.fillStyle = '#00000018'; ctx.fillRect(x + (n % 22), y + (n % 26), 3, 3); }
+      if (n % 4 === 0) {
+        ctx.strokeStyle = '#1f5736';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(x + 7, y + 26); ctx.lineTo(x + 8, y + 20);
+        ctx.moveTo(x + 23, y + 27); ctx.lineTo(x + 24, y + 21);
+        ctx.stroke();
+      }
     }
-    if (tile === 3) { ctx.fillStyle = '#ffffff14'; ctx.fillRect(x + 2, y + 2, RIFT_TILE - 4, 5); }
-    if (tile === 4) { ctx.strokeStyle = '#00000022'; ctx.strokeRect(x + 2, y + 2, RIFT_TILE - 4, RIFT_TILE - 4); }
-    if (tile === 5) { ctx.fillStyle = '#ffb04a22'; ctx.fillRect(x + 3, y + 3, RIFT_TILE - 6, RIFT_TILE - 6); }
   }
   // Clareira da Vila.
   const sx = RIFT_SANCTUARY.x * RIFT_TILE + ox;
@@ -212,6 +390,12 @@ function draw(now: number): void {
   ctx.textAlign = 'center';
   ctx.fillText('VILA', sx, sy - 63);
   ctx.textAlign = 'left';
+  // Casinhas e fonte da clareira.
+  drawHouse(ctx, sx - 146, sy - 104, '#d9c7a6', '#8a3f36');
+  drawHouse(ctx, sx + 98, sy - 112, '#c9d6c2', '#3f6a8a');
+  drawHouse(ctx, sx - 136, sy + 26, '#d8c09a', '#7a4a2a');
+  drawHouse(ctx, sx + 86, sy + 16, '#cfc3d8', '#5a3f7a');
+  drawFountain(ctx, sx, sy);
 
   // Itens no chão.
   for (const item of state.value.loot) {
@@ -319,6 +503,43 @@ function draw(now: number): void {
     ctx.fillRect(0, 0, w, h);
   }
 
+  // Atmosfera por zona: vaga-lumes no bosque/Vila, brasas na brasa e poeira nas ruínas.
+  const zoneNow = zone.value;
+  ctx.save();
+  if (zoneNow === 'Brasa') {
+    for (let i = 0; i < 18; i++) {
+      const px = (i * 73 + Math.sin(now / 900 + i) * 24 + now * 0.02) % w;
+      const py = h - ((now * 0.06 + i * 97) % h);
+      ctx.globalAlpha = 0.55;
+      ctx.fillStyle = '#ff9a4a';
+      ctx.beginPath(); ctx.arc(px, py, 1.8, 0, Math.PI * 2); ctx.fill();
+    }
+  } else if (zoneNow === 'Bosque' || zoneNow === 'Vila') {
+    for (let i = 0; i < 14; i++) {
+      const px = (i * 111 + Math.sin(now / 1400 + i) * 40) % w;
+      const py = (i * 67 + Math.cos(now / 1700 + i) * 30) % h;
+      ctx.globalAlpha = 0.55 + 0.35 * Math.sin(now / 500 + i);
+      ctx.fillStyle = '#ffe066';
+      ctx.beginPath(); ctx.arc(px, py, 1.6, 0, Math.PI * 2); ctx.fill();
+      ctx.globalAlpha = 0.12;
+      ctx.beginPath(); ctx.arc(px, py, 6, 0, Math.PI * 2); ctx.fill();
+    }
+  } else {
+    for (let i = 0; i < 12; i++) {
+      const px = (i * 97 + now * 0.01) % w;
+      const py = (i * 53 + Math.sin(now / 1100 + i) * 26) % h;
+      ctx.globalAlpha = 0.25;
+      ctx.fillStyle = zoneNow === 'Ruínas' ? '#d8d2e6' : '#bff0c9';
+      ctx.fillRect(px, py, 2, 2);
+    }
+  }
+  ctx.restore();
+  const vg = ctx.createRadialGradient(w / 2, h / 2, Math.min(w, h) * 0.34, w / 2, h / 2, Math.max(w, h) * 0.72);
+  vg.addColorStop(0, '#00000000');
+  vg.addColorStop(1, zoneNow === 'Brasa' ? '#2a0d0470' : '#00000066');
+  ctx.fillStyle = vg;
+  ctx.fillRect(0, 0, w, h);
+
   // Minimapa.
   const map = mini.value;
   const mctx = map?.getContext('2d');
@@ -329,7 +550,7 @@ function draw(now: number): void {
       const lctx = mapLayer.getContext('2d');
       if (lctx) {
         for (let ty = 0; ty < RIFT_H; ty++) for (let tx = 0; tx < RIFT_W; tx++) {
-          lctx.fillStyle = color[riftTile(world, tx, ty)] ?? color[0];
+          lctx.fillStyle = MAP_COLORS[riftTile(world, tx, ty)] ?? MAP_COLORS[0];
           lctx.fillRect(tx, ty, 1, 1);
         }
       }
@@ -543,7 +764,7 @@ onBeforeUnmount(() => {
 .rift-allies{position:absolute;top:max(84px,calc(env(safe-area-inset-top) + 72px));right:max(6px,env(safe-area-inset-right));display:flex;gap:3px}
 .rift-allies img{width:30px;height:30px;object-fit:contain;image-rendering:pixelated;filter:drop-shadow(0 1px 2px #000)}
 .rift-minimap{position:absolute;right:max(8px,env(safe-area-inset-right));bottom:calc(max(8px,env(safe-area-inset-bottom)) + 210px);width:96px;height:72px;border:1px solid #ffe9a666;border-radius:8px;background:#08120e;image-rendering:pixelated}
-.rift-toast{position:absolute;left:50%;bottom:calc(max(8px,env(safe-area-inset-bottom)) + 128px);transform:translateX(-50%);margin:0;padding:6px 12px;border-radius:999px;background:#08120ee8;border:1px solid #ffe9a6aa;color:#ffe9a6;font-size:.76rem;font-weight:700;white-space:nowrap;max-width:90vw;overflow:hidden;text-overflow:ellipsis}
+.rift-toast{position:absolute;left:50%;top:max(118px,calc(env(safe-area-inset-top) + 106px));bottom:auto;transform:translateX(-50%);margin:0;padding:6px 12px;border-radius:999px;background:#08120ee8;border:1px solid #ffe9a6aa;color:#ffe9a6;font-size:.76rem;font-weight:700;white-space:nowrap;max-width:90vw;overflow:hidden;text-overflow:ellipsis}
 .rift-pad{position:absolute;left:max(14px,env(safe-area-inset-left));bottom:max(14px,env(safe-area-inset-bottom));width:112px;height:112px;border-radius:50%;border:2px solid #ffffff38;background:#08120e99;display:grid;place-items:center;touch-action:none}
 .rift-pad-knob{width:48px;height:48px;border-radius:50%;background:#e9f5ee55;border:2px solid #fff9;pointer-events:none}
 .rift-actions{position:absolute;right:max(12px,env(safe-area-inset-right));bottom:max(14px,env(safe-area-inset-bottom));display:grid;grid-template-columns:56px 56px;gap:8px}

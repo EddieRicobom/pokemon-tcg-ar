@@ -1,9 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   createRiftState, createRiftWorld, riftAttack, riftCapture, riftMove, riftRespawn, riftSanctuary, riftSpawnEnemy,
-  riftTile, riftWalkable, RIFT_SANCTUARY, RIFT_TILE, stepRift, type RiftEnemy, type RiftEvent,
+  riftTile, riftWalkable, RIFT_H, RIFT_SANCTUARY, RIFT_TILE, RIFT_W, stepRift, type RiftEnemy, type RiftEvent,
 } from './rift';
-
 let seed = 987654321;
 const rng = (): number => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed / 4294967296; };
 
@@ -87,6 +86,28 @@ describe('Fenda do Mew', () => {
     expect(state.player.balls).toBe(4);
     state.enemies = [enemy({ id: 'e2', x: state.player.x + 30, y: state.player.y, hp: 80, maxHp: 100 })];
     expect(riftCapture(state, () => 0, [])).toBe(false);
+  });
+
+  it('tem biomas decorados e cada tipo respeita a colisão', () => {
+    const world = createRiftWorld();
+    const find = (type: number): { x: number; y: number } | null => {
+      for (let ty = 0; ty < RIFT_H; ty++) for (let tx = 0; tx < RIFT_W; tx++) {
+        if (riftTile(world, tx, ty) === type) return { x: tx * RIFT_TILE + 16, y: ty * RIFT_TILE + 16 };
+      }
+      return null;
+    };
+    for (const type of [6, 7, 8, 9, 10, 11, 12, 13]) expect(find(type), `tipo ${type}`).not.toBeNull();
+    for (const type of [2, 3, 5, 6, 8]) {
+      const point = find(type)!;
+      expect(riftWalkable(world, point.x, point.y), `bloqueado ${type}`).toBe(false);
+    }
+    for (const type of [7, 9, 10, 11, 12, 13]) {
+      const point = find(type)!;
+      expect(riftWalkable(world, point.x, point.y), `andável ${type}`).toBe(true);
+    }
+    const bridge = { x: 85 * RIFT_TILE + 16, y: 19 * RIFT_TILE + 16 };
+    expect(riftTile(world, 85, 19)).toBe(10);
+    expect(riftWalkable(world, bridge.x, bridge.y)).toBe(true);
   });
 
   it('a clareira da Vila é segura e cura o treinador', () => {

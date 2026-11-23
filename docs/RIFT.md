@@ -5,6 +5,8 @@ Hack-n-slash top-down onde **o treinador** (não um Pokémon) atravessa um mapa 
 ## Mundo
 
 - Mapa de **120×90 tiles** (32 px cada), determinístico pela seed: clareira da Vila (segura e com cura), estradas, lagos, Bosque, Campos, Ruínas ao norte e Brasa a leste.
+- Cada bioma tem visual próprio: árvores, arbustos e cogumelos no Bosque; flores e capim nos Campos; colunas, lajes, rachaduras e entulho nas Ruínas; cinza, obsidiana, lava com rachaduras e brasas na Brasa. Estradas têm bordas e pedras; as travessias sobre água/lava usam pontes de madeira.
+- A clareira tem casas, fonte e vaga-lumes. A atmosfera muda por zona (vaga-lumes, poeira ou brasas) e há uma vinheta suave.
 - Câmera segue o treinador; minimapa mostra o mapa inteiro e os inimigos/chefes.
 - A clareira da Vila não recebe dano e recupera 7 de vida por segundo.
 

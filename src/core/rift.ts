@@ -12,7 +12,7 @@ export const RIFT_SANCTUARY = { x: 60, y: 74 } as const;
 export const RIFT_MAX_ALLIES = 3;
 export const RIFT_SAVE_KEY = 'tcg-ar-rift-v1';
 
-export type RiftTile = 0 | 1 | 2 | 3 | 4 | 5;
+export type RiftTile = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13;
 export type RiftZone = 'Vila' | 'Campos' | 'Bosque' | 'Ruínas' | 'Brasa';
 
 export interface RiftWeapon {
@@ -158,12 +158,7 @@ export function createRiftWorld(seed = 20261123): RiftWorld {
     if (x >= 0 && y >= 0 && x < RIFT_W && y < RIFT_H) tiles[y * RIFT_W + x] = tile;
   };
   const get = (x: number, y: number): RiftTile => (x >= 0 && y >= 0 && x < RIFT_W && y < RIFT_H ? tiles[y * RIFT_W + x] as RiftTile : 3);
-  // Estradas saindo da clareira: uma reta para o norte e uma curva para o oeste.
-  for (let y = 34; y <= 78; y++) for (let x = 58; x <= 62; x++) set(x, y, 1);
-  for (let x = 26; x <= 60; x++) for (let y = 58; y <= 62; y++) set(x, y, 1);
-  for (let x = 60; x <= 96; x++) for (let y = 70; y <= 74; y++) set(x, y, 1);
-  // Clareira segura da Vila.
-  for (let y = 66; y <= 80; y++) for (let x = 52; x <= 68; x++) set(x, y, 1);
+  const road = (x: number, y: number): void => set(x, y, get(x, y) === 2 ? 10 : 1);
   // Lagos.
   const lake = (cx: number, cy: number, rx: number, ry: number): void => {
     for (let y = cy - ry; y <= cy + ry; y++) for (let x = cx - rx; x <= cx + rx; x++) {
@@ -183,18 +178,48 @@ export function createRiftWorld(seed = 20261123): RiftWorld {
     const d = ((x - 96) / 15) ** 2 + ((y - 19) / 12) ** 2;
     if (d < 0.9 + hash(x, y, seed + 2) * 0.15) set(x, y, 5);
   }
-  // Plataforma de obsidiana no coração da brasa, onde o chefe espera.
+  // Cinza em volta da brasa.
+  for (let y = 0; y < RIFT_H; y++) for (let x = 0; x < RIFT_W; x++) {
+    if (get(x, y) !== 0) continue;
+    const d = ((x - 96) / 15) ** 2 + ((y - 19) / 12) ** 2;
+    if (d < 1.32 && hash(x, y, seed + 4) > 0.18) set(x, y, 13);
+  }
+  // Bosque: árvores, arbustos e cogumelos. Campos: flores e arbustos. Ruínas: colunas.
+  for (let y = 1; y < RIFT_H - 1; y++) for (let x = 1; x < RIFT_W - 1; x++) {
+    if (get(x, y) !== 0) continue;
+    const r = hash(x, y, seed + 5);
+    if (x < 44) {
+      if (r > 0.985) set(x, y, 12);
+      else if (r > 0.94) set(x, y, 7);
+      else if (r > 0.88) set(x, y, 6);
+    } else if (x < 80) {
+      if (r > 0.975) set(x, y, 7);
+      else if (r > 0.9) set(x, y, 11);
+    }
+  }
+  for (let y = 8; y <= 24; y++) for (let x = 14; x <= 36; x++) {
+    if (get(x, y) === 4 && x % 6 === 0 && y % 6 === 0 && hash(x, y, seed + 6) > 0.28) set(x, y, 8);
+  }
+  for (let y = 6; y <= 32; y++) for (let x = 80; x <= 114; x++) {
+    if (get(x, y) === 13 && hash(x, y, seed + 7) > 0.9) set(x, y, 9);
+  }
+  // Estradas saindo da clareira: uma reta para o norte e uma curva para o oeste.
+  for (let y = 34; y <= 78; y++) for (let x = 59; x <= 61; x++) road(x, y);
+  for (let x = 26; x <= 60; x++) for (let y = 59; y <= 61; y++) road(x, y);
+  for (let x = 60; x <= 96; x++) for (let y = 71; y <= 73; y++) road(x, y);
+  // Clareira segura da Vila.
+  for (let y = 66; y <= 80; y++) for (let x = 52; x <= 68; x++) set(x, y, 1);
+  // Plataforma de obsidiana no coração da brasa e ponte de madeira até ela.
   for (let y = 16; y <= 22; y++) for (let x = 93; x <= 99; x++) set(x, y, 4);
-  // Acessos: trilha até a entrada sul das Ruínas e ponte de pedra para a plataforma da Brasa.
-  for (let y = 27; y <= 58; y++) for (let x = 24; x <= 25; x++) set(x, y, 1);
+  for (let x = 80; x <= 92; x++) set(x, 19, 10);
+  // Trilha até a entrada sul das Ruínas.
+  for (let y = 27; y <= 58; y++) for (let x = 24; x <= 25; x++) road(x, y);
   set(24, 26, 1);
   set(25, 26, 1);
-  for (let x = 80; x <= 93; x++) set(x, 19, 4);
-  // Pedras espalhadas (nunca sobre estrada, água, ruína ou lava).
+  // Pedras espalhadas (nunca sobre estrada, água, ruína, cinza ou decoração).
   for (let y = 1; y < RIFT_H - 1; y++) for (let x = 1; x < RIFT_W - 1; x++) {
-    const current = get(x, y);
-    if (current !== 0) continue;
-    if (hash(x, y, seed + 3) > 0.955) set(x, y, 3);
+    if (get(x, y) !== 0) continue;
+    if (hash(x, y, seed + 3) > 0.985) set(x, y, 3);
   }
   return { seed, tiles };
 }
@@ -206,7 +231,7 @@ export function riftTile(world: RiftWorld, tx: number, ty: number): RiftTile {
 
 export function riftWalkable(world: RiftWorld, x: number, y: number): boolean {
   const tile = riftTile(world, Math.floor(x / RIFT_TILE), Math.floor(y / RIFT_TILE));
-  return tile === 0 || tile === 1 || tile === 4;
+  return tile === 0 || tile === 1 || tile === 4 || tile === 7 || tile === 9 || tile === 10 || tile === 11 || tile === 12 || tile === 13;
 }
 
 export function riftSanctuary(x: number, y: number): boolean {
