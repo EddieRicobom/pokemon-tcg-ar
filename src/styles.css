@@ -8792,3 +8792,19 @@ body.no-scroll .reward-toasts {
 .survivor-upgrade-target strong { flex-basis: 100%; font-size: .8rem; }
 .survivor-upgrade-target button { padding: 6px 9px; border: 2px solid #555b58; border-radius: 5px; background: #f5f3dc; color: #252d30; }
 .survivor-upgrade-target button[aria-pressed="true"] { background: #303c3d; color: #ffe9a6; }
+
+/* Contador de abates seguidos: vive no HUD (acima do canvas), então nunca fica atrás de mapa, Menu ou AUTO. */
+.survivor-stats .chip.survivor-streak-chip {
+  order: -5;
+  border-color: #ffe066;
+  background: #574127;
+  color: #ffe9b2;
+  font-weight: 800;
+  animation: survivor-streak-pop 220ms ease-out;
+}
+.survivor-stats .chip.survivor-streak-chip b { font-size: 1.05em; }
+.survivor-stats .chip.survivor-streak-chip.tier-1 { border-color: #ffd23f; }
+.survivor-stats .chip.survivor-streak-chip.tier-2 { border-color: #ffab4a; }
+.survivor-stats .chip.survivor-streak-chip.tier-3 { border-color: #ff6b70; color: #ffd9d9; }
+@keyframes survivor-streak-pop { from { transform: scale(1.35); } }
+@media (prefers-reduced-motion: reduce) { .survivor-stats .chip.survivor-streak-chip { animation: none; } }

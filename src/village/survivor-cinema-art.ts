@@ -191,61 +191,6 @@ export function drawImpactFrame(c: CanvasRenderingContext2D, w: number, h: numbe
   c.restore();
 }
 
-/** Medidas do contador em unidades lógicas do canvas (o palco estica o desenho para o tamanho CSS). */
-export interface KillStreakLayout {
-  /** Centro horizontal do texto. */
-  x: number;
-  align: 'right' | 'center';
-  /** Centro vertical do número. */
-  top: number;
-  size: number;
-  labelSize: number;
-}
-
-/**
- * Posição e tamanho do contador de abates. `cssPerUnit` é quantos pixels CSS valem uma unidade lógica do canvas:
- * assim o contador fica com 30 px na tela em qualquer aparelho e não fica atrás da coluna de mapa/controles.
- */
-export function killStreakLayout(w: number, h: number, cssPerUnit: number): KillStreakLayout {
-  const ratio = Number.isFinite(cssPerUnit) && cssPerUnit > 0 ? cssPerUnit : 1;
-  const landscape = w > h;
-  // No retrato, a coluna da direita (mapa, desafio adaptável e Menu) desce até ~168 px: o contador vai abaixo dela.
-  // Na paisagem essa coluna ocupa a altura toda; o topo central é o espaço livre.
-  const topCss = landscape ? 58 : 186;
-  return {
-    x: landscape ? w / 2 : w - 14 / ratio,
-    align: landscape ? 'center' : 'right',
-    top: topCss / ratio,
-    size: 30 / ratio,
-    labelSize: 11 / ratio,
-  };
-}
-
-/** Contador de abates seguidos. Só texto: com `motion`, ele dá um soco a cada novo abate. */
-export function drawKillStreak(c: CanvasRenderingContext2D, count: number, tier: number, pop: number, fade: number, motion: boolean, layout: KillStreakLayout): void {
-  const colors = ['#fff4de', '#ffe066', '#ffab4a', '#ff6b70'];
-  const size = layout.size * (motion ? 1 + pop * 0.28 : 1);
-  const x = layout.x;
-  const y = layout.top;
-  const unit = layout.size / 30;
-  c.save();
-  c.globalAlpha = Math.max(0, Math.min(1, fade));
-  c.textAlign = layout.align;
-  c.textBaseline = 'middle';
-  c.lineJoin = 'round';
-  c.strokeStyle = '#161b2b';
-  c.fillStyle = colors[tier] ?? '#fff4de';
-  c.lineWidth = 5 * unit;
-  c.font = `900 ${size}px system-ui, sans-serif`;
-  c.strokeText(`${count}`, x, y);
-  c.fillText(`${count}`, x, y);
-  c.lineWidth = 3 * unit;
-  c.font = `800 ${layout.labelSize}px system-ui, sans-serif`;
-  c.strokeText('ABATES SEGUIDOS', x, y + layout.labelSize * 2.2);
-  c.fillText('ABATES SEGUIDOS', x, y + layout.labelSize * 2.2);
-  c.restore();
-}
-
 export function drawScreenFlash(c: CanvasRenderingContext2D, w: number, h: number, alpha: number, color: string): void {
   if (alpha <= 0) return;
   c.save();
