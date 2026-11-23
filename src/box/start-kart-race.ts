@@ -2,7 +2,7 @@ import { pokemonSpriteUrl, pokemonStaticSpriteUrls } from '../ar/sprite-url';
 import { TYPE_COLORS } from '../core/pokemon-data';
 import { activateKartAbility, createKartRace, kartPlacementOrder, KART_CUP_ROUNDS, stepKartRace, TRACK_HALF_WIDTH, trackPoint, trackTangent, type KartInput, type KartRaceState } from '../core/kart-race';
 
-export interface KartFinish { position: number; elapsedMs: number; total: number; completed: boolean; order: number[] }
+export interface KartFinish { position: number; elapsedMs: number; total: number; completed: boolean; order: number[]; laps?: number[] }
 export interface KartRaceHandle {
   setInput(input: KartInput): void;
   useAbility(): boolean;
@@ -292,6 +292,9 @@ export async function startKartRace(
   let previous = performance.now();
   let accumulator = 0;
   let hudLast = 0;
+  let playerLap = 0;
+  let lapStartedAt = 0;
+  const lapTimes: number[] = [];
   const worldPoint = new THREE.Vector3();
   const startingPlayer = state.cars[0]!;
   camera.position.set(startingPlayer.x - Math.sin(startingPlayer.heading) * 9, 6.5, startingPlayer.z - Math.cos(startingPlayer.heading) * 9);
@@ -336,12 +339,17 @@ export async function startKartRace(
       }
     });
     if (now - hudLast > 100) { onUpdate(state); hudLast = now; }
+    while (player.lap > playerLap) {
+      lapTimes.push(Math.max(0, Math.round((state.elapsed - lapStartedAt) * 1000)));
+      lapStartedAt = state.elapsed;
+      playerLap++;
+    }
     const rivalsFinished = state.cars.slice(1).every((car) => car.finishedAt !== null);
     if (!finished && (player.finishedAt !== null || rivalsFinished)) {
       finished = true;
       const completed = player.finishedAt !== null;
       const position = completed ? 1 + state.cars.slice(1).filter((car) => car.finishedAt !== null && car.finishedAt < player.finishedAt!).length : state.cars.length;
-      onFinish({ position, elapsedMs: Math.round((player.finishedAt ?? state.elapsed) * 1000), total: state.cars.length, completed, order: kartPlacementOrder(state) });
+      onFinish({ position, elapsedMs: Math.round((player.finishedAt ?? state.elapsed) * 1000), total: state.cars.length, completed, order: kartPlacementOrder(state), laps: lapTimes.slice(0, state.laps) });
     }
     frame = requestAnimationFrame(loop);
   };

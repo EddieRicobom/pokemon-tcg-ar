@@ -1,8 +1,13 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import type { KartFinish, KartRaceHandle } from '../box/start-kart-race';
 import { kartAbilityOfTypes, kartCupScores, kartPosition, kartProfileOfDex, KART_CUP_POINTS, KART_CUP_ROUNDS, KART_CUP_TRAINERS, KART_LAPS, TRACK_HALF_WIDTH, trackDistance, type KartRaceState } from '../core/kart-race';
 import { TYPE_LABELS_PT } from '../core/pokemon-data';
+import { addCoins } from '../app/wallet';
+import { recordEvent } from '../app/trainer-store';
+import { clearKartCup, readKartCup, saveKartCup } from '../app/kart-cup';
+import { readKartRecords, saveKartResult } from '../app/kart-records';
+import { kartMapProjection } from '../core/kart-map';
 
 const props = withDefaults(defineProps<{ playerDexId: number; opponentDexIds?: number[] }>(), { opponentDexIds: () => [25, 133, 4] });
 const emit = defineEmits<{ close: []; finish: [result: KartFinish] }>();
@@ -15,12 +20,91 @@ const mode = ref<'menu' | 'quick' | 'cup'>('menu');
 const cupRound = ref(0);
 const cupScores = ref<number[]>([0, 0, 0, 0]);
 const cupLastOrder = ref<number[]>([]);
+const cupSave = ref(readKartCup());
+const records = ref(readKartRecords());
+const lastRecords = ref<{ lap: boolean; total: boolean }>({ lap: false, total: false });
+const rewardText = ref('');
+const kartMap = kartMapProjection();
+const AUTO_KEY = 'tcg-ar-kart-auto-v1';
+const SOUND_KEY = 'tcg-ar-kart-sound-v1';
+const autoAccelerate = ref(readAutoAccelerate());
+const soundOn = ref(readSoundOn());
+let engine: { ctx: AudioContext; osc: OscillatorNode; gain: GainNode } | null = null;
 const abilityAnnouncement = ref('');
 const pressed = new Set<string>();
 let handle: KartRaceHandle | null = null;
 let cancelled = false;
 let generation = 0;
 const touch = { left: false, right: false, accelerate: false, brake: false };
+
+function readAutoAccelerate(): boolean {
+  try {
+    return localStorage.getItem(AUTO_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+function readSoundOn(): boolean {
+  try {
+    return localStorage.getItem(SOUND_KEY) !== '0';
+  } catch {
+    return true;
+  }
+}
+function startEngine(): void {
+  if (!soundOn.value || engine) return;
+  try {
+    const ctx = new AudioContext();
+    if (ctx.state === 'suspended') void ctx.resume();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sawtooth';
+    osc.frequency.value = 62;
+    gain.gain.value = 0.012;
+    osc.connect(gain).connect(ctx.destination);
+    osc.start();
+    engine = { ctx, osc, gain };
+  } catch {
+    engine = null;
+  }
+}
+function stopEngine(): void {
+  try {
+    engine?.osc.stop();
+    void engine?.ctx.close();
+  } catch {
+    // Áudio opcional.
+  }
+  engine = null;
+}
+function updateEngine(speed: number): void {
+  if (!engine) return;
+  const now = engine.ctx.currentTime;
+  engine.osc.frequency.setTargetAtTime(55 + Math.min(125, Math.abs(speed) * 5.2), now, 0.08);
+  engine.gain.gain.setTargetAtTime(soundOn.value ? 0.014 : 0, now, 0.08);
+}
+function toggleSound(): void {
+  soundOn.value = !soundOn.value;
+  try {
+    localStorage.setItem(SOUND_KEY, soundOn.value ? '1' : '0');
+  } catch {
+    // Só não lembra da preferência.
+  }
+  if (!soundOn.value) stopEngine();
+  else if (mode.value !== 'menu' && !result.value) startEngine();
+}
+watch(autoAccelerate, (value) => {
+  try {
+    localStorage.setItem(AUTO_KEY, value ? '1' : '0');
+  } catch {
+    // Só não lembra da preferência.
+  }
+});
+const formatMs = (ms: number): string => `${(Math.max(0, ms) / 1000).toFixed(1)} s`;
+const recordRows = computed(() => Object.entries(records.value)
+  .map(([round, record]) => ({ round: Number(round), ...record }))
+  .filter((row) => Number.isInteger(row.round))
+  .sort((a, b) => a.round - b.round));
 const lap = computed(() => Math.min(KART_LAPS, (race.value?.cars[0]?.lap ?? 0) + 1));
 const position = computed(() => race.value ? kartPosition(race.value, 0) : 1);
 const elapsed = computed(() => (race.value?.elapsed ?? 0).toFixed(1));
@@ -65,8 +149,10 @@ const offroad = computed(() => {
 });
 
 function syncInput(): void {
+  const reverse = pressed.has('ArrowDown') || pressed.has('KeyS');
+  const forward = autoAccelerate.value || pressed.has('ArrowUp') || pressed.has('KeyW') || touch.accelerate;
   handle?.setInput({
-    throttle: pressed.has('ArrowUp') || pressed.has('KeyW') || touch.accelerate ? 1 : pressed.has('ArrowDown') || pressed.has('KeyS') ? -0.5 : 0,
+    throttle: reverse ? -0.5 : forward ? 1 : 0,
     steer: (pressed.has('ArrowRight') || pressed.has('KeyD') || touch.right ? 1 : 0) - (pressed.has('ArrowLeft') || pressed.has('KeyA') || touch.left ? 1 : 0),
     brake: pressed.has('Space') || touch.brake,
   });
@@ -90,6 +176,14 @@ function useAbility(): void {
   if (!abilityReady.value || !handle?.useAbility()) return;
   abilityAnnouncement.value = `${ability.value!.label} ativado`;
 }
+function grantKartReward(finish: KartFinish, cupFinal: boolean): void {
+  const place = finish.completed ? finish.position : finish.total;
+  const base = [25, 15, 10, 5][place - 1] ?? 3;
+  const bonus = cupFinal ? 30 : 0;
+  const gained = addCoins(base + bonus);
+  recordEvent({ type: 'minigame', game: 'kart', won: place === 1, score: finish.completed ? Math.max(10, 110 - place * 20) : 20 });
+  rewardText.value = gained > 0 ? `+${gained} moedas${bonus ? ' · bônus da Copa' : ''}` : '';
+}
 async function launchRace(kind: 'quick' | 'cup', round = 0): Promise<void> {
   generation++;
   const thisGeneration = generation;
@@ -102,6 +196,9 @@ async function launchRace(kind: 'quick' | 'cup', round = 0): Promise<void> {
   race.value = null;
   error.value = '';
   abilityAnnouncement.value = '';
+  rewardText.value = '';
+  lastRecords.value = { lap: false, total: false };
+  startEngine();
   const opponents = kind === 'cup' ? [...KART_CUP_ROUNDS[round]!.opponents] : props.opponentDexIds;
   try {
     if (!host.value) return;
@@ -109,31 +206,54 @@ async function launchRace(kind: 'quick' | 'cup', round = 0): Promise<void> {
     if (cancelled || thisGeneration !== generation) return;
     const running = await startKartRace(host.value, props.playerDexId, opponents, (state) => {
       race.value = { ...state, cars: state.cars.map((car) => ({ ...car })) };
+      updateEngine(state.cars[0]?.speed ?? 0);
     }, (finish) => {
       result.value = finish;
       if (kind === 'cup') {
         cupScores.value = kartCupScores(cupScores.value, finish.order);
         cupLastOrder.value = finish.order;
-        if (round === KART_CUP_ROUNDS.length - 1) emit('finish', finish);
+        lastRecords.value = saveKartResult(round, finish.laps ?? [], finish.elapsedMs, finish.completed);
+        records.value = readKartRecords();
+        if (round === KART_CUP_ROUNDS.length - 1) {
+          clearKartCup();
+          cupSave.value = null;
+          emit('finish', finish);
+        } else {
+          saveKartCup({ round: round + 1, scores: cupScores.value, lastOrder: finish.order });
+          cupSave.value = readKartCup();
+        }
       } else emit('finish', finish);
+      grantKartReward(finish, kind === 'cup' && round === KART_CUP_ROUNDS.length - 1);
+      stopEngine();
       releaseControls();
     }, kind === 'cup' && round === KART_CUP_ROUNDS.length - 1 ? 1 : null, kind === 'cup' ? round : 0);
     if (cancelled || thisGeneration !== generation) running.dispose();
     else { handle = running; syncInput(); }
   } catch {
+    stopEngine();
     error.value = 'Não foi possível iniciar a pista 3D neste navegador.';
   }
 }
 function startCup(): void {
   cupScores.value = [0, 0, 0, 0];
   cupLastOrder.value = [];
+  clearKartCup();
+  cupSave.value = null;
   void launchRace('cup', 0);
+}
+function continueCup(): void {
+  const saved = cupSave.value;
+  if (!saved) return;
+  cupScores.value = [...saved.scores];
+  cupLastOrder.value = [...saved.lastOrder];
+  void launchRace('cup', saved.round);
 }
 function nextCupRound(): void { void launchRace('cup', cupRound.value + 1); }
 function backToMenu(): void {
   generation++;
   handle?.dispose();
   handle = null;
+  stopEngine();
   releaseControls();
   mode.value = 'menu';
   result.value = null;
@@ -149,6 +269,7 @@ onBeforeUnmount(() => {
   cancelled = true;
   generation++;
   handle?.dispose();
+  stopEngine();
   window.removeEventListener('keydown', keyDown);
   window.removeEventListener('keyup', keyUp);
   window.removeEventListener('blur', releaseControls);
@@ -174,17 +295,29 @@ onBeforeUnmount(() => {
         <button type="button" @click="startCup">Iniciar Copa</button>
         <button type="button" @click="launchRace('quick')">Corrida rápida</button>
       </div>
+      <button v-if="cupSave" type="button" class="kart-racer-continue" @click="continueCup">Continuar Copa · etapa {{ cupSave.round + 1 }}/{{ KART_CUP_ROUNDS.length }}</button>
+      <div v-if="recordRows.length" class="kart-racer-records">
+        <strong>Recordes por etapa</strong>
+        <span v-for="row in recordRows" :key="row.round">Etapa {{ row.round + 1 }}: volta {{ formatMs(row.bestLapMs) }}<template v-if="row.bestTotalMs"> · corrida {{ formatMs(row.bestTotalMs) }}</template></span>
+      </div>
+      <button type="button" class="kart-racer-auto" :aria-pressed="autoAccelerate" @click="autoAccelerate = !autoAccelerate">Aceleração automática: {{ autoAccelerate ? 'ligada' : 'desligada' }}</button>
+      <button type="button" class="kart-racer-auto" :aria-pressed="soundOn" @click="toggleSound">Som do motor: {{ soundOn ? 'ligado' : 'desligado' }}</button>
       <small>Você corre com o Pokémon escolhido na Vila. Efeitos duram poucos segundos; o escudo bloqueia pulsos e a distância evita ataques.</small>
     </div>
     <div v-if="mode !== 'menu'" class="kart-racer-hud">
-      <strong>{{ mode === 'cup' ? `Copa ${cupRound + 1}/3` : 'Kart Racer' }}</strong>
-      <span>Volta {{ lap }}/{{ KART_LAPS }}</span>
-      <span>{{ position }}º de {{ race?.cars.length ?? 4 }}</span>
-      <span>{{ elapsed }} s</span>
-      <span>Ritmo {{ speed }}</span>
-      <span v-if="mode === 'cup'">{{ cupScores[0] }} pts</span>
+      <strong class="kart-racer-title">{{ mode === 'cup' ? `Copa ${cupRound + 1}/3` : 'Kart Racer' }}</strong>
+      <span class="kart-racer-lap">Volta {{ lap }}/{{ KART_LAPS }}</span>
+      <span class="kart-racer-pos">{{ position }}º de {{ race?.cars.length ?? 4 }}</span>
+      <span class="kart-racer-time">{{ elapsed }} s</span>
+      <span class="kart-racer-speed">Ritmo {{ speed }}</span>
+      <span v-if="mode === 'cup'" class="kart-racer-points">{{ cupScores[0] }} pts</span>
+      <button type="button" class="kart-racer-sound" :aria-pressed="soundOn" aria-label="Som do motor" @click="toggleSound">{{ soundOn ? '🔊' : '🔇' }}</button>
       <button type="button" class="kart-racer-close" aria-label="Sair da corrida" @click="emit('close')">✕</button>
     </div>
+    <svg v-if="race && !result && mode !== 'menu'" class="kart-racer-map" viewBox="0 0 100 100" role="img" aria-label="Mapa da pista com a posição dos karts">
+      <path :d="kartMap.path" />
+      <circle v-for="car in race.cars" :key="car.id" :cx="kartMap.project(car.x, car.z).x" :cy="kartMap.project(car.x, car.z).y" :r="car.id === 0 ? 3.6 : 2.2" :class="{ mine: car.id === 0, done: car.finishedAt !== null }" />
+    </svg>
     <div v-if="race && !error && !result" class="kart-racer-specs">
       <button type="button" class="kart-racer-specs-toggle" :aria-expanded="showKartDetails" aria-controls="kart-racer-specs-details" @click="showKartDetails = !showKartDetails">
         <template v-if="profile">{{ profile.body.label }} · {{ profile.wheels.label }} <span aria-hidden="true">{{ showKartDetails ? '▴' : '▾' }}</span></template>
@@ -212,12 +345,16 @@ onBeforeUnmount(() => {
     <div v-if="result && mode === 'quick'" class="kart-racer-result" role="status">
       <strong>{{ result.completed ? 'Chegada!' : 'Prova encerrada' }}</strong>
       <span>{{ result.completed ? `${result.position}º lugar · ${(result.elapsedMs / 1000).toFixed(1)} s` : 'Os oponentes terminaram antes de você.' }}</span>
+      <span v-if="rewardText" class="kart-racer-reward">{{ rewardText }}</span>
       <button type="button" @click="backToMenu">Nova corrida</button>
       <button type="button" @click="emit('close')">Voltar à Vila</button>
     </div>
     <div v-if="result && mode === 'cup'" class="kart-racer-result kart-racer-cup-result" role="status">
       <strong>{{ cupRound === KART_CUP_ROUNDS.length - 1 ? 'Copa encerrada!' : 'Etapa concluída!' }}</strong>
       <span>{{ roundTitle }} · {{ result.position }}º lugar · +{{ KART_CUP_POINTS[result.position - 1] ?? 0 }} pts</span>
+      <span v-if="rewardText" class="kart-racer-reward">{{ rewardText }}</span>
+      <span v-if="lastRecords.lap || lastRecords.total" class="kart-racer-record">🏁 {{ lastRecords.lap ? 'Nova melhor volta' : '' }}{{ lastRecords.lap && lastRecords.total ? ' · ' : '' }}{{ lastRecords.total ? 'Nova melhor corrida' : '' }}</span>
+      <span v-if="records[cupRound]" class="kart-racer-best">Melhor volta da etapa: {{ formatMs(records[cupRound]?.bestLapMs ?? 0) }}</span>
       <ol class="kart-racer-scoreboard" aria-label="Classificação da Copa">
         <li v-for="trainer in cupRanking" :key="trainer.id"><span>{{ trainer.name }}</span><b>{{ trainer.points }} pts</b></li>
       </ol>
@@ -274,7 +411,7 @@ onBeforeUnmount(() => {
 .kart-racer-performance dd { height: 5px; margin: 0; border-radius: 5px; background: #ffffff36; overflow: hidden; }
 .kart-racer-performance dd span { display: block; height: 100%; border-radius: inherit; background: #f3bf6d; }
 .kart-racer-specs-details small { display: block; color: #d8e0ea; }
-.kart-racer-rival { position: absolute; top: max(142px, calc(env(safe-area-inset-top) + 130px)); right: 10px; display: flex; align-items: center; gap: 5px; padding: 5px 7px; border: 1px solid #c1d9ff; border-radius: 10px; background: #182e55e8; font-size: 11px; }
+.kart-racer-rival { position: absolute; top: max(158px, calc(env(safe-area-inset-top) + 146px)); right: 10px; display: flex; align-items: center; gap: 5px; padding: 5px 7px; border: 1px solid #c1d9ff; border-radius: 10px; background: #182e55e8; font-size: 11px; }
 .kart-racer-rival img { width: 64px; height: 64px; object-fit: none; object-position: left top; image-rendering: pixelated; }
 .kart-racer-controls { position: absolute; bottom: max(38px, env(safe-area-inset-bottom)); left: clamp(8px, 3vw, 15px); right: clamp(8px, 3vw, 15px); display: flex; justify-content: space-between; pointer-events: none; }
 .kart-racer-steering, .kart-racer-pedals { display: flex; align-items: end; gap: clamp(4px, 1.5vw, 10px); pointer-events: auto; }
@@ -298,7 +435,26 @@ onBeforeUnmount(() => {
 @media (max-width: 600px) {
   .kart-racer-hud { gap: 4px; }
   .kart-racer-hud > :not(button) { padding: 4px 6px; font-size: 11px; }
+  .kart-racer-title, .kart-racer-time { display: none; }
   .kart-racer-specs { top: max(98px, calc(env(safe-area-inset-top) + 86px)); }
   .kart-racer-offroad { top: max(137px, calc(env(safe-area-inset-top) + 125px)); font-size: 11px; }
 }
+@media (max-width: 380px) {
+  .kart-racer-speed, .kart-racer-points { display: none; }
+}
+.kart-racer-continue { min-height: 44px; padding: 8px; background: #278e63e8 !important; }
+.kart-racer-sound { min-width: 38px; min-height: 38px; padding: 2px; font-size: 15px !important; }
+.kart-racer-records { display: grid; gap: 2px; padding: 8px 10px; border: 1px solid #ffffff45; border-radius: 10px; background: #ffffff10; font-size: 12px; text-align: left; }
+.kart-racer-records strong { font-size: 12px; }
+.kart-racer-records span { color: #d5ddea; }
+.kart-racer-auto { min-height: 40px; padding: 6px 10px; font-size: 12px; }
+.kart-racer-map { position: absolute; z-index: 1; top: max(64px, calc(env(safe-area-inset-top) + 52px)); right: 10px; width: 84px; height: 84px; box-sizing: border-box; padding: 4px; border: 1px solid #ffffff55; border-radius: 12px; background: #101b2bd9; }
+.kart-racer-map path { fill: none; stroke: #9fb4d6; stroke-width: 3; }
+.kart-racer-map circle { fill: #f3bf6d; }
+.kart-racer-map circle.mine { fill: #65e0a4; stroke: #fff; stroke-width: 1.5; }
+.kart-racer-map circle.done { opacity: .35; }
+.kart-racer-reward { color: #ffe28a; font-weight: 800; }
+.kart-racer-record { color: #65e0a4; font-weight: 800; }
+.kart-racer-best { color: #d5ddea; font-size: 12px; }
+@media (max-height: 640px) { .kart-racer-map { width: 68px; height: 68px; } }
 </style>
