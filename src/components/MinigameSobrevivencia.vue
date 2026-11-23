@@ -11,10 +11,10 @@ import { SURVIVOR_SUPREMES, survivorSupremeType } from '../core/survivor-supreme
 import { ORB_RAIN_FALL_MS, SURVIVOR_SURGE_LABEL, SWARM_TRAVEL, surgeHudText } from '../core/survivor-surges';
 import type { SurvivorSurge } from '../core/survivor-surges';
 import { flashAlpha, impactFromFx, moveLight, shadowFrom } from '../core/survivor-impacts';
-import { drawCastShadows, drawCinemaBanner, drawImpactFrame, drawKillStreak, drawLights, drawNight, drawPokemonShadow, drawScreenFlash, drawSpeedLines, killStreakLayout } from '../village/survivor-cinema-art';
+import { drawCastShadows, drawCinemaBanner, drawImpactFrame, drawLights, drawNight, drawPokemonShadow, drawScreenFlash, drawSpeedLines } from '../village/survivor-cinema-art';
 import { drawTerastal } from '../village/survivor-terastal-art';
 import { drawAlphaTint } from '../village/survivor-alpha-art';
-import { addStreakKills, createKillStreak, resetKillStreak, STREAK_SHOW_AT, stepKillStreak, streakFade, streakPop, streakTier, streakVisible } from '../core/survivor-streak';
+import { addStreakKills, createKillStreak, resetKillStreak, STREAK_SHOW_AT, stepKillStreak, streakFade, streakTier, streakVisible } from '../core/survivor-streak';
 import { ImpactSparks } from '../village/survivor-impact-art';
 import { ARTIFACT_ICONS, artifactIconUrl, drawArtifactIcon } from '../village/artifact-icons-art';
 import type { CinemaLight } from '../village/survivor-cinema-art';
@@ -194,8 +194,6 @@ const props = defineProps<{ digital?: { instanceId?: string; dexId: number; name
 const VIEW_SHORT = 360;
 const CAMERA_ZOOM = 1.5;
 const view = reactive({ w: 340, h: 420 });
-/** Altura CSS do palco: o canvas é esticado da view lógica para ela (usado nos textos de tela). */
-let stageCssHeight = 0;
 const stageEl = ref<HTMLElement | null>(null);
 let resizer: ResizeObserver | null = null;
 function fitView(): void {
@@ -206,7 +204,6 @@ function fitView(): void {
   if (W <= 0 || H <= 0) return;
   const fitted = fitSurvivorViewport(W, H, ARENA_W, ARENA_H, VIEW_SHORT, CAMERA_ZOOM);
   if (fitted.w <= 0 || fitted.h <= 0) return;
-  stageCssHeight = H;
   view.w = fitted.w;
   view.h = fitted.h;
   // Mudar o tamanho do canvas apaga o contexto: as configurações voltam no próximo quadro (`draw` refaz tudo).
@@ -3227,9 +3224,6 @@ function drawCinemaOverlay(s: SurvivorState, w: number, h: number, cine: CinemaF
   // O negativo vai antes do clarão: quem desliga os impactos visuais nunca chega aqui, porque o momento nem dispara.
   if (cine.ink) drawImpactFrame(ctx, w, h);
   drawScreenFlash(ctx, w, h, cine.flash, cine.flashColor);
-  if (effectiveVisual.value.impactFx && !effectiveVisual.value.rotomMode && streakVisible(killStreak)) {
-    drawKillStreak(ctx, killStreak.count, streakTier(killStreak.count), streakPop(killStreak), streakFade(killStreak), !reducedMotion, killStreakLayout(w, h, stageCssHeight > 0 ? stageCssHeight / h : 1));
-  }
   const banner = cinemaCam.banner;
   if (!banner) return;
   const portrait = banner.portrait && playerSprite && !effectiveVisual.value.rotomMode
@@ -4641,6 +4635,9 @@ onBeforeUnmount(() => {
             <span>XP {{ state.player.xp }}/{{ state.player.xpToNext }}</span>
           </div>
           <div class="survivor-stats">
+            <span v-if="streakVisible(killStreak)" :key="killStreak.count" class="chip survivor-streak-chip" :class="`tier-${streakTier(killStreak.count)}`" :style="{ opacity: streakFade(killStreak) }" role="status">
+              <b>{{ killStreak.count }}</b> abates seguidos
+            </span>
             <button v-if="canReopenUpgrade && state.deferredUpgrade" type="button" class="chip survivor-resume-upgrades" aria-keyshortcuts="U" title="Escolher melhorias guardadas · U no teclado ou L1/LB no controle" @pointerdown.stop @click.stop="reopenDeferredUpgrade">Melhorias ({{ state.upgradesOwed + 1 }})</button>
             <span v-if="state.player.terastal" class="chip survivor-tera-chip" :aria-label="`Terastalização ${TYPE_LABELS_PT[state.player.terastal.type]}: ${Math.ceil(state.player.terastal.remainingMs / 1000)} segundos restantes`" :title="`Terastalização ${TYPE_LABELS_PT[state.player.terastal.type]}`">💎 {{ TYPE_GLYPHS[state.player.terastal.type] }} {{ TYPE_LABELS_PT[state.player.terastal.type] }} · {{ Math.ceil(state.player.terastal.remainingMs / 1000) }}s</span>
             <span v-if="(state.player.healBlockMs ?? 0) > 0" class="chip survivor-heal-block" role="status">🚫 CURA BLOQUEADA · {{ Math.ceil((state.player.healBlockMs ?? 0) / 1000) }}s</span>
