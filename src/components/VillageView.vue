@@ -42,6 +42,7 @@ const towerPvp = ref(false);
 import DungeonGame from './DungeonGame.vue';
 const KartRacer = defineAsyncComponent(() => import('./KartRacer.vue'));
 const PinballGame = defineAsyncComponent(() => import('./PinballGame.vue'));
+const RiftGame = defineAsyncComponent(() => import('./RiftGame.vue'));
 const kartPilot = ref<number | null>(null);
 import { SURVIVOR_LOVE_CANDY_MS, SURVIVOR_OMEGA_SHARD_MS, SURVIVOR_TRUST_STONE_MS, survivorProgressMs } from '../core/survivor';
 import { dayKey, levelOf } from '../core/trainer';
@@ -158,18 +159,18 @@ const state = reactive(loadVillage());
 const day = ref(dayKey(new Date()));
 pruneHarvest(state, day.value);
 
-type Sheet = null | 'menu' | 'build' | 'home' | 'shop' | 'dress' | 'arcade' | 'masmorra' | 'kart' | 'pinball' | 'gallery' | 'card-evolution' | 'farm';
+type Sheet = null | 'menu' | 'build' | 'home' | 'shop' | 'dress' | 'arcade' | 'masmorra' | 'kart' | 'pinball' | 'rift' | 'gallery' | 'card-evolution' | 'farm';
 const sheet = ref<Sheet>(null);
 /** Só saímos da tela cheia que a própria Masmorra abriu; nunca da que o usuário já estava usando. */
 let dungeonFullscreenOwner = false;
 
 /** A Masmorra substitui a Vila visualmente e também interrompe seus dois renderizadores enquanto está aberta. */
 watch(sheet, (next, previous) => {
-  if ((next === 'masmorra' || next === 'kart' || next === 'pinball') && previous !== 'masmorra' && previous !== 'kart' && previous !== 'pinball') {
+  if ((next === 'masmorra' || next === 'kart' || next === 'pinball' || next === 'rift') && previous !== 'masmorra' && previous !== 'kart' && previous !== 'pinball' && previous !== 'rift') {
     game?.stop();
     if (miniTimer) clearInterval(miniTimer);
     miniTimer = null;
-  } else if ((previous === 'masmorra' || previous === 'kart' || previous === 'pinball') && next !== 'masmorra' && next !== 'kart' && next !== 'pinball') {
+  } else if ((previous === 'masmorra' || previous === 'kart' || previous === 'pinball' || previous === 'rift') && next !== 'masmorra' && next !== 'kart' && next !== 'pinball' && next !== 'rift') {
     game?.start();
     if (!miniTimer) startMini();
     void nextTick(() => game?.resize(wrapEl.value?.clientWidth ?? 0, wrapEl.value?.clientHeight ?? 0));
@@ -551,7 +552,7 @@ function syncMusic(): void {
   const [id, title] = villageMusicTrack(date.getHours(), game?.weatherKind ?? null, Math.floor(date.getTime() / 360_000));
   musicTransition = advanceMusicTransition(musicTransition, `audio/village/${id}.mp3`, performance.now());
   musicTitle.value = title;
-  const blocked = document.hidden || !!loading.value || sheet.value === 'masmorra' || sheet.value === 'kart' || sheet.value === 'pinball' || sheet.value === 'arcade' || !!legendaryScene.value || !!hoOhWishScene.value || cutsceneOpen.value;
+  const blocked = document.hidden || !!loading.value || sheet.value === 'masmorra' || sheet.value === 'kart' || sheet.value === 'pinball' || sheet.value === 'rift' || sheet.value === 'arcade' || !!legendaryScene.value || !!hoOhWishScene.value || cutsceneOpen.value;
   music.update(transitionMusicMix(musicTransition, performance.now()), !blocked, villageAudio.enabled ? villageAudio.volume / 100 : 0);
 }
 watch([() => villageAudio.enabled, () => villageAudio.volume, sheet, () => !!legendaryScene.value, () => !!hoOhWishScene.value, cutsceneOpen, loading], syncMusic);
@@ -1384,7 +1385,7 @@ function releaseHeldKeys(): void {
 
 function onKey(e: KeyboardEvent): void {
   // A Torre e a Masmorra têm teclado próprio; a Vila não deve capturar essas teclas por trás delas.
-  if (sheet.value === 'masmorra' || sheet.value === 'kart' || sheet.value === 'pinball') return;
+  if (sheet.value === 'masmorra' || sheet.value === 'kart' || sheet.value === 'pinball' || sheet.value === 'rift') return;
   if (recapScenes.value.length) {
     if (e.type === 'keydown' && e.key === 'Escape') { e.preventDefault(); finishRecap(); }
     return;
@@ -1677,6 +1678,7 @@ function openMewStatue(): void {
         const message = meditationMessage(day, meditations.count++);
         dialog.value = { name: `✨ ${message.title}`, text: message.lines.join(' '), actions: [{ label: 'Abrir os olhos', run: closeDialog }] };
       } },
+      { label: '🌌 Atravessar a fenda', run: () => { closeDialog(); sheet.value = 'rift'; } },
       { label: 'Voltar', run: closeDialog },
     ],
   };
@@ -3898,6 +3900,10 @@ onBeforeUnmount(() => {
           </div>
         </template>
         <KartRacer v-else :player-dex-id="kartPilot" @close="closeVillageSheet" />
+      </div>
+
+      <div v-if="sheet === 'rift'" class="village-sheet torre-full" role="dialog" aria-modal="true" aria-label="Fenda do Mew">
+        <RiftGame @close="closeVillageSheet" />
       </div>
 
       <div v-if="sheet === 'masmorra'" class="village-sheet torre-full" role="dialog" aria-modal="true" aria-label="Masmorra">

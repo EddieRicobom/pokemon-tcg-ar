@@ -44,6 +44,7 @@ O projeto é totalmente estático e roda no GitHub Pages. Não há servidor pró
 | **Pins** | Disputas sem câmera numa arena com paredes e aberturas: escolha a formação, mire de tabela e empurre os adversários para fora. Tem PvP. |
 | **Torre** | Survival com ondas, treinadores, regiões, baús com itens segurados, artefatos, meta-progressão e recompensas persistentes para corridas concluídas. |
 | **Masmorra** | Descida tática por turnos em andares sem fim, com armas, gemas e fusões. A descida fica guardada no aparelho. |
+| **Fenda do Mew** | Hack-n-slash top-down com o treinador: mapa imenso além da Vila, armas da Masmorra, captura de Pokémon aliados e progressão salva. Entrada pela Estátua do Mew. |
 | **Cartas** | Box local, filtros, seleção de Vila/equipe, evolução de companheiros e entrada para a Caixa. |
 | **Treinador** | Perfil, XP, missões, moedas, conquistas, minigames e backup local ou opcional no Google Drive. |
 
