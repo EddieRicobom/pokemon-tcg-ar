@@ -18,6 +18,7 @@
 | --- | --- |
 | Arena | [ARENA_REGRAS.md](ARENA_REGRAS.md) (regras do duelo por turnos) |
 | Masmorra | [MASMORRA.md](MASMORRA.md) (feito, falta e ideias), [MASMORRA_ARTE.md](MASMORRA_ARTE.md), [ARMAS_E_FUSOES.md](ARMAS_E_FUSOES.md) |
+| Fenda do Mew | [RIFT.md](RIFT.md) (hack-n-slash, mapa, captura e save) |
 | Torre | [PROGRESSAO_TORRE.md](PROGRESSAO_TORRE.md), [TORRE_ITENS.md](TORRE_ITENS.md), [SURVIVOR_BALANCE_PRINCIPLES.md](SURVIVOR_BALANCE_PRINCIPLES.md), [SURVIVOR_REGIONS.md](SURVIVOR_REGIONS.md), [ARQUETIPOS.md](ARQUETIPOS.md) |
 | Vila | [VILLAGE_NEIGHBORHOODS.md](VILLAGE_NEIGHBORHOODS.md), [VILLAGE_SOCIAL_DIRECTOR.md](VILLAGE_SOCIAL_DIRECTOR.md) |
 | Cartas | [CARD_EVOLUTION.md](CARD_EVOLUTION.md) |
