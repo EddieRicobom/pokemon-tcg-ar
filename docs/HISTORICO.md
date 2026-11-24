@@ -5,6 +5,14 @@ O estado atual, as fases, as pendências e os riscos continuam no [plano](../IMP
 datadas (com o que foi e o que não foi validado em cada uma). A regra de validação do plano vale também para estas entradas:
 🔶 significa que **nada foi visto num celular real**.
 
+## Pinball: Pokémon do encontro na mesa e capturados no placar (24/11/2026)
+
+- **Pokémon na mesa:** cada etapa tem o seu Pokémon de encontro (Eevee 133, Riolu 447, Gengar 94, Sableye 302, Lucario 448, Dragapult 887) e dois exemplares caminham na faixa livre entre os bumpers e o painel da missão. Usam o pacote local de sprites (`Walk`, esquerda/direita), com um círculo neutro enquanto o sprite carrega.
+- **Colisão de verdade:** os bichos são sólidos — a bola quica, o Pokémon se assusta e some por um instante, e cada toque vale 400. Fora do desafio, o toque também conta como um dos 3 para abrir a etapa; no desafio de captura, conta como captura parcial (a Precisão continua valendo em dobro) e pode concluir a missão. Os objetivos e as mensagens citam «alvos ou o Pokémon».
+- **Capturados no placar:** cada captura entra numa faixa «CAPTURADOS» abaixo da etapa, com miniatura do sprite e nome, mantida até «Nova aventura». É só indicativo: não colide, não pontua de novo nem entra na Caixa. Terminar a captura pelos alvos também registra a espécie uma única vez.
+- **A mesa muda de clima:** a arte da floresta é a mesma, mas cada etapa ganha um banho de cor e partículas próprios (verde da trilha, roxo da caverna, vermelho do cume, verde-água das ruínas, laranja da forja e dourado da coroa), e o tom da etapa ficou um pouco mais forte. Com «Efeitos desligados» fica só o banho de cor, sem partículas.
+- 🔶 Typecheck, 344 arquivos / 3427 testes, build e os 14 testes de layout passaram. Conferi no navegador os dois Eevee andando, o anel de captura, a faixa com a miniatura e a troca para Riolu na etapa 2. Não testei em celular real nem todas as espécies animando.
+
 ## Vila: vida autônoma e Câmera da Vila (24/11/2026)
 
 - Os momentos sociais não esperam mais o jogador chegar perto: a cada 55–120 s a Vila escolhe um morador livre como âncora e reúne quem está perto dele (até 10 blocos), então a cena acontece em qualquer canto sem teleportar gente do outro lado do mapa. O café continua tendo prioridade quando há dois clientes por perto.

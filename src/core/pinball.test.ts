@@ -277,6 +277,64 @@ describe('pinball da Vila', () => {
     expect(s.score).toBeGreaterThan(10000);
   });
 
+  it('mostra o Pokémon do encontro passeando e troca quando a etapa muda', () => {
+    const s = createPinballState();
+    launchPinball(s);
+    stepPinball(s, { left: false, right: false }, 16);
+    expect(s.critters).toHaveLength(2);
+    expect(s.critters[0]).toMatchObject({ dexId: 133, name: 'Eevee' });
+    const before = s.critters[0]!.x;
+    stepPinball(s, { left: false, right: false }, 16);
+    expect(s.critters[0]!.x).toBeGreaterThan(before);
+    s.stage = 1;
+    stepPinball(s, { left: false, right: false }, 16);
+    expect(s.critters[0]).toMatchObject({ dexId: 447, name: 'Riolu' });
+  });
+
+  it('captura o Pokémon do encontro no desafio e avança a missão', () => {
+    const s = createPinballState();
+    launchPinball(s);
+    stepPinball(s, { left: false, right: false }, 16);
+    for (let i = 0; i < 3; i++) hitTarget(s);
+    expect(s.mode).toBe('capture');
+    const critter = s.critters[0]!;
+    for (let i = 0; i < 3; i++) {
+      critter.x = 180; critter.vx = 0;
+      critter.hiddenMs = 0; critter.cooldownMs = 0;
+      s.ball = { x: critter.x, y: critter.y - critter.r - 4, vx: 0, vy: 260 };
+      stepPinball(s, { left: false, right: false }, 16);
+      if (i < 2) expect(s.progress).toBe(i + 1);
+    }
+    expect(s.caught).toBe(1);
+    expect(s.mode).toBe('normal');
+    expect(s.stage).toBe(1);
+    expect(s.captured).toHaveLength(3);
+    expect(s.captured[0]).toMatchObject({ dexId: 133, name: 'Eevee', stage: 0 });
+  });
+
+  it('registra a espécie quando a captura termina pelos alvos', () => {
+    const s = createPinballState();
+    launchPinball(s);
+    stepPinball(s, { left: false, right: false }, 16);
+    for (let i = 0; i < 3; i++) hitTarget(s);
+    for (let i = 0; i < 3; i++) hitTarget(s);
+    expect(s.caught).toBe(1);
+    expect(s.captured).toEqual([{ dexId: 133, name: 'Eevee', stage: 0 }]);
+  });
+
+  it('a bola quica no Pokémon que passeia pela mesa', () => {
+    const s = createPinballState();
+    launchPinball(s);
+    stepPinball(s, { left: false, right: false }, 16);
+    const critter = s.critters[0]!;
+    critter.x = 180; critter.vx = 0;
+    s.ball = { x: critter.x, y: critter.y - critter.r - 7.5, vx: 0, vy: 300 };
+    stepPinball(s, { left: false, right: false }, 16);
+    expect(s.ball.vy).toBeLessThan(0);
+    expect(critter.flashMs).toBeGreaterThan(0);
+    expect(critter.hiddenMs).toBeGreaterThan(0);
+  });
+
   it('paga mais na vitória e soma capturas/evoluções, com teto', () => {
     const base = createPinballState(0);
     expect(pinballReward({ ...base, phase: 'ready' })).toBe(0);

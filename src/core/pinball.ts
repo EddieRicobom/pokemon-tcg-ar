@@ -28,12 +28,12 @@ export function pinballPartnerSkill(dexId: number): PinballPartnerSkill | null {
   return { type, typeLabel: TYPE_LABELS_PT[type], ability, ...ABILITIES[ability] };
 }
 export const PINBALL_STAGES = [
-  { title: 'Trilha da Captura', encounter: 'Treinadora Lia · Eevee', objective: 'Acerte 3 alvos para iniciar; depois, 3 para vencer o encontro.', mode: 'capture', tint: '#65dca6' },
-  { title: 'Caverna da Evolução', encounter: 'Pesquisador Davi · Riolu', objective: 'Acerte 3 alvos para iniciar; depois, 7 bumpers.', mode: 'evolution', tint: '#b08cff' },
-  { title: 'Cume do Bônus', encounter: 'Campeã Selene · Gengar', objective: 'Chefe: escudo, dois alvos e núcleo.', mode: 'bonus', tint: '#ff8a8a' },
-  { title: 'Ruínas do Tempo', encounter: 'Guardião Ébano · Sableye', objective: 'Acerte 3 alvos para iniciar; depois, 3 para vencer o encontro.', mode: 'capture', tint: '#8fd3c7' },
-  { title: 'Forja de Ferro', encounter: 'Mestre Bruno · Lucario', objective: 'Acerte 3 alvos para iniciar; depois, 7 bumpers.', mode: 'evolution', tint: '#f0b86a' },
-  { title: 'Coroa do Campeão', encounter: 'Campeão Theo · Dragapult', objective: 'Chefe final: escudo, dois alvos e núcleo.', mode: 'bonus', tint: '#ffe066' },
+  { title: 'Trilha da Captura', encounter: 'Treinadora Lia · Eevee', species: 'Eevee', dexId: 133, objective: 'Acerte 3 alvos ou o Eevee para iniciar; depois, capture 3 vezes.', mode: 'capture', tint: '#65dca6' },
+  { title: 'Caverna da Evolução', encounter: 'Pesquisador Davi · Riolu', species: 'Riolu', dexId: 447, objective: 'Acerte 3 alvos ou o Riolu para iniciar; depois, 7 bumpers.', mode: 'evolution', tint: '#b08cff' },
+  { title: 'Cume do Bônus', encounter: 'Campeã Selene · Gengar', species: 'Gengar', dexId: 94, objective: 'Chefe: escudo, dois alvos e núcleo.', mode: 'bonus', tint: '#ff8a8a' },
+  { title: 'Ruínas do Tempo', encounter: 'Guardião Ébano · Sableye', species: 'Sableye', dexId: 302, objective: 'Acerte 3 alvos ou o Sableye para iniciar; depois, capture 3 vezes.', mode: 'capture', tint: '#8fd3c7' },
+  { title: 'Forja de Ferro', encounter: 'Mestre Bruno · Lucario', species: 'Lucario', dexId: 448, objective: 'Acerte 3 alvos ou o Lucario para iniciar; depois, 7 bumpers.', mode: 'evolution', tint: '#f0b86a' },
+  { title: 'Coroa do Campeão', encounter: 'Campeão Theo · Dragapult', species: 'Dragapult', dexId: 887, objective: 'Chefe final: escudo, dois alvos e núcleo.', mode: 'bonus', tint: '#ffe066' },
 ] as const;
 export const PINBALL_BOSS_CORE = { x: 180, y: 366, r: 21 } as const;
 export const PINBALL_BOSS_PHASES = [
@@ -80,7 +80,12 @@ export interface PinballState {
   abilityUses: number;
   abilityKind: PinballAbility | null;
   abilityMs: number;
+  /** Pokémon do encontro que passeiam pela mesa; trocam junto com a etapa. */
+  critters: PinballCritter[];
+  /** Capturados nesta aventura: ficam no placar até começar outra, sem colisão nem efeito na mesa. */
+  captured: PinballCaptured[];
 }
+export interface PinballCaptured { dexId: number; name: string; stage: number }
 export interface PinballInput { left: boolean; right: boolean }
 export type PinballEvent = 'bump' | 'flipper' | 'drain' | 'launch' | 'mode' | 'reward' | 'tilt';
 
@@ -104,10 +109,30 @@ export const PINBALL_BUMPERS = [
 export const PINBALL_TARGETS = [
   { x: 76, y: 110, r: 12 }, { x: 180, y: 76, r: 12 }, { x: 284, y: 110, r: 12 },
 ] as const;
+/**
+ * O Pokémon do encontro passeia pela faixa livre entre os bumpers e o painel da missão. Ele é sólido: a bola
+ * quica nele e ele se assusta; no desafio de captura, cada toque conta como uma captura parcial.
+ */
+export const PINBALL_CRITTER_LANE = { y: 232, minX: 66, maxX: 292, r: 13 } as const;
+export interface PinballCritter {
+  dexId: number;
+  name: string;
+  x: number;
+  y: number;
+  vx: number;
+  r: number;
+  /** Enquanto escondido (assustado ou capturado), não colide nem é desenhado. */
+  hiddenMs: number;
+  /** Intervalo entre dois toques válidos no mesmo Pokémon. */
+  cooldownMs: number;
+  /** Marca visual curta no corpo ao ser atingido. */
+  flashMs: number;
+}
+
 export function pinballMissionGoal(mode: PinballMode, bossPhase = 0): number { return mode === 'evolution' ? 7 : mode === 'bonus' ? [5, 2, 2][bossPhase] ?? 2 : 3; }
 
 export function createPinballState(best = 0): PinballState {
-  return {
+  const state: PinballState = {
     phase: 'ready', stage: 0, ball: { x: 316, y: 515, vx: 0, vy: 0 }, score: 0, best: Math.max(0, best), balls: 3,
     mode: 'normal', modeMs: 0, progress: 0, charge: 0, caught: 0, evolved: 0,
     multiplier: 1, ballLevel: 1, bumperHits: 0, kickback: false, saverMs: 0,
@@ -115,7 +140,10 @@ export function createPinballState(best = 0): PinballState {
     hitCooldown: Array(PINBALL_BUMPERS.length + PINBALL_TARGETS.length).fill(0),
     flipperCooldownMs: [0, 0], laneCooldownMs: 0, laneHits: 0, combo: 0, comboMs: 0, skillShot: false,
     bossPhase: 0, bossMask: 0, bossCooldownMs: 0, abilityUses: 1, abilityKind: null, abilityMs: 0,
+    critters: [], captured: [],
   };
+  syncCritters(state);
+  return state;
 }
 
 function announce(s: PinballState, message: string): void { s.message = message; s.messageMs = 2400; }
@@ -235,14 +263,71 @@ function enterMode(s: PinballState, mode: Exclude<PinballMode, 'normal'>, events
   s.charge = 0;
   s.bossPhase = 0;
   s.bossMask = 0;
-  announce(s, mode === 'capture' ? 'Desafio de captura: acerte 3 alvos.' : mode === 'evolution' ? 'Desafio de evolução: acerte 7 bumpers.' : 'Chefe: quebre o escudo com 5 bumpers.');
+  announce(s, mode === 'capture' ? 'Desafio de captura: acerte 3 alvos ou capture o Pokémon.' : mode === 'evolution' ? 'Desafio de evolução: acerte 7 bumpers.' : 'Chefe: quebre o escudo com 5 bumpers.');
   events.push('mode');
 }
 
+/** Um toque em alvo (ou no Pokémon que passeia) abre o desafio da etapa depois de três. */
+function chargeChallenge(s: PinballState, events: PinballEvent[]): void {
+  s.charge += 1;
+  if (s.charge >= 3) enterMode(s, PINBALL_STAGES[s.stage]!.mode, events);
+  else announce(s, `${s.charge}/3 alvos para iniciar ${PINBALL_STAGES[s.stage]!.title}`);
+}
+
+/** Avanço de captura do desafio; a Precisão vale em dobro, como nos alvos. */
+function captureProgress(s: PinballState, events: PinballEvent[], amount = 1): void {
+  s.progress += amount * (s.abilityKind === 'focus' && s.abilityMs > 0 ? 2 : 1);
+  if (s.progress >= pinballMissionGoal('capture')) completeMode(s, events);
+}
+
+/** Cria o elenco do encontro quando a etapa muda; dois Pokémon iguais para a mesa não ficar parada. */
+function syncCritters(s: PinballState): void {
+  const info = PINBALL_STAGES[s.stage];
+  if (!info) return;
+  if (s.critters.length > 0 && s.critters[0]!.dexId === info.dexId) return;
+  const lane = PINBALL_CRITTER_LANE;
+  s.critters = [
+    { dexId: info.dexId, name: info.species, x: lane.minX + 18, y: lane.y, vx: 34, r: lane.r, hiddenMs: 0, cooldownMs: 0, flashMs: 0 },
+    { dexId: info.dexId, name: info.species, x: lane.maxX - 18, y: lane.y, vx: -28, r: lane.r, hiddenMs: 0, cooldownMs: 0, flashMs: 0 },
+  ];
+}
+
+/**
+ * A bola acertou um Pokémon do encontro: ele quica, se assusta e some por um instante. No desafio de captura o
+ * toque vale como captura parcial; fora dele, só pontua e atrapalha o caminho (a colisão continua valendo).
+ */
+function onCritter(s: PinballState, critter: PinballCritter, events: PinballEvent[]): void {
+  critter.cooldownMs = 350;
+  critter.flashMs = 320;
+  score(s, 400);
+  if (s.mode === 'capture') {
+    critter.hiddenMs = 1600;
+    s.captured.push({ dexId: critter.dexId, name: critter.name, stage: s.stage });
+    announce(s, `${critter.name} capturado!`);
+    captureProgress(s, events);
+  } else if (s.mode === 'normal') {
+    critter.hiddenMs = 1100;
+    announce(s, `${critter.name} assustado! +400`);
+    chargeChallenge(s, events);
+  } else {
+    critter.hiddenMs = 1100;
+    announce(s, `${critter.name} fugiu! +400`);
+  }
+  events.push('bump');
+}
+
+
 function completeMode(s: PinballState, events: PinballEvent[]): void {
   const completedMode = s.mode;
-  if (completedMode === 'capture') { s.caught += 1; score(s, 5000); announce(s, 'Captura na mesa concluída!'); }
-  else if (completedMode === 'evolution') { s.evolved += 1; score(s, 7000); announce(s, 'Evolução na mesa concluída!'); }
+  if (completedMode === 'capture') {
+    s.caught += 1;
+    // Terminar pelos alvos também conta como captura do encontro; os toques no Pokémon já anotaram a espécie.
+    if (!s.captured.some((entry) => entry.stage === s.stage)) {
+      const info = PINBALL_STAGES[s.stage]!;
+      s.captured.push({ dexId: info.dexId, name: info.species, stage: s.stage });
+    }
+    score(s, 5000); announce(s, 'Captura na mesa concluída!');
+  } else if (completedMode === 'evolution') { s.evolved += 1; score(s, 7000); announce(s, 'Evolução na mesa concluída!'); }
   else if (completedMode === 'bonus') { s.multiplier = Math.min(5, s.multiplier + 1); score(s, 10000); announce(s, `Bônus! Multiplicador ×${s.multiplier}`); }
   s.stage += 1;
   s.mode = 'normal'; s.modeMs = 0; s.progress = 0; s.charge = 0;
@@ -278,12 +363,9 @@ function onTarget(s: PinballState, index: number, events: PinballEvent[]): void 
   }
   score(s, (s.mode === 'bonus' ? 1000 : 300) * (s.abilityKind === 'focus' && s.abilityMs > 0 ? 2 : 1));
   if (s.mode === 'normal') {
-    s.charge += 1;
-    if (s.charge >= 3) enterMode(s, PINBALL_STAGES[s.stage]!.mode, events);
-    else announce(s, `${s.charge}/3 alvos para iniciar ${PINBALL_STAGES[s.stage]!.title}`);
+    chargeChallenge(s, events);
   } else if (s.mode === 'capture') {
-    s.progress += s.abilityKind === 'focus' && s.abilityMs > 0 ? 2 : 1;
-    if (s.progress >= pinballMissionGoal(s.mode)) completeMode(s, events);
+    captureProgress(s, events);
   } else if (s.mode === 'bonus' && s.bossPhase === 1) {
     const bit = 1 << index;
     if ((s.bossMask & bit) === 0) {
@@ -330,6 +412,12 @@ export function stepPinball(s: PinballState, input: PinballInput, dtMs: number):
   for (let index = 0; index < s.flipperCooldownMs.length; index++) s.flipperCooldownMs[index] = Math.max(0, (s.flipperCooldownMs[index] ?? 0) - elapsed);
   s.laneCooldownMs = Math.max(0, s.laneCooldownMs - elapsed);
   s.bossCooldownMs = Math.max(0, s.bossCooldownMs - elapsed);
+  for (const critter of s.critters) {
+    critter.cooldownMs = Math.max(0, critter.cooldownMs - elapsed);
+    critter.flashMs = Math.max(0, critter.flashMs - elapsed);
+    critter.hiddenMs = Math.max(0, critter.hiddenMs - elapsed);
+  }
+  syncCritters(s);
   const count = Math.max(1, Math.ceil(elapsed / 6));
   const dt = elapsed / count / 1000;
   for (let substep = 0; substep < count; substep++) {
@@ -386,6 +474,15 @@ export function stepPinball(s: PinballState, input: PinballInput, dtMs: number):
         events.push('bump');
         if (s.stage >= PINBALL_STAGES.length) break;
       }
+    }
+    // O Pokémon do encontro caminha pela faixa do meio e é sólido: a bola quica e, na captura, conta o toque.
+    const lane = PINBALL_CRITTER_LANE;
+    for (const critter of s.critters) {
+      if (critter.hiddenMs > 0) continue;
+      critter.x += critter.vx * dt;
+      if (critter.x < lane.minX) { critter.x = lane.minX; critter.vx = Math.abs(critter.vx); }
+      else if (critter.x > lane.maxX) { critter.x = lane.maxX; critter.vx = -Math.abs(critter.vx); }
+      if (reflectCircle(s, critter.x, critter.y, critter.r, 55) && critter.cooldownMs === 0) onCritter(s, critter, events);
     }
     if (s.stage >= PINBALL_STAGES.length) break;
     if (s.mode === 'bonus' && s.bossPhase === 2) {

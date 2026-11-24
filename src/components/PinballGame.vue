@@ -1,7 +1,11 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef, triggerRef, watch } from 'vue';
 import { activatePinballAbility, createPinballState, launchPinball, nudgePinball, pinballMissionGoal, pinballPartnerSkill, pinballReward, PINBALL_BOSS_CORE, PINBALL_BOSS_PHASES, PINBALL_BUMPERS, PINBALL_FLIPPERS, PINBALL_H, PINBALL_STAGES, PINBALL_TARGETS, PINBALL_W, stepPinball } from '../core/pinball';
-import type { PinballEvent } from '../core/pinball';
+import type { PinballEvent, PinballState } from '../core/pinball';
+import { getLocalVillageSprite, getLocalVillageSpriteDirs } from '../app/services';
+import { contentBounds } from '../village/local-sprite';
+import { framesOf } from '../village/village-game-support';
+import { frameIndexAt, type DecodedGif } from '../core/gif';
 import { addCoins } from '../app/wallet';
 import { recordEvent } from '../app/trainer-store';
 import { vibrate } from '../app/haptics';
@@ -74,6 +78,82 @@ watch([selectedPartnerId, muted, effects], () => {
 const boardArt = new Image();
 boardArt.src = `${import.meta.env.BASE_URL}art/pinball/mesa-floresta.png`;
 boardArt.onload = () => paint();
+/** Sprite do Pokémon do encontro, recortado e dimensionado para a mesa (~32 px de altura real). */
+interface CritterPose { gif: DecodedGif; frames: HTMLCanvasElement[]; drawW: number; drawH: number; cx: number; cy: number }
+interface CritterArt { left?: CritterPose; right?: CritterPose }
+const CRITTER_HEIGHT = 46;
+const critterArts = new Map<number, CritterArt | null>();
+/** Miniatura (primeiro quadro do sprite) dos capturados, só para o placar — não entra na mesa. */
+const caughtSprites = ref<Record<number, string>>({});
+
+function prepareCritterPose(gif: DecodedGif): CritterPose {
+  const { top, bottom, left, right } = contentBounds(gif);
+  const scale = CRITTER_HEIGHT / Math.max(0.001, (bottom - top) * gif.height);
+  const drawW = gif.width * scale;
+  const drawH = gif.height * scale;
+  return { gif, frames: framesOf(gif), drawW, drawH, cx: drawW * (left + right) / 2, cy: drawH * (top + bottom) / 2 };
+}
+
+function rememberCaughtSprite(dexId: number, pose: CritterPose): void {
+  if (caughtSprites.value[dexId]) return;
+  try { caughtSprites.value = { ...caughtSprites.value, [dexId]: pose.frames[0]!.toDataURL() }; } catch { /* miniatura opcional */ }
+}
+
+/** Carrega uma vez por espécie; enquanto não chega (ou se faltar), desenha a forma neutra. */
+function critterArt(dexId: number): CritterArt | null {
+  const cached = critterArts.get(dexId);
+  if (cached !== undefined) return cached;
+  critterArts.set(dexId, null);
+  void getLocalVillageSpriteDirs(dexId, false, 'Walk')
+    .then(async (dirs) => {
+      const left = dirs?.left ? prepareCritterPose(dirs.left) : undefined;
+      const right = dirs?.right ? prepareCritterPose(dirs.right) : undefined;
+      if (left || right) {
+        critterArts.set(dexId, { left, right });
+        rememberCaughtSprite(dexId, (left ?? right)!);
+        return;
+      }
+      const gif = await getLocalVillageSprite(dexId, false, 'Walk');
+      if (gif) {
+        const pose = prepareCritterPose(gif);
+        critterArts.set(dexId, { left: pose, right: pose });
+        rememberCaughtSprite(dexId, pose);
+      }
+    })
+    .catch(() => { /* a forma neutra continua valendo */ });
+  return null;
+}
+
+function drawCritters(c: CanvasRenderingContext2D, s: PinballState, time: number): void {
+  for (const critter of s.critters) {
+    if (critter.hiddenMs > 0) continue;
+    const bob = Math.sin(time / 240 + critter.x * 0.06) * 1.6;
+    const y = critter.y + bob;
+    c.beginPath(); c.ellipse(critter.x, y + 22, 14, 4.5, 0, 0, Math.PI * 2);
+    c.fillStyle = '#00271966'; c.fill();
+    const art = critterArt(critter.dexId);
+    const pose = critter.vx < 0 ? art?.left ?? art?.right : art?.right ?? art?.left;
+    const frame = pose ? pose.frames[frameIndexAt(pose.gif, time)] : undefined;
+    if (pose && frame) {
+      c.drawImage(frame, Math.round(critter.x - pose.cx), Math.round(y - pose.cy), pose.drawW, pose.drawH);
+    } else {
+      c.beginPath(); c.arc(critter.x, y, critter.r, 0, Math.PI * 2);
+      c.fillStyle = '#cfe9d8'; c.fill(); c.strokeStyle = '#2f5e4c'; c.lineWidth = 2; c.stroke();
+    }
+    if (s.mode === 'capture') {
+      c.beginPath(); c.arc(critter.x, y, critter.r + 9, 0, Math.PI * 2);
+      c.setLineDash([5, 4]); c.strokeStyle = '#7dffc4'; c.lineWidth = 2; c.stroke(); c.setLineDash([]);
+    }
+    if (critter.flashMs > 0) {
+      c.beginPath(); c.arc(critter.x, y, critter.r + 6, 0, Math.PI * 2);
+      c.strokeStyle = '#fff3a6'; c.lineWidth = 3; c.stroke();
+      c.fillStyle = '#071c2ad9'; c.beginPath(); c.roundRect(critter.x - 34, y - 38, 68, 16, 8); c.fill();
+      c.fillStyle = '#fffbe9'; c.font = 'bold 9px system-ui'; c.textAlign = 'center';
+      c.fillText(critter.name, critter.x, y - 27);
+    }
+  }
+}
+
 const trail: { x: number; y: number }[] = [];
 let frame = 0;
 let lastTime = 0;
@@ -99,6 +179,39 @@ function sound(events: PinballEvent[]): void {
   } catch { /* áudio opcional */ }
 }
 
+/** Clima de cada etapa: a arte da mesa é a mesma floresta, mas o banho de cor e as partículas mudam o suficiente para a etapa parecer outro lugar. */
+const PINBALL_STAGE_MOODS = [
+  { top: '#8dffc4', low: '#1d7a4f', spark: '#e2ffee' },
+  { top: '#c2a4ff', low: '#4a2f86', spark: '#efe3ff' },
+  { top: '#ff9c8c', low: '#7a1f2a', spark: '#ffe0c8' },
+  { top: '#9fe8de', low: '#256d66', spark: '#d8fff7' },
+  { top: '#ffc978', low: '#8a4516', spark: '#fff0bd' },
+  { top: '#ffe98f', low: '#7c5c14', spark: '#fff8cf' },
+] as const;
+
+function drawStageMood(c: CanvasRenderingContext2D, stage: number, time: number): void {
+  const mood = PINBALL_STAGE_MOODS[stage] ?? PINBALL_STAGE_MOODS[0]!;
+  c.save();
+  c.beginPath(); c.rect(22, 33, 316, 536); c.clip();
+  if (effects.value) {
+    const wash = c.createLinearGradient(0, 33, 0, 569);
+    wash.addColorStop(0, `${mood.top}40`); wash.addColorStop(0.45, `${mood.top}0d`); wash.addColorStop(1, `${mood.low}66`);
+    c.fillStyle = wash; c.fillRect(22, 33, 316, 536);
+    c.fillStyle = mood.spark;
+    for (let i = 0; i < 10; i++) {
+      const rise = (time * (0.000018 + (i % 3) * 0.000008) + i * 0.137) % 1;
+      const x = 42 + ((i * 71) % 276);
+      const y = 552 - rise * 500;
+      c.globalAlpha = 0.1 + 0.12 * (0.5 + 0.5 * Math.sin(time / 640 + i * 1.7));
+      c.beginPath(); c.arc(x + Math.sin(time / 900 + i) * 3, y, 1.4 + (i % 3) * 0.7, 0, Math.PI * 2); c.fill();
+    }
+    c.globalAlpha = 1;
+  } else {
+    c.fillStyle = `${mood.top}22`; c.fillRect(22, 33, 316, 536);
+  }
+  c.restore();
+}
+
 function paint(): void {
   const element = canvas.value;
   const c = element?.getContext('2d');
@@ -108,6 +221,7 @@ function paint(): void {
   if (boardArt.complete && boardArt.naturalWidth) c.drawImage(boardArt, 0, 0, PINBALL_W, PINBALL_H);
   else { c.fillStyle = '#144d35'; c.fillRect(0, 0, PINBALL_W, PINBALL_H); }
   c.fillStyle = '#042d1a38'; c.fillRect(22, 33, 316, 536);
+  drawStageMood(c, s.stage, performance.now());
   c.lineCap = 'round';
   c.strokeStyle = '#fff3aa'; c.lineWidth = 5;
   c.beginPath(); c.moveTo(29, 450); c.lineTo(29, 65); c.quadraticCurveTo(180, 7, 331, 65); c.lineTo(331, 450); c.stroke();
@@ -150,6 +264,7 @@ function paint(): void {
     c.fillStyle = '#fff'; c.font = 'bold 15px system-ui'; c.fillText(active ? '★' : '◆', PINBALL_BOSS_CORE.x, PINBALL_BOSS_CORE.y + 5);
     c.font = 'bold 10px system-ui'; c.fillText(active ? 'NÚCLEO' : 'BLOQUEADO', 180, 337);
   }
+  drawCritters(c, s, performance.now());
   c.fillStyle = s.kickback ? '#fff091' : '#e0e7c2';
   c.font = 'bold 9px system-ui'; c.fillText('RESGATE', 73, 470); c.fillText('RESGATE', 270, 470);
   const ctx = c;
@@ -307,9 +422,19 @@ onBeforeUnmount(() => {
         <strong>{{ state.phase === 'won' ? 'Aventura concluída!' : state.phase === 'over' ? 'Fim da aventura' : stage?.title }}</strong>
       </div>
       <p v-if="state.phase === 'playing' && state.mode !== 'normal'">{{ state.mode === 'bonus' ? PINBALL_BOSS_PHASES[state.bossPhase]?.objective : stage?.objective }} · {{ state.progress }}/{{ pinballMissionGoal(state.mode, state.bossPhase) }} · {{ Math.ceil(state.modeMs / 1000) }}s</p>
-      <p v-else-if="state.phase === 'playing'">{{ state.charge }}/3 alvos para abrir o desafio · {{ stage?.encounter }}</p>
+      <p v-else-if="state.phase === 'playing'">{{ state.charge }}/3 toques para abrir o desafio · alvos ou {{ stage?.species }}</p>
       <p v-else>{{ stage?.encounter }} · {{ stage?.objective }}</p>
       <div class="pinball-stage-track" aria-hidden="true"><span v-for="(_, index) in PINBALL_STAGES" :key="index" :class="{ done: index < state.stage, current: index === state.stage && state.phase !== 'won' }" /></div>
+      <div v-if="state.captured.length" class="pinball-caught" role="status" :aria-label="`Capturados nesta aventura: ${state.captured.map((entry) => entry.name).join(', ')}`">
+        <small>CAPTURADOS</small>
+        <ul>
+          <li v-for="(entry, index) in state.captured" :key="`${entry.stage}-${index}`" :title="entry.name">
+            <img v-if="caughtSprites[entry.dexId]" :src="caughtSprites[entry.dexId]" alt="" />
+            <b v-else aria-hidden="true">◆</b>
+            <span>{{ entry.name }}</span>
+          </li>
+        </ul>
+      </div>
     </div>
 
     <div class="pinball-board">
@@ -326,7 +451,7 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
-    <p class="pinball-message" role="status">{{ state.messageMs > 0 || state.phase !== 'playing' ? state.message : state.mode === 'normal' ? 'Acerte os alvos no topo.' : `${Math.ceil(state.modeMs / 1000)}s · ${state.mode === 'bonus' ? PINBALL_BOSS_PHASES[state.bossPhase]?.objective : state.mode === 'evolution' ? 'Acerte os bumpers' : 'Acerte os alvos'}` }}</p>
+    <p class="pinball-message" role="status">{{ state.messageMs > 0 || state.phase !== 'playing' ? state.message : state.mode === 'normal' ? `Acerte os alvos no topo ou o ${stage?.species ?? 'Pokémon'} que passeia.` : `${Math.ceil(state.modeMs / 1000)}s · ${state.mode === 'bonus' ? PINBALL_BOSS_PHASES[state.bossPhase]?.objective : state.mode === 'evolution' ? 'Acerte os bumpers' : `Capture o ${stage?.species ?? 'Pokémon'} (${state.progress}/${pinballMissionGoal(state.mode, state.bossPhase)})`}` }}</p>
 
     <div class="pinball-controls">
       <button type="button" class="pinball-flip" aria-label="Flipper esquerdo" @pointerdown.prevent="pressFlipper($event, 'left')" @pointerup="releaseFlipper('left')" @pointercancel="releaseFlipper('left')" @lostpointercapture="releaseFlipper('left')">◀</button>
@@ -369,7 +494,8 @@ onBeforeUnmount(() => {
 .pinball-icon{width:34px;height:34px;flex:none;padding:0;border:1px solid #d9b664;border-radius:10px;background:linear-gradient(#245646,#163c36);color:#fff8df;font:800 1rem system-ui;box-shadow:0 2px 0 #08251e}
 .pinball-stagebar{display:grid;gap:3px;padding:5px 9px;border:1px solid #a88d50;border-radius:11px;background:#082b29d9;text-align:left}.pinball-stage-line{display:flex;align-items:baseline;gap:7px;min-width:0}.pinball-stage-line small{flex:none;font-size:.55rem;letter-spacing:.1em;font-weight:800;color:var(--stage-tint)}.pinball-stage-line strong{overflow:hidden;font-size:.9rem;white-space:nowrap;text-overflow:ellipsis;color:#ffe39a}.pinball-stagebar p{margin:0;font-size:.7rem;line-height:1.3;color:#fff3cd}
 .pinball-stage-track{display:flex;gap:5px;max-width:300px}.pinball-stage-track span{height:5px;flex:1;border-radius:9px;background:#395851}.pinball-stage-track span.current{background:#f9c449}.pinball-stage-track span.done{background:#65dca6}
-.pinball-board{position:relative;flex:1 1 auto;min-height:0;display:grid;place-items:center}.pinball-table{position:relative;height:100%;max-width:100%;aspect-ratio:3/5;border-radius:16px;overflow:hidden;box-shadow:0 10px 38px #0009,0 0 0 3px #eabb45;background:#124d33}.pinball-table canvas{display:block;width:100%;height:100%}.pinball-tint{position:absolute;inset:0;pointer-events:none;background:var(--stage-tint);opacity:.1;mix-blend-mode:screen}.pinball-launch{position:absolute;left:18%;top:64%;width:64%;min-height:40px;border:2px solid #fff1a0;border-radius:12px;background:linear-gradient(#f9dd63,#ce9025);color:#43240e;font:900 .95rem system-ui;box-shadow:0 3px 0 #753f16;cursor:pointer}.pinball-reward{position:absolute;left:50%;bottom:12px;transform:translateX(-50%);margin:0;padding:5px 11px;border-radius:999px;background:#08231ee8;border:1px solid #ffe39a;color:#ffe9b2;font-size:.78rem;font-weight:800;white-space:nowrap}
+.pinball-caught{display:flex;align-items:center;gap:6px;min-width:0}.pinball-caught>small{flex:none;font-size:.52rem;letter-spacing:.08em;font-weight:800;color:#9fe8c5}.pinball-caught ul{display:flex;gap:4px;margin:0;padding:0 1px 1px;overflow-x:auto;list-style:none;scrollbar-width:none}.pinball-caught ul::-webkit-scrollbar{display:none}.pinball-caught li{display:inline-flex;align-items:center;gap:3px;flex:none;max-width:92px;padding:1px 6px 1px 2px;border:1px solid #5f9276;border-radius:999px;background:#0b3a2ee6;color:#e9ffe9;font-size:.58rem;font-weight:800;white-space:nowrap}.pinball-caught li img{width:auto;height:22px;image-rendering:pixelated}.pinball-caught li b{display:grid;width:18px;height:18px;place-items:center;color:#ffd76a}.pinball-caught li span{overflow:hidden;text-overflow:ellipsis}
+.pinball-board{position:relative;flex:1 1 auto;min-height:0;display:grid;place-items:center}.pinball-table{position:relative;height:100%;max-width:100%;aspect-ratio:3/5;border-radius:16px;overflow:hidden;box-shadow:0 10px 38px #0009,0 0 0 3px #eabb45;background:#124d33}.pinball-table canvas{display:block;width:100%;height:100%}.pinball-tint{position:absolute;inset:0;pointer-events:none;background:var(--stage-tint);opacity:.14;mix-blend-mode:screen}.pinball-launch{position:absolute;left:18%;top:64%;width:64%;min-height:40px;border:2px solid #fff1a0;border-radius:12px;background:linear-gradient(#f9dd63,#ce9025);color:#43240e;font:900 .95rem system-ui;box-shadow:0 3px 0 #753f16;cursor:pointer}.pinball-reward{position:absolute;left:50%;bottom:12px;transform:translateX(-50%);margin:0;padding:5px 11px;border-radius:999px;background:#08231ee8;border:1px solid #ffe39a;color:#ffe9b2;font-size:.78rem;font-weight:800;white-space:nowrap}
 .pinball-message{min-height:1.1em;margin:0;color:#ffe28a;font-size:.84rem;font-weight:800;text-shadow:0 1px #0a2420;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .pinball-controls{display:grid;grid-template-columns:1fr auto 1fr;align-items:stretch;gap:8px}.pinball-flip{min-height:58px;border:2px solid #ffe39a;border-radius:15px;background:linear-gradient(#ed7566,#bc3e43);color:white;font:800 1.4rem system-ui;box-shadow:0 4px 0 #67232b;touch-action:none;user-select:none}.pinball-flip:active{background:#ffa268;transform:translateY(3px);box-shadow:0 1px 0 #67232b}
 .pinball-middle{display:grid;grid-template-rows:1fr auto;gap:3px;min-width:96px}.pinball-ability{min-height:34px;padding:3px 6px;border:1px solid #ffe39a;border-radius:9px;background:#a83e43;color:#fff;font:800 .66rem system-ui}.pinball-ability:disabled{opacity:.5}.pinball-ability small{font-weight:700;opacity:.9}.pinball-tilt{display:flex;align-items:center;justify-content:center;gap:3px;margin:0;color:#ffdda1;font-size:.55rem;font-weight:800}.pinball-tilt span{width:7px;height:7px;border-radius:50%;background:#395851}.pinball-tilt span.on{background:#f9c449;box-shadow:0 0 5px #f9c449}.pinball-tilt.locked{color:#ff9d9d}.pinball-tilt.locked span{background:#bc3e43}.pinball-tilt b{margin-left:3px;font-size:.55rem;font-weight:800}
