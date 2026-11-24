@@ -386,6 +386,15 @@ describe('pinball da Vila', () => {
     expect(letters.bonusKind).toBe('fire');
   });
 
+  it('a bola não fica presa na entrada direita da mesa', () => {
+    const s = createPinballState();
+    launchPinball(s);
+    s.saverMs = 0;
+    s.ball = { x: 293, y: 451, vx: 0, vy: 0 };
+    for (let i = 0; i < 400 && s.phase === 'playing'; i++) stepPinball(s, { left: false, right: false }, 16);
+    expect(Math.hypot(s.ball.x - 293, s.ball.y - 451) > 24 || s.phase !== 'playing').toBe(true);
+  });
+
   it('paga mais na vitória e soma capturas/evoluções, com teto', () => {
     const base = createPinballState(0);
     expect(pinballReward({ ...base, phase: 'ready' })).toBe(0);

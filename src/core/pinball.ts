@@ -8,19 +8,19 @@ export const PINBALL_H = 600;
 const BALL_R = 7;
 /** Passo fixo da simulação (250 Hz): a bola nunca anda mais que ~5 px por passo, então não atravessa paredes. */
 const SUBSTEP_MS = 4;
-const GRAVITY = 820;
-const MAX_SPEED = 1250;
+const GRAVITY = 680;
+const MAX_SPEED = 950;
 const ROLL_DRAG = 0.12;
 const SPIN_CURVE = 58;
 const MAX_SPIN = 1;
-const BUMPER_MIN_KICK = 420;
-const TARGET_MIN_KICK = 260;
-const CRITTER_MIN_KICK = 240;
-const CORE_MIN_KICK = 320;
+const BUMPER_MIN_KICK = 360;
+const TARGET_MIN_KICK = 230;
+const CRITTER_MIN_KICK = 220;
+const CORE_MIN_KICK = 290;
 export const PINBALL_FLIPPER_LENGTH = 58;
 const FLIPPER_RADIUS = 6;
-const FLIPPER_UP_SPEED = 22;
-const FLIPPER_DOWN_SPEED = 13;
+const FLIPPER_UP_SPEED = 20;
+const FLIPPER_DOWN_SPEED = 12;
 const FLIPPER_REST_ANGLE = [0.30, Math.PI - 0.30] as const;
 const FLIPPER_UP_ANGLE = [-0.47, Math.PI + 0.47] as const;
 const MAX_EXTRA_BALLS = 9;
@@ -244,7 +244,7 @@ function score(s: PinballState, points: number): void {
 export function launchPinball(s: PinballState): boolean {
   if (s.phase !== 'ready' && s.phase !== 'between') return false;
   s.phase = 'playing';
-  s.ball = { x: 316, y: 515, vx: -24, vy: -960 };
+  s.ball = { x: 316, y: 515, vx: -24, vy: -820 };
   s.saverMs = 7000;
   s.skillShot = true;
   s.abilityUses = 1;
@@ -624,6 +624,8 @@ export function stepPinball(s: PinballState, input: PinballInput, dtMs: number):
     if (b.y < 33 + BALL_R) { b.y = 33 + BALL_R; b.vy = Math.abs(b.vy) * 0.86; s.spin *= 0.8; }
     // A canaleta do lançador só se abre no topo, levando a bola para a mesa.
     if (b.x > 300 + BALL_R && b.y < 155 && b.vy < 0) b.vx = Math.min(b.vx, -270);
+    // Uma via de saída: a bola não volta para a canaleta nem fica presa no canto direito.
+    if (b.x > 300 + BALL_R && b.y < 168) b.vx = Math.min(b.vx, -230);
     if (b.y > 165 && b.y < 520 && b.x > 300 - BALL_R && b.x < 300 + BALL_R) {
       if (b.vx > 0) { b.x = 300 - BALL_R; b.vx = -Math.abs(b.vx) * 0.78; }
       else if (b.vx < 0) { b.x = 300 + BALL_R; b.vx = Math.abs(b.vx) * 0.78; }
@@ -633,8 +635,8 @@ export function stepPinball(s: PinballState, input: PinballInput, dtMs: number):
       const rail = reflectSegment(s, 74, 458, 100, 522, 3, 0.58);
       if (rail.hit && b.vy > 0) b.vx += 35;
     }
-    if (b.y > 452 && b.y < 540 && b.x > 256 && b.x < 295) {
-      const rail = reflectSegment(s, 286, 458, 260, 522, 3, 0.58);
+    if (b.y > 450 && b.y < 540 && b.x > 258 && b.x < 300) {
+      const rail = reflectSegment(s, 274, 456, 266, 500, 3, 0.58);
       if (rail.hit && b.vy > 0) b.vx -= 35;
     }
     // Slingshots abaixo dos bumpers mantêm a bola em movimento.
