@@ -40,7 +40,7 @@ describe('loadout da Vila no motor do Survival', () => {
 
   it('tudo no máximo respeita os tetos combinados', () => {
     const loadout = maxed();
-    expect(loadout.maxHpBonus).toBe(20);
+    expect(loadout.maxHpBonus).toBe(30);
     expect(loadout.defenseBonus).toBe(15);
     expect(loadout.speedBonus).toBeCloseTo(0.06);
     expect(loadout.pickupBonus).toBeCloseTo(0.15);
@@ -49,7 +49,7 @@ describe('loadout da Vila no motor do Survival', () => {
     expect(loadout.firstOfferExtraChoices).toBe(1);
     const base = createSurvivorState(5, { kindCount: 4 }).player;
     const trained = createSurvivorState(5, { kindCount: 4, loadout }).player;
-    expect(trained.maxHp).toBe(base.maxHp + 20);
+    expect(trained.maxHp).toBe(base.maxHp + 30);
     expect(trained.hp).toBe(trained.maxHp);
     expect(trained.speed).toBeCloseTo(base.speed * 1.06);
     expect(trained.pickupRadius).toBeCloseTo(base.pickupRadius * 1.15);
@@ -61,7 +61,7 @@ describe('loadout da Vila no motor do Survival', () => {
   it('funciona igual no BONK, que usa o mesmo estado', () => {
     const state = createSurvivorState(5, { kindCount: 4, bonk: true, loadout: maxed() });
     expect(state.player.bonkMode).toBe(true);
-    expect(state.player.maxHp).toBe(120);
+    expect(state.player.maxHp).toBe(130);
     expect(state.bansLeft).toBe(3);
   });
 
@@ -76,7 +76,7 @@ describe('loadout da Vila no motor do Survival', () => {
   });
 
   it('o resumo lista só o que de fato entrou', () => {
-    expect(maxed().summary.join('|')).toContain('Fôlego: +20');
+    expect(maxed().summary.join('|')).toContain('Fôlego: +30');
     expect(towerLoadout(emptyTower(), { pure: false, luck: false, lunch: null }).trained).toBe(false);
     expect(towerLoadout(emptyTower(), { pure: false, luck: true, lunch: null }).trained).toBe(true);
   });

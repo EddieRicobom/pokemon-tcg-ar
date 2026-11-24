@@ -99,7 +99,7 @@ import type { DecodedGif } from '../core/gif';
 import { firstSpriteFrame, frameIndex, polishedFrame, survivorSpritePose, SURVIVOR_TILE_PX, toSprite } from '../village/survivor-sprite';
 import type { Sprite, SpriteAsset } from '../village/survivor-sprite';
 import { SoundEngine } from '../box/sound';
-import { survivorMigrationRemainingMs, survivorRegionLabel } from '../core/survivor-regions';
+import { survivorMigrationRemainingMs, survivorRegionLabel, survivorWeatherAt } from '../core/survivor-regions';
 import { survivorBiomeAt, survivorBiomeLabel } from '../core/survivor-biomes';
 import { resolveSurvivorLandscapeMove, unstickSurvivorItems } from '../core/survivor-collision';
 import { createSurvivorVegetation } from '../core/survivor-vegetation';
@@ -887,6 +887,21 @@ function cancelChargePointer(event: PointerEvent): void {
 const cinemaMotion = computed(() => effectiveVisual.value.impactFx && !reducedMotion && !effectiveVisual.value.rotomMode);
 const cinemaCam = createCinemaCamera();
 const killStreak = createKillStreak();
+/** Chefe mais próximo em campo, para a barra grande do HUD. */
+const bossBar = computed(() => {
+  const s = state.value;
+  if (!s) return null;
+  const bosses = s.enemies.filter((enemy) => enemy.hp > 0 && (enemy.boss || enemy.grade === 'chefao' || enemy.shadowBoss));
+  if (!bosses.length) return null;
+  const target = bosses.reduce((best, enemy) => Math.hypot(enemy.x - s.player.x, enemy.y - s.player.y) < Math.hypot(best.x - s.player.x, best.y - s.player.y) ? enemy : best, bosses[0]!);
+  return {
+    name: target.dexId ? speciesName(target.dexId) : 'Chefe',
+    pct: Math.max(0, Math.min(100, (target.hp / Math.max(1, target.maxHp)) * 100)),
+    hp: Math.max(0, Math.ceil(target.hp)),
+    maxHp: Math.ceil(target.maxHp),
+    shadow: target.shadowBoss === true,
+  };
+});
 function cinemaBeat(beat: CinemaBeat): void {
   if (cinemaMotion.value) triggerCinema(cinemaCam, beat);
 }
@@ -2711,6 +2726,42 @@ const cinemaLights: CinemaLight[] = [];
 const impactSparks = new ImpactSparks();
 let seenImpactFx = new WeakSet<object>();
 
+/** Clima decorativo da geração atual: não altera dano, surto nem RNG. */
+function drawWeather(c: CanvasRenderingContext2D, w: number, h: number, elapsedMs: number, runSeed: number, now: number): void {
+  if (!effectiveVisual.value.impactFx || reducedMotion || effectiveVisual.value.rotomMode) return;
+  const region = survivorRegionAt(elapsedMs, runSeed).current;
+  const kind = survivorWeatherAt(elapsedMs, runSeed);
+  const count = kind === 'rain' ? 42 : 26;
+  c.save();
+  for (let i = 0; i < count; i++) {
+    const seed = i * 97.13 + region * 31.7;
+    const speed = kind === 'rain' ? 0.55 : kind === 'snow' ? 0.05 : 0.07;
+    const drift = Math.sin(now / 1100 + i * 1.7 + region) * (kind === 'rain' ? 2 : 14);
+    const x = ((seed * 13.7 + drift) % (w + 40) + w + 40) % (w + 40) - 20;
+    const y = ((seed * 7.3 + now * speed) % (h + 30) + h + 30) % (h + 30) - 15;
+    if (kind === 'rain') {
+      c.globalAlpha = 0.18; c.strokeStyle = '#bfe6ff'; c.lineWidth = 1;
+      c.beginPath(); c.moveTo(x, y); c.lineTo(x - 2, y + 9); c.stroke();
+    } else if (kind === 'snow') {
+      c.globalAlpha = 0.6; c.fillStyle = '#fff'; c.fillRect(x, y, 2, 2);
+    } else if (kind === 'petals') {
+      c.globalAlpha = 0.5; c.fillStyle = '#ffb7d5';
+      c.beginPath(); c.ellipse(x, y, 3, 1.6, now / 900 + i, 0, Math.PI * 2); c.fill();
+    } else if (kind === 'sand') {
+      c.globalAlpha = 0.3; c.fillStyle = '#e8d6a8'; c.fillRect(x, y, 2, 1);
+    } else if (kind === 'dust') {
+      c.globalAlpha = 0.2; c.fillStyle = '#d8d0c0'; c.fillRect(x, y, 1.5, 1.5);
+    } else if (kind === 'mist') {
+      c.globalAlpha = 0.05; c.fillStyle = '#dfe8ff';
+      c.beginPath(); c.arc(x, y, 18, 0, Math.PI * 2); c.fill();
+    } else {
+      c.globalAlpha = 0.45; c.fillStyle = region === 1 ? '#e0a34a' : '#9fe08a';
+      c.beginPath(); c.ellipse(x, y, 3, 1.5, now / 700 + i, 0, Math.PI * 2); c.fill();
+    }
+  }
+  c.restore();
+}
+
 function draw(): void {
   if (!ctx || !canvasEl.value || !state.value) return;
   // O motor escreve no objeto cru (ver `loop`); o proxy do Vue só custava leituras e escritas a mais no desenho.
@@ -2721,6 +2772,7 @@ function draw(): void {
   const cine = cinemaFrame(cinemaCam, animMs);
   if (bonkRun.value && bonkPhysics.value) {
     drawBonkScene(s, bonkPhysics.value);
+    drawWeather(ctx, view.w, view.h, s.elapsedMs, s.runSeed, animMs);
     drawCinemaOverlay(s, view.w, view.h, cine);
     return;
   }
@@ -3220,6 +3272,7 @@ function draw(): void {
     drawLights(ctx, cinemaLights);
   }
   ctx.restore();
+  drawWeather(ctx, VIEW_W, VIEW_H, s.elapsedMs, s.runSeed, animMs);
   drawCinemaOverlay(s, VIEW_W, VIEW_H, cine);
 }
 
@@ -4772,6 +4825,10 @@ onBeforeUnmount(() => {
             <span class="survivor-action-dock">
               <button type="button" class="chip survivor-menu-btn" :aria-label="hudExpanded ? 'Fechar menu da Torre e retomar' : 'Abrir menu da Torre: pausa, informações e opções'" :title="hudExpanded ? 'Fechar menu da Torre e retomar' : 'Abrir menu da Torre: pausa, informações e opções'" :aria-expanded="hudExpanded" aria-controls="survivor-info-panel" @pointerdown.stop @click.stop="toggleHudMenu">{{ hudExpanded ? '✕ Fechar' : '☰ Menu' }}</button>
             </span>
+          </div>
+          <div v-if="bossBar" class="survivor-boss-bar" :class="{ shadow: bossBar.shadow, low: bossBar.pct < 25 }" role="status" aria-label="Vida do chefe">
+            <span><b>{{ bossBar.name }}</b><small>{{ bossBar.hp }}/{{ bossBar.maxHp }}</small></span>
+            <i><b :style="{ width: `${bossBar.pct}%` }" /></i>
           </div>
           <section v-if="hudExpanded" id="survivor-info-panel" class="survivor-info-panel" aria-label="Menu da Torre: pausa, informações e opções" @pointerdown.stop>
             <div v-if="!summary && !pendingUpgrade && !evolving && !specialModalOpen" class="survivor-info-actions">

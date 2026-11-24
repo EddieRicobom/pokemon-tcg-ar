@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { REGION_DURATION_MS as D, REGION_TRANSITION_MS as T, SURVIVOR_REGIONS, survivorGenerationOrder, survivorRegionAt, survivorRegionLabel } from './survivor-regions';
+import { REGION_DURATION_MS as D, REGION_TRANSITION_MS as T, SURVIVOR_REGIONS, SURVIVOR_WEATHER_BY_REGION, survivorGenerationOrder, survivorRegionAt, survivorRegionLabel, survivorWeatherAt } from './survivor-regions';
 
 describe('viagem regional da Torre', () => {
   it('sorteia uma ordem estável para a corrida e mantém o cenário até a transição', () => {
@@ -23,5 +23,17 @@ describe('viagem regional da Torre', () => {
   });
   it('normaliza tempos inválidos', () => {
     for (const t of [-1, NaN, Infinity]) expect(survivorRegionAt(t)).toEqual(survivorRegionAt(0));
+  });
+  it('cada geração tem um clima decorativo próprio, sem buracos na tabela', () => {
+    expect(SURVIVOR_WEATHER_BY_REGION).toHaveLength(SURVIVOR_REGIONS.length);
+    const seed = 4321;
+    const valid = ['leaves', 'rain', 'snow', 'dust', 'petals', 'sand', 'mist'];
+    for (let i = 0; i < SURVIVOR_REGIONS.length; i++) {
+      const weather = survivorWeatherAt(i * D, seed);
+      expect(valid).toContain(weather);
+      expect(SURVIVOR_WEATHER_BY_REGION[survivorRegionAt(i * D, seed).current]).toBe(weather);
+    }
+    expect(new Set(SURVIVOR_WEATHER_BY_REGION).size).toBeGreaterThanOrEqual(5);
+    expect(survivorWeatherAt(NaN)).toBe(survivorWeatherAt(0));
   });
 });

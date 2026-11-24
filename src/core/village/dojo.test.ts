@@ -58,6 +58,8 @@ describe('Dojô da Torre', () => {
     upgradeDojo(s); upgradeDojo(s);
     expect(buyTraining(s, 'folego').ok).toBe(true);
     expect(buyTraining(s, 'folego').ok).toBe(true);
+    expect(buyTraining(s, 'folego').ok).toBe(true);
+    expect(buyTraining(s, 'folego').ok).toBe(true);
     expect(trainingBlock(s, 'folego')).toBe('Treino no nível máximo.');
     expect(s.tower.training.folego).toBe(TRAININGS.folego.coins.length);
   });
@@ -72,12 +74,29 @@ describe('Dojô da Torre', () => {
     expect(s.tower.lessons).toEqual(['recusa', 'recusa-firme']);
   });
 
-  it('o custo total fica por volta de 15 mil moedas', () => {
+  it('o custo total inclui a lição de dez mil e fica por volta de 32 mil moedas', () => {
     const reforms = 400 + 1400 + 2800;
     const trainings = Object.values(TRAININGS).reduce((sum, t) => sum + t.coins.reduce((a, b) => a + b, 0), 0);
     const lessons = Object.values(LESSONS).reduce((sum, l) => sum + l.coins, 0);
-    expect(reforms + trainings + lessons).toBeGreaterThanOrEqual(15_000);
-    expect(reforms + trainings + lessons).toBeLessThanOrEqual(15_500);
+    expect(lessons).toBeGreaterThanOrEqual(19_500);
+    expect(reforms + trainings + lessons).toBeGreaterThanOrEqual(31_000);
+    expect(reforms + trainings + lessons).toBeLessThanOrEqual(33_000);
+  });
+
+  it('Elo de apoio custa dez mil e entrega a fração e a recarga aos apoios', () => {
+    const s = rich();
+    for (let i = 0; i < 3; i++) upgradeDojo(s);
+    expect(lessonBlock(s, 'elo-de-apoio')).toBeNull();
+    expect(lessonBlock(s, 'chamada-rapida')).toBeNull();
+    const before = s.coins;
+    expect(buyLesson(s, 'chamada-rapida').ok).toBe(true);
+    expect(buyLesson(s, 'elo-de-apoio').ok).toBe(true);
+    expect(s.coins).toBe(before - 14_500);
+    const loadout = startTowerRun(s, { pure: false }).loadout;
+    expect(loadout.supportShare).toBeCloseTo(0.35);
+    expect(loadout.supportHaste).toBeCloseTo(0.15);
+    expect(loadout.summary).toContain('Elo de apoio: apoios somam 35% do seu dano');
+    expect(startTowerRun(s, { pure: true }).loadout.supportShare).toBe(0);
   });
 
   it('desligar um treino comprado o tira da corrida; o que não foi comprado não liga', () => {
@@ -182,7 +201,7 @@ describe('estado salvo e Instrutor', () => {
     expect(restored.tower).toEqual(emptyTower());
     expect(restored.instructorId).toBeNull();
     expect(normalizeTower({ dojoLevel: 9, training: { folego: 99, nada: 3 }, lessons: ['desejo', 'desejo', 'x'], disabled: ['desejo', 'y'], lunchbox: 5 })).toEqual({
-      dojoLevel: 0, training: { folego: 4 }, lessons: ['desejo'], disabled: ['desejo'], luckDay: '', luckPending: false, lunchbox: null,
+      dojoLevel: 0, training: { folego: 6 }, lessons: ['desejo'], disabled: ['desejo'], luckDay: '', luckPending: false, lunchbox: null,
     });
   });
 
