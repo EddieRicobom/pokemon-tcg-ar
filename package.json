@@ -15,6 +15,7 @@
     "typecheck": "vue-tsc --noEmit -p tsconfig.app.json && tsc --noEmit -p tsconfig.node.json",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:layout": "playwright test e2e/ui-layout.spec.ts",
     "prepare:assets": "node scripts/copy-ocr-assets.mjs",
     "build:index": "node scripts/build-catalog-index.ts public/data/catalog-index.json",
     "build:art-index": "tsx scripts/build-art-index.ts",

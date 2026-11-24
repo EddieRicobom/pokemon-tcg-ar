@@ -1211,9 +1211,10 @@ const musicUnavailable = ref(false);
 const music = new MusicPlayer(path => `${import.meta.env.BASE_URL}${path}`, () => { musicUnavailable.value = true; });
 function syncMusic(): void {
   const s = state.value;
+  music.setChiptune(survivorAudio.chip);
   music.update(survivorMusicMix(s?.elapsedMs ?? 0, s?.runSeed ?? 0), !!s && ready.value && !s.over && !paused.value && !leaveConfirm.value && !pendingUpgrade.value && !blackChestOffer.value && !evolving.value && !document.hidden, survivorAudio.enabled ? survivorAudio.volume / 100 : 0);
 }
-watch([() => survivorAudio.enabled, () => survivorAudio.volume, ready, paused, leaveConfirm, pendingUpgrade, blackChestOffer, evolving, summary], syncMusic);
+watch([() => survivorAudio.enabled, () => survivorAudio.volume, () => survivorAudio.chip, ready, paused, leaveConfirm, pendingUpgrade, blackChestOffer, evolving, summary], syncMusic);
 function unlockMusic(): void { musicUnavailable.value = false; syncMusic(); music.unlock(); }
 type UiSound = Extract<SoundCue, { kind: 'ui' }>['cue'];
 
@@ -4925,7 +4926,7 @@ onBeforeUnmount(() => {
               <button type="button" class="survivor-auto-defer" :aria-pressed="autoDeferUpgrades" @click.stop="autoDeferUpgrades = !autoDeferUpgrades">Guardar automaticamente: {{ autoDeferUpgrades ? 'ligado' : 'desligado' }}</button>
               <small>Guarda as próximas escolhas de nível. Os itens de baú continuam com escolha imediata.</small>
             </div>
-            <MusicControls v-model:enabled="survivorAudio.enabled" v-model:volume="survivorAudio.volume" v-model:attack-sounds="survivorAudio.attackSounds" :track="survivorMusicTitle(state?.elapsedMs ?? 0, state?.runSeed ?? 0)" :unavailable="musicUnavailable" regional @unlock="unlockMusic" />
+            <MusicControls v-model:enabled="survivorAudio.enabled" v-model:volume="survivorAudio.volume" v-model:attack-sounds="survivorAudio.attackSounds" v-model:chip="survivorAudio.chip" :track="survivorMusicTitle(state?.elapsedMs ?? 0, state?.runSeed ?? 0)" :unavailable="musicUnavailable" regional @unlock="unlockMusic" />
             <p class="note">O relógio, os inimigos e os projéteis estão parados.</p>
             <p class="note">A corrida é salva automaticamente a cada 20 segundos. «Salvar e sair» guarda agora para continuar depois.</p>
             <p v-if="savedNote" class="note" role="status">{{ savedNote }}</p>
@@ -5137,7 +5138,7 @@ onBeforeUnmount(() => {
             <p v-if="pickBusy" class="note" role="status">Preparando a corrida…</p>
             <details class="survivor-more">
               <summary>Mais opções e informações</summary>
-            <details><summary>Música da Torre</summary><MusicControls v-model:enabled="survivorAudio.enabled" v-model:volume="survivorAudio.volume" v-model:attack-sounds="survivorAudio.attackSounds" :unavailable="musicUnavailable" regional @unlock="unlockMusic" /><p class="hint">As nove regiões têm temas próprios: cinco arranjos GBA e quatro temas com tratamento sonoro retrô. A troca acompanha a transição do cenário.</p></details>
+            <details><summary>Música da Torre</summary><MusicControls v-model:enabled="survivorAudio.enabled" v-model:volume="survivorAudio.volume" v-model:attack-sounds="survivorAudio.attackSounds" v-model:chip="survivorAudio.chip" :unavailable="musicUnavailable" regional @unlock="unlockMusic" /><p class="hint">As nove regiões têm temas próprios: cinco arranjos GBA e quatro temas com tratamento retrô. A troca acompanha a transição do cenário e cruza as faixas com varredura de filtro; o botão “8-bit” aplica quantização e corte de agudos em toda a trilha.</p></details>
             <p v-if="torre.runs > 0" class="note">{{ torre.runs }} corridas concluídas · melhor onda {{ torre.bestWave }} · melhor nível {{ torre.bestLevel }} · {{ recordedObjectiveCount }} desafio(s) distinto(s) registrados.</p>
             <p class="note">Cada corrida traz 3 desafios opcionais, escolhidos entre 12 pelo sorteio da própria corrida. Só contam quando ela termina.</p>
             <details class="survivor-ledger">
