@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { activatePinballAbility, createPinballState, launchPinball, nudgePinball, pinballPartnerSkill, pinballReward, PINBALL_BOSS_CORE, PINBALL_BUMPERS, PINBALL_TARGETS, stepPinball } from './pinball';
+import { activatePinballAbility, createPinballState, launchPinball, mergePinballDex, nudgePinball, pinballPartnerSkill, pinballReward, pinballStage, PINBALL_BOSS_CORE, PINBALL_BUMPERS, PINBALL_DEX_MAX, PINBALL_TARGETS, stepPinball } from './pinball';
 import type { PinballState } from './pinball';
 
 function hitTarget(s: PinballState, index = 1): void {
@@ -30,6 +30,7 @@ describe('pinball da Vila', () => {
     for (let i = 0; i < 200; i++) {
       stepPinball(s, { left: i % 2 === 0, right: i % 3 === 0 }, 16);
       expect(Number.isFinite(s.ball.x) && Number.isFinite(s.ball.y)).toBe(true);
+      expect(Number.isFinite(s.spin)).toBe(true);
       if (s.phase === 'between') launchPinball(s);
     }
     expect(s.best).toBeGreaterThanOrEqual(500);
@@ -38,7 +39,7 @@ describe('pinball da Vila', () => {
   it('flipper esquerdo rebate a bola para cima', () => {
     const s = createPinballState();
     launchPinball(s);
-    s.ball = { x: 150, y: 490, vx: 0, vy: 120 };
+    s.ball = { x: 150, y: 524, vx: 0, vy: 40 };
     const events = stepPinball(s, { left: true, right: false }, 16);
     expect(events).toContain('flipper');
     expect(s.ball.vy).toBeLessThan(0);
@@ -95,7 +96,7 @@ describe('pinball da Vila', () => {
     expect(s.tiltLockMs).toBeLessThan(2200);
   });
 
-  it('seis etapas e dois chefes levam à vitória', () => {
+  it('a aventura continua depois da sexta etapa, sem vitória final', () => {
     const s = createPinballState();
     launchPinball(s);
     for (let i = 0; i < 6; i++) hitTarget(s);
@@ -134,7 +135,7 @@ describe('pinball da Vila', () => {
     hitTarget(s, 1);
     hitCore(s);
     hitCore(s);
-    expect(s.phase).toBe('won');
+    expect(s.phase).toBe('playing');
     expect(s.stage).toBe(6);
     expect(s.multiplier).toBe(3);
     expect(launchPinball(s)).toBe(false);
@@ -257,24 +258,132 @@ describe('pinball da Vila', () => {
     expect(s.caught).toBe(1);
   });
 
-  it('partida guiada atravessa os seis encontros e vence os dois chefes', () => {
+  it('partida guiada atravessa os seis encontros e segue na aventura infinita', () => {
     const s = createPinballState();
     launchPinball(s);
-    // Campanha longa na bancada: bolas de sobra para a partida guiada não terminar antes do chefe final.
+    // Campanha longa na bancada: bolas de sobra para a partida guiada chegar ao sétimo encontro.
     s.balls = 99;
     let frames = 0;
-    while (s.phase !== 'over' && s.phase !== 'won' && frames < 15000) {
-      stepPinball(s, { left: s.ball.x < 180 && s.ball.y > 460, right: s.ball.x >= 180 && s.ball.y > 460 }, 16);
+    while (s.stage < 6 && s.phase !== 'over' && frames < 15000) {
+      const press = s.ball.y > 500 && s.ball.vy > 0;
+      stepPinball(s, { left: press && s.ball.x < 180, right: press && s.ball.x >= 180 }, 16);
       if (s.phase === 'between') launchPinball(s);
       expect(Number.isFinite(s.ball.x) && Number.isFinite(s.ball.y)).toBe(true);
       frames++;
     }
-    expect(s.phase).toBe('won');
+    expect(s.phase).toBe('playing');
+    expect(s.stage).toBeGreaterThanOrEqual(6);
     expect(frames).toBeGreaterThan(1000);
     expect(s.caught).toBeGreaterThanOrEqual(1);
     expect(s.evolved).toBeGreaterThanOrEqual(1);
-    expect(s.bossPhase).toBe(2);
     expect(s.score).toBeGreaterThan(10000);
+  });
+
+  it('mostra o Pokémon do encontro passeando e troca quando a etapa muda', () => {
+    const s = createPinballState();
+    launchPinball(s);
+    stepPinball(s, { left: false, right: false }, 16);
+    expect(s.critters).toHaveLength(2);
+    expect(s.critters[0]).toMatchObject({ dexId: 133, name: 'Eevee' });
+    const before = s.critters[0]!.x;
+    stepPinball(s, { left: false, right: false }, 16);
+    expect(s.critters[0]!.x).toBeGreaterThan(before);
+    s.stage = 1;
+    stepPinball(s, { left: false, right: false }, 16);
+    expect(s.critters[0]).toMatchObject({ dexId: 447, name: 'Riolu' });
+  });
+
+  it('captura o Pokémon do encontro no desafio e avança a missão', () => {
+    const s = createPinballState();
+    launchPinball(s);
+    stepPinball(s, { left: false, right: false }, 16);
+    for (let i = 0; i < 3; i++) hitTarget(s);
+    expect(s.mode).toBe('capture');
+    const critter = s.critters[0]!;
+    for (let i = 0; i < 3; i++) {
+      critter.x = 180; critter.vx = 0;
+      critter.hiddenMs = 0; critter.cooldownMs = 0;
+      s.ball = { x: critter.x, y: critter.y - critter.r - 4, vx: 0, vy: 260 };
+      stepPinball(s, { left: false, right: false }, 16);
+      if (i < 2) expect(s.progress).toBe(i + 1);
+    }
+    expect(s.caught).toBe(1);
+    expect(s.mode).toBe('normal');
+    expect(s.stage).toBe(1);
+    expect(s.captured).toHaveLength(3);
+    expect(s.captured[0]).toMatchObject({ dexId: 133, name: 'Eevee', stage: 0 });
+  });
+
+  it('registra a espécie quando a captura termina pelos alvos', () => {
+    const s = createPinballState();
+    launchPinball(s);
+    stepPinball(s, { left: false, right: false }, 16);
+    for (let i = 0; i < 3; i++) hitTarget(s);
+    for (let i = 0; i < 3; i++) hitTarget(s);
+    expect(s.caught).toBe(1);
+    expect(s.captured).toEqual([{ dexId: 133, name: 'Eevee', stage: 0 }]);
+  });
+
+  it('a bola quica no Pokémon que passeia pela mesa', () => {
+    const s = createPinballState();
+    launchPinball(s);
+    stepPinball(s, { left: false, right: false }, 16);
+    const critter = s.critters[0]!;
+    critter.x = 180; critter.vx = 0;
+    s.ball = { x: critter.x, y: critter.y - critter.r - 7.5, vx: 0, vy: 300 };
+    stepPinball(s, { left: false, right: false }, 16);
+    expect(s.ball.vy).toBeLessThan(0);
+    expect(critter.flashMs).toBeGreaterThan(0);
+    expect(critter.hiddenMs).toBeGreaterThan(0);
+  });
+
+  it('depois da sexta etapa percorre a Pokédex inteira sem repetir espécie', () => {
+    const ids = new Set<number>();
+    for (let i = 0; i < PINBALL_DEX_MAX; i++) ids.add(pinballStage(6 + i).dexId);
+    expect(ids.size).toBe(PINBALL_DEX_MAX);
+    expect(pinballStage(6)).toMatchObject({ mode: 'capture', dexId: 1, species: 'Bulbasaur' });
+    expect(pinballStage(7).mode).toBe('evolution');
+    expect(pinballStage(8).mode).toBe('bonus');
+    expect(pinballStage(6).title).toContain('2');
+  });
+
+  it('concluir a captura dá bola extra e a Pokédex do Pinball não duplica', () => {
+    const s = createPinballState();
+    launchPinball(s);
+    for (let i = 0; i < 6; i++) hitTarget(s);
+    expect(s.caught).toBe(1);
+    expect(s.balls).toBe(4);
+    expect(mergePinballDex([133, 447], [{ dexId: 133 }, { dexId: 25 }])).toEqual([25, 133, 447]);
+    expect(mergePinballDex([0, 1026], [])).toEqual([]);
+
+    const capped = createPinballState();
+    launchPinball(capped);
+    capped.balls = 9; capped.mode = 'capture'; capped.modeMs = 60_000; capped.progress = 2;
+    hitTarget(capped);
+    expect(capped.caught).toBe(1);
+    expect(capped.balls).toBe(9);
+    expect(capped.score).toBeGreaterThan(10_000);
+  });
+
+  it('bumper iluminado e sequência C-A-T concedem bônus', () => {
+    const lit = createPinballState();
+    launchPinball(lit);
+    lit.bonusSpot = 3;
+    const bumper = PINBALL_BUMPERS[3]!;
+    lit.ball = { x: bumper.x, y: bumper.y, vx: 0, vy: 0 };
+    lit.hitCooldown.fill(0);
+    stepPinball(lit, { left: false, right: false }, 16);
+    expect(lit.bonusAwards).toBe(1);
+    expect(lit.bonusKind).toBe('fire');
+    expect(lit.bonusMs).toBeGreaterThan(0);
+
+    const letters = createPinballState();
+    launchPinball(letters);
+    hitTarget(letters, 0);
+    hitTarget(letters, 1);
+    hitTarget(letters, 2);
+    expect(letters.bonusAwards).toBe(1);
+    expect(letters.bonusKind).toBe('fire');
   });
 
   it('paga mais na vitória e soma capturas/evoluções, com teto', () => {

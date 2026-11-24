@@ -5,6 +5,24 @@ O estado atual, as fases, as pendências e os riscos continuam no [plano](../IMP
 datadas (com o que foi e o que não foi validado em cada uma). A regra de validação do plano vale também para estas entradas:
 🔶 significa que **nada foi visto num celular real**.
 
+## Pinball: aventura infinita, física refinada e Pokédex do Pinball (24/11/2026)
+
+- **Pesquisa:** conferi as mecânicas no disassembly `pret/pokepinball` (GBC) e na decompilação `pret/pokepinballrs` (GBA): gravidade aplicada em forças diferentes conforme a velocidade de descida, bumpers com repique próprio, flippers com estados/ângulos, spin da bola e bola extra com teto que vira pontos. Também usei referências abertas de pinball (Visual Pinball/Rapier e simulações de canvas) para passo fixo e flipper com velocidade angular. Nada de ROM, arte ou código copiado — só as ideias de física.
+- **Física mais refinada:** passo fixo de 4 ms (250 Hz) para a bola não atravessar paredes; gravidade mais leve quando a bola já desce rápido (o arco do Pokémon Pinball); arrasto de rolagem; spin que curva a bola e nasce dos flippers/paredes; flippers são barras que giram de verdade, com a velocidade angular do ponto de contato entrando no impulso; bumpers devolvem a bola com uma força mínima de repique. O toque fraco no flipper erguido ainda sobe, mas a bola não fica quicando para sempre nele. Continua sendo física de fliperama, não simulador.
+- **Aventura infinita e Pokédex inteira:** as seis primeiras etapas continuam escritas à mão; da sétima em diante `pinballStage(n)` gera encontros que percorrem os 1025 ids da Pokédex nacional sem repetir espécie (passo coprimo), com nome vindo do dado local da Torre e sprite local quando existe. Não há mais vitória final: a aventura só acaba quando as bolas acabam.
+- **Bola extra:** concluir uma captura dá +1 bola (até 9). No limite, vira +10.000 pontos, como o bônus do original.
+- **Bônus e efeitos na bola:** o bumper inferior iluminado troca de lado a cada 7 s (e depois de cada acerto); acertá-lo dá um bônus em ciclo — fogo (pontos em dobro por 10 s), faísca (+300 por bumper por 10 s) ou proteção (resgate por 10 s). Acertar C→A→T em ordem (janela de 4 s) também concede um bônus. A bola ganha aura/rastro na cor do efeito e a etapa mostra o bônus e o tempo restante.
+- **Pokédex do Pinball:** as capturas da aventura aparecem em «CAPTURADOS» e entram numa Pokédex separada guardada no aparelho (`tcg-ar-pinball-dex-v1`), mostrada como N/1025 na barra da etapa e no menu. Não mexe na Pokédex de cartas nem na Caixa.
+- 🔶 Typecheck, 344 arquivos / 3430 testes, build e os 14 testes de layout passaram. No navegador conferi a etapa 7 com Bulbasaur, uma captura dando bola extra (3 → 4) com «Bola extra!» na mensagem, a Pokédex em 1/1025 e o aviso de bola em chamas. Não testei em celular real, todas as 1025 espécies animando nem uma aventura de 100+ etapas.
+
+## Pinball: Pokémon do encontro na mesa e capturados no placar (24/11/2026)
+
+- **Pokémon na mesa:** cada etapa tem o seu Pokémon de encontro (Eevee 133, Riolu 447, Gengar 94, Sableye 302, Lucario 448, Dragapult 887) e dois exemplares caminham na faixa livre entre os bumpers e o painel da missão. Usam o pacote local de sprites (`Walk`, esquerda/direita), com um círculo neutro enquanto o sprite carrega.
+- **Colisão de verdade:** os bichos são sólidos — a bola quica, o Pokémon se assusta e some por um instante, e cada toque vale 400. Fora do desafio, o toque também conta como um dos 3 para abrir a etapa; no desafio de captura, conta como captura parcial (a Precisão continua valendo em dobro) e pode concluir a missão. Os objetivos e as mensagens citam «alvos ou o Pokémon».
+- **Capturados no placar:** cada captura entra numa faixa «CAPTURADOS» abaixo da etapa, com miniatura do sprite e nome, mantida até «Nova aventura». É só indicativo: não colide, não pontua de novo nem entra na Caixa. Terminar a captura pelos alvos também registra a espécie uma única vez.
+- **A mesa muda de clima:** a arte da floresta é a mesma, mas cada etapa ganha um banho de cor e partículas próprios (verde da trilha, roxo da caverna, vermelho do cume, verde-água das ruínas, laranja da forja e dourado da coroa), e o tom da etapa ficou um pouco mais forte. Com «Efeitos desligados» fica só o banho de cor, sem partículas.
+- 🔶 Typecheck, 344 arquivos / 3427 testes, build e os 14 testes de layout passaram. Conferi no navegador os dois Eevee andando, o anel de captura, a faixa com a miniatura e a troca para Riolu na etapa 2. Não testei em celular real nem todas as espécies animando.
+
 ## Vila: vida autônoma e Câmera da Vila (24/11/2026)
 
 - Os momentos sociais não esperam mais o jogador chegar perto: a cada 55–120 s a Vila escolhe um morador livre como âncora e reúne quem está perto dele (até 10 blocos), então a cena acontece em qualquer canto sem teleportar gente do outro lado do mapa. O café continua tendo prioridade quando há dois clientes por perto.
