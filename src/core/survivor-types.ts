@@ -625,6 +625,10 @@ export interface SurvivorState {
   /** Apoios recrutados nesta corrida; nenhum recebe upgrades, vida ou hitbox própria. */
   supports: SurvivorSupport[];
   support: SurvivorSupport | null;
+  /** Elo de apoio (Dojô): fração do dano final do protagonista somada a cada golpe de apoio. */
+  supportShare?: number;
+  /** Chamada rápida (Dojô): fração de recarga removida dos ataques dos apoios. */
+  supportHaste?: number;
   /** Distingue a primeira oferta garantida das ofertas raras que podem voltar depois de recusadas. */
   supportCandidateGuaranteed: boolean;
   secondAttackOffered: boolean;

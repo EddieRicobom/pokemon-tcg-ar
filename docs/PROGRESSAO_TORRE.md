@@ -25,7 +25,7 @@ Três subagentes analisaram a proposta em paralelo, lendo o código real: um def
 
 | Ponto | Defensor da diversão | Guardião do desafio | Decisão |
 |---|---|---|---|
-| Fôlego | +30 HP | +15 HP | **+20 HP** (4 × 5) |
+| Fôlego | +30 HP | +15 HP | **+30 HP** (6 × 5) |
 | Postura | +20 Def/DefEsp | +15 | **+15**, em campo próprio |
 | Passada | +9% | +4% | **+6%** (3 × 2%) |
 | Faro | 46 → 70 px (+52%) | +10% | **+15%** |
@@ -33,7 +33,7 @@ Três subagentes analisaram a proposta em paralelo, lendo o código real: um def
 | Desejos no início | sem limite próprio | no máximo 2 | **no máximo 2**, e o estoque continua com teto de 3 |
 | Prato misto | 60% de cada efeito | 50% | **60%**, sem passar do teto de nenhuma família |
 | Cura da marmita | até 1,2 HP/s na corrida toda | até 30% do HP | **até 30% do HP máximo por corrida** |
-| Custo total | ≈ 7.000 moedas | sem posição | ≈ 15.000 moedas + peças (pedido do dono: progressão longa) |
+| Custo total | ≈ 7.000 moedas | sem posição | ≈ 32.000 moedas + peças (pedido do dono: progressão longa) |
 
 Pontos de consenso: o ganho tem que ser visível (resumo da corrida mostra os bônus), a corrida pura com recorde separado é obrigatória, banimento é a peça menos perigosa sozinha e a mais perigosa somada com desejos, e a árvore de compras precisa ter fim.
 
@@ -67,11 +67,11 @@ A Lente usa peixe-dourado em vez de pérola: com pérola ela custava cerca de 16
 
 ### Treinos
 
-Cada nível custa moedas e 1 peça. Os níveis 1 e 2 pedem o Tatame, o 3 pede o Dojô e o 4 pede o Dojô de pedra.
+Cada nível custa moedas e 1 peça. Os níveis 1 e 2 pedem o Tatame; o 3 pede o Dojô; do 4 ao 6, o Dojô de pedra (Postura, Passada e Faro param no nível 3).
 
 | Treino | Por nível | Máx. | Total | Moedas por nível | Peça |
 |---|---|---|---|---|---|
-| Fôlego | +5 HP máx. | 4 | +20 HP | 180 / 300 / 480 / 700 | Boneco |
+| Fôlego | +5 HP máx. | 6 | +30 HP | 180 / 300 / 480 / 700 / 1000 / 1400 | Boneco |
 | Postura | +5 Def e DefEsp | 3 | +15 | 260 / 480 / 720 | Placa |
 | Passada | +2% de velocidade | 3 | +6% | 260 / 440 / 660 | Faixa |
 | Faro | +5% de raio de coleta | 3 | +15% | 220 / 360 / 540 | Faixa |
@@ -89,6 +89,10 @@ A trilha só mexe nas escolhas de upgrade, nunca nos números do Pokémon.
 | 2 | Desejo de Jirachi | Começa a corrida com 1 desejo | Tatame | 900 + 1 Sino |
 | 3 | Recusa | 1 banimento por corrida | Dojô | 1400 + 2 Placas |
 | 4 | Recusa firme | +2 banimentos (3 no total) | Dojô de pedra | 2200 + 2 Lentes |
+| 5 | Chamada rápida | Pokémon de apoio atacam 15% mais rápido | Dojô de pedra | 4500 + 3 Faixas |
+| 6 | Elo de apoio | Cada golpe dos apoios soma 35% do dano final do seu ataque | Dojô de pedra | 10.000 + 3 Sinos |
+
+A **Chamada rápida** encurta a recarga própria dos apoios (`supportHaste` no loadout, aplicada em `attackSupport`/`stepSupportFocus`), sem mexer no dano. O **Elo de apoio** (`supportShare`) soma uma fração do `attackDamage` final do protagonista a cada golpe de apoio — projétil, feixe, trilha e rajada — então os apoios crescem junto com os upgrades do jogador em vez de ficarem defasados. Nenhum dos dois altera a vida, a hitbox ou a quantidade de apoios (o teto continua em 3 em campo, 5 na reserva).
 
 ### Banimento
 
@@ -149,17 +153,17 @@ Exemplos: Pão de mel (mel 2 + milho 1) é Doce + Grão T2. Lanche Pokébola é 
 - **Recordes**: `SurvivorRunRecord` ganha `trained: boolean` e a Torre ganha `bestPureMs` ao lado de `bestMs`. A tela mostra os dois.
 - **Objetivos, conquistas e bônus diário** continuam valendo com treino. O histórico mostra o selo "treinada". O bônus de zerar continua uma vez por dia.
 - **Modo infinito** aceita os treinos permanentes. Marmita e sorte se limitam ao começo da corrida, como descrito acima.
-- **Resumo da corrida** mostra o que estava ativo ("Treinos: +20 HP, +15 Def · Marmita: Pão de mel"). Sem isso o progresso fica invisível.
+- **Resumo da corrida** mostra o que estava ativo ("Treinos: +30 HP, +15 Def · Marmita: Pão de mel"). Sem isso o progresso fica invisível.
 
 ## Custo e ritmo
 
-Tudo comprado custa cerca de **15.200 moedas** mais as peças: 4.600 nas reformas, 5.600 nos treinos e 5.000 nas lições. É uma meta de longo prazo, por decisão do dono do projeto.
+Tudo comprado custa cerca de **32.100 moedas** mais as peças: 4.600 nas reformas, 8.000 nos treinos e 19.500 nas lições. É uma meta de longo prazo, por decisão do dono do projeto.
 
-- **Jogador casual** (corridas de 4 a 8 min, 50 a 90 moedas): cerca de 180 corridas para completar. Na prática ele também ganha moedas na Vila, então o prazo real é menor.
-- **Jogador que zera** (≈ 250 por corrida e +500 por dia): 5 a 6 semanas.
+- **Jogador casual** (corridas de 4 a 8 min, 50 a 90 moedas): cerca de 400 corridas para completar. Na prática ele também ganha moedas na Vila, então o prazo real é menor.
+- **Jogador que zera** (≈ 250 por corrida e +500 por dia): 10 a 12 semanas.
 - **Primeira compra** (Tatame + Fôlego 1 = 580 moedas): 2 corridas para quem zera, 6 a 8 para o casual. É o momento que faz o jogador sentir que valeu, então este é o preço que não deve subir mais.
 
-Os degraus finais (Dojô de pedra 2.800, Recusa firme 2.200) são o "grande objetivo" e pesam de propósito. As moedas competem com casas e móveis da Vila, o que dá peso às escolhas.
+Os degraus finais (Dojô de pedra 2.800, Recusa firme 2.200, Chamada rápida 4.500 e Elo de apoio 10.000) são o "grande objetivo" e pesam de propósito. As moedas competem com casas e móveis da Vila, o que dá peso às escolhas.
 
 ## Implementação
 
@@ -171,7 +175,7 @@ Na Vila (`VillageState`, `src/core/village/life.ts`), um bloco único normalizad
 tower: {
   dojoLevel: 0 | 1 | 2 | 3;                         // 0 sem Dojô; 1 Tatame; 2 Dojô; 3 Dojô de pedra
   training: Partial<Record<TrainingId, number>>;    // folego, postura, passada, faro
-  lessons: LessonId[];                              // olhar-treinado, desejo, recusa, recusa-firme
+  lessons: LessonId[];                              // olhar-treinado, desejo, recusa, recusa-firme, chamada-rapida, elo-de-apoio
   disabled: (TrainingId | LessonId)[];              // interruptores
   luckDay: string;                                  // último dia em que leu a carta da sorte
   luckPending: boolean;                             // 1 desejo para a próxima corrida

@@ -1871,3 +1871,28 @@ describe('quem já caiu no mesmo passo não age nem atrai golpes', () => {
     expect(Math.abs(chained?.vx ?? Infinity)).toBeLessThan(5);
   });
 });
+
+describe('lições de apoio do Dojô', () => {
+  it('o Elo de apoio soma o dano final do protagonista e a Chamada rápida encurta a recarga', () => {
+    const supportMove = as('dark', 'projetil').move;
+    const profile = attackProfile(supportMove, null);
+    const launch = (share: number, haste: number) => {
+      const s = quiet(createSurvivorState(77, { kindCount: 1 }));
+      s.supportShare = share;
+      s.supportHaste = haste;
+      const support = { dexId: 197, name: 'Apoio', move: supportMove, profile, x: s.player.x, y: s.player.y, attackTimerMs: 0, damageFactor: 0.5 };
+      s.supports = [support];
+      s.support = support;
+      s.enemies.push(dummy(900, s.player.x + 70, s.player.y));
+      stepSurvivor(s, { dx: 0, dy: 0 }, 16);
+      return { shot: s.projectiles.find((proj) => proj.source === 'support'), support, attackDamage: s.player.attackDamage };
+    };
+    const plain = launch(0, 0);
+    const taught = launch(0.35, 0.15);
+    expect(plain.shot).toBeDefined();
+    expect(plain.shot!.damage).toBeCloseTo(profile.damage * 0.5, 0);
+    expect(taught.shot!.damage).toBeCloseTo(plain.shot!.damage + plain.attackDamage * 0.35, 0);
+    expect(plain.support.attackTimerMs).toBe(Math.max(500, Math.round(profile.cooldownMs * 1.45)));
+    expect(taught.support.attackTimerMs).toBe(Math.max(500, Math.round(profile.cooldownMs * 1.45 * 0.85)));
+  });
+});

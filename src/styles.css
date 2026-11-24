@@ -8794,7 +8794,6 @@ body.no-scroll .reward-toasts {
 .survivor-upgrade-target button { padding: 6px 9px; border: 2px solid #555b58; border-radius: 5px; background: #f5f3dc; color: #252d30; }
 .survivor-upgrade-target button[aria-pressed="true"] { background: #303c3d; color: #ffe9a6; }
 
-/* Contador de abates seguidos: vive no HUD (acima do canvas), então nunca fica atrás de mapa, Menu ou AUTO. */
 .survivor-stats .chip.survivor-streak-chip {
   order: -5;
   border-color: #ffe066;
@@ -8809,3 +8808,15 @@ body.no-scroll .reward-toasts {
 .survivor-stats .chip.survivor-streak-chip.tier-3 { border-color: #ff6b70; color: #ffd9d9; }
 @keyframes survivor-streak-pop { from { transform: scale(1.35); } }
 @media (prefers-reduced-motion: reduce) { .survivor-stats .chip.survivor-streak-chip { animation: none; } }
+
+/* Vida do chefe em campo, no fluxo do HUD para não cobrir os controles. */
+.survivor-boss-bar { display: grid; gap: 2px; padding: 4px 7px; border: 2px solid #6b3a3a; border-radius: 6px; background: #1c1420e8; color: #fff; box-shadow: 2px 2px 0 #303839; }
+.survivor-boss-bar > span { display: flex; justify-content: space-between; gap: 6px; font-size: .66rem; font-weight: 800; }
+.survivor-boss-bar small { color: #ffd7b0; font-variant-numeric: tabular-nums; }
+.survivor-boss-bar i { height: 9px; overflow: hidden; border: 1px solid #ffffff22; border-radius: 5px; background: #0b0f14; }
+.survivor-boss-bar i b { display: block; height: 100%; background: linear-gradient(90deg, #dc4556, #ffb04a); }
+.survivor-boss-bar.shadow { border-color: #8a55c0; }
+.survivor-boss-bar.shadow i b { background: linear-gradient(90deg, #7d35ca, #d68cff); }
+.survivor-boss-bar.low i b { animation: survivor-boss-low .7s ease-in-out infinite alternate; }
+@keyframes survivor-boss-low { to { filter: brightness(1.5); } }
+@media (prefers-reduced-motion: reduce) { .survivor-boss-bar.low i b { animation: none; } }

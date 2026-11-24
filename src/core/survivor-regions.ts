@@ -80,3 +80,13 @@ export function survivorRegionLabel(elapsedMs: number, runSeed = 0): string {
   const region = SURVIVOR_REGIONS[current]!;
   return blend > 0 ? `${region.name} → ${SURVIVOR_REGIONS[next]!.name}` : `${region.name} · ${region.landscape}`;
 }
+
+/** Clima decorativo da geração (só desenho: não altera dano, surtos nem o RNG da corrida). */
+export type SurvivorWeather = 'leaves' | 'rain' | 'snow' | 'dust' | 'petals' | 'sand' | 'mist';
+
+/** Um clima por geração, na mesma ordem de `SURVIVOR_REGIONS`: Kanto, Johto, Hoenn, Sinnoh, Unova, Kalos, Alola, Galar, Paldea. */
+export const SURVIVOR_WEATHER_BY_REGION: readonly SurvivorWeather[] = ['leaves', 'leaves', 'rain', 'snow', 'dust', 'petals', 'sand', 'mist', 'leaves'];
+
+export function survivorWeatherAt(elapsedMs: number, runSeed = 0): SurvivorWeather {
+  return SURVIVOR_WEATHER_BY_REGION[survivorRegionAt(elapsedMs, runSeed).current] ?? 'leaves';
+}

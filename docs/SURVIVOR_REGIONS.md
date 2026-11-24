@@ -18,6 +18,8 @@ As zonas são retângulos estáveis e não bloqueiam a arena. O efeito usa a reg
 
 Dois canvases estáticos no máximo ficam em cache; a mistura usa duas imagens, sem partículas ou shaders. “Cenário regional” permite voltar ao piso simples durante a corrida. O desenho não usa o RNG de combate nem modifica o estado do motor. Assim, esta alteração não exige compensações artificiais de HP, XP ou velocidade. Fluidez em celular e equilíbrio por jogadores ainda precisam de avaliação real.
 
+Por cima do cenário, um clima decorativo acompanha a geração (`survivorWeatherAt` em `core/survivor-regions.ts`): folhas em Kanto, Johto e Paldea, chuva em Hoenn, neve em Sinnoh, poeira em Unova, pétalas em Kalos, areia em Alola e névoa em Galar. São partículas pequenas desenhadas no canvas, sem colisão, dano, coleta ou RNG; desligar efeitos, usar rotação ou redução de movimento esconde o clima sem tocar no combate. A barra de vida do chefe mais próximo aparece no HUD (nome, vida atual e máxima, cor própria para chefe sombrio), sem substituir a barra do jogador nem os avisos de onda.
+
 ## Minimapa opcional
 
 O botão “Mapa” abre um radar discreto no canto da arena. O ponto azul é o jogador, pontos vermelhos são chefes, pontos amarelos são elites e os inimigos comuns mais próximos aparecem em cinza. Um retângulo branco marca a janela visível da câmera, ajudando a localizar ameaças que ficaram fora da tela sem alterar a visão principal, o campo de visão ou a lógica de combate. O mapa pode ser desligado durante a corrida; ele é atualizado em baixa frequência e não consome o RNG da simulação.

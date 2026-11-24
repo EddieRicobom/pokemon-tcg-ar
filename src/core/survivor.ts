@@ -404,6 +404,8 @@ export function createSurvivorState(seed: number, options: CreateSurvivorOptions
     supportCandidates,
     supports: [],
     support: null,
+    supportShare: loadout.supportShare,
+    supportHaste: loadout.supportHaste,
     supportCandidateGuaranteed: false,
     secondAttackOffered: false,
     typeAffinity: options.typeAffinity ?? null,
@@ -2881,7 +2883,7 @@ function stepAutomaticAttack(state: SurvivorState, dtMs: number): void {
 function attackSupport(state: SurvivorState, support: SurvivorSupport): boolean {
   const p = state.player;
   const { move, profile } = support;
-  const damage = round1(profile.damage * support.damageFactor);
+  const damage = round1(profile.damage * support.damageFactor + playerAttackDamage(state) * (state.supportShare ?? 0));
   const range = profile.range;
   const radius = profile.radius;
   if (move.category === 'projetil' || move.category === 'foco' || move.category === 'rapido') {
@@ -2943,7 +2945,7 @@ function stepSupportFocus(state: SurvivorState, support: SurvivorSupport, dtMs: 
   const angle = Math.atan2(target.y - p.y, target.x - p.x);
   const toX = p.x + Math.cos(angle) * beam.length;
   const toY = p.y + Math.sin(angle) * beam.length;
-  const damage = round1(support.profile.damage * support.damageFactor * beam.damageMultiplier / BASIC_ATTACK_DAMAGE_FACTOR);
+  const damage = round1(support.profile.damage * support.damageFactor * beam.damageMultiplier / BASIC_ATTACK_DAMAGE_FACTOR + playerAttackDamage(state) * (state.supportShare ?? 0) * beam.damageMultiplier);
   state.vegetationImpact?.({ kind: 'sweep', x: p.x, y: p.y, toX, toY, radius: beam.halfWidth });
   let hits = 0;
   for (const e of state.enemies) {
@@ -2980,7 +2982,7 @@ function stepSupportTrail(state: SurvivorState, support: SurvivorSupport, movedP
     }
   }
   if (support.trailPath.length === 0) return;
-  const damage = round1(support.profile.damage * support.damageFactor * 0.9 / BASIC_ATTACK_DAMAGE_FACTOR);
+  const damage = round1(support.profile.damage * support.damageFactor * 0.9 / BASIC_ATTACK_DAMAGE_FACTOR + playerAttackDamage(state) * (state.supportShare ?? 0) * 0.9);
   const radius = support.profile.radius;
   const nextHit = support.trailNextHitMs;
   let hits = 0;
@@ -3892,7 +3894,7 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
       if (support.move.category === 'trilha') { stepSupportTrail(state, support, distance > 0.01 ? follow : 0, dtMs); continue; }
       if (support.move.category === 'foco') stepSupportFocus(state, support, dtMs);
       support.attackTimerMs = Math.max(0, support.attackTimerMs - dtMs);
-      if (support.attackTimerMs <= 0 && attackSupport(state, support)) support.attackTimerMs = Math.max(500, Math.round(support.profile.cooldownMs * 1.45));
+      if (support.attackTimerMs <= 0 && attackSupport(state, support)) support.attackTimerMs = Math.max(500, Math.round(support.profile.cooldownMs * 1.45 * (1 - (state.supportHaste ?? 0))));
     }
     const firstSupport = state.supports[0];
     if (firstSupport) p.secondAttackTimerMs = firstSupport.attackTimerMs;

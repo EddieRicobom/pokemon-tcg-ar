@@ -5,6 +5,13 @@ O estado atual, as fases, as pendências e os riscos continuam no [plano](../IMP
 datadas (com o que foi e o que não foi validado em cada uma). A regra de validação do plano vale também para estas entradas:
 🔶 significa que **nada foi visto num celular real**.
 
+## Chão da Vila, clima da Torre e novas lições do Dojô (24/11/2026)
+
+- **Chão da Vila**: uma passada nova de detalhes (`village/village-ground-detail.ts`) é pintada uma vez no chão pré-renderizado, por cima do atlas: fio de grama e trevo, florzinhas de três cores, pedrinhas, grão fino contra a repetição do ladrilho, cascalho e rachaduras na trilha, musgo e sombra de contato nas emendas, areia molhada e ondulações na praia, franja de grama invadindo a calçada, folhas caídas e cogumelos sob árvores e arbustos. Manchas suaves de sol e sombra (ruído de valor interpolado) quebram o verde uniforme. Nada disso muda a colisão: é só o desenho do chão, que continua sendo pixel art em 1 px por pixel de bloco.
+- **Torre**: clima decorativo por geração (`survivorWeatherAt`): folhas, chuva, neve, poeira, pétalas, areia ou névoa, desenhado por cima do BONK e da vista de cima com os mesmos guardas de efeitos/rotação/redução de movimento. Barra de vida do chefe mais próximo no HUD, com cor própria para chefe sombrio e pulso quando cai abaixo de 25%. Nada disso toca dano, surtos ou RNG (`survivor-regions.test.ts` cobre o clima por geração).
+- **Dojô**: Fôlego foi a seis níveis (+30 HP) e duas lições novas fecham a árvore: **Chamada rápida** (apoios atacam 15% mais rápido) e **Elo de apoio** (cada golpe de apoio soma 35% do dano final do ataque do protagonista), por 4.500 e 10.000 moedas. A trilha completa passa a custar cerca de 32.100 moedas, e `docs/PROGRESSAO_TORRE.md` foi atualizado com os custos, limites e o efeito de cada uma.
+- 🔶 Typecheck, 339 arquivos / 3391 testes e build passaram. Conferido no navegador do PC: chão da Vila com os detalhes novos em 1× e ampliado, grama sem emenda visível, franja e sombra nas bordas da calçada, e a corrida BONK iniciando com o clima e o HUD normais. Não testei em celular real, nem o clima em todas as gerações, nem a nova barra de chefe com um chefe sombrio de verdade.
+
 ## Survival: encontros de campo (01/11/2026)
 
 - A Torre ganhou encontros opcionais de campo a cada 75 s. A Ressonância marca uma baliza por 22 s: chegar nela rende 12 s de poder e velocidade e quatro orbes reais. A Caçada marca outra baliza: ao alcançá-la, dois elites nascem; só depois que ambos caem, dois artefatos reais aparecem. Ignorar uma baliza não pune a corrida.

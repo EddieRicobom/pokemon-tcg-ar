@@ -20,6 +20,10 @@ export interface TowerLoadout {
   speedBonus: number;
   /** Fração somada ao alcance de coleta de orbes. */
   pickupBonus: number;
+  /** Fração do dano final do ataque do protagonista somada a cada golpe dos apoios. */
+  supportShare: number;
+  /** Fração de recarga removida dos ataques dos apoios. */
+  supportHaste: number;
   /** Cartas a mais só na primeira oferta de upgrade. */
   firstOfferExtraChoices: number;
   startingRerolls: number;
@@ -32,7 +36,7 @@ export interface TowerLoadout {
 }
 
 export const PURE_LOADOUT: TowerLoadout = {
-  maxHpBonus: 0, defenseBonus: 0, speedBonus: 0, pickupBonus: 0, firstOfferExtraChoices: 0, startingRerolls: 0, bans: 0, lunch: null, trained: false, summary: [],
+  maxHpBonus: 0, defenseBonus: 0, speedBonus: 0, pickupBonus: 0, supportShare: 0, supportHaste: 0, firstOfferExtraChoices: 0, startingRerolls: 0, bans: 0, lunch: null, trained: false, summary: [],
 };
 
 /** Desejos de Jirachi que a Vila pode dar no começo (lição + sorte do Carteiro); o estoque da corrida continua com teto 3. */
@@ -62,6 +66,8 @@ export function towerLoadout(tower: TowerState, options: TowerLoadoutOptions): T
   const defense = Math.min(TRAINING_DEFENSE_CAP, level('postura') * TRAINING_STEP.postura);
   const speed = Math.min(TRAINING_SPEED_CAP, Math.round(level('passada') * TRAINING_STEP.passada * 1000) / 1000);
   const pickup = Math.round(level('faro') * TRAINING_STEP.faro * 1000) / 1000;
+  const supportShare = has('elo-de-apoio') ? 0.35 : 0;
+  const supportHaste = has('chamada-rapida') ? 0.15 : 0;
   const rerolls = Math.min(LOADOUT_MAX_STARTING_REROLLS, (has('desejo') ? 1 : 0) + (options.luck ? 1 : 0));
   const bans = Math.min(LOADOUT_MAX_BANS, (has('recusa') ? 1 : 0) + (has('recusa') && has('recusa-firme') ? 2 : 0));
   const firstOffer = has('olhar-treinado') ? 1 : 0;
@@ -71,13 +77,15 @@ export function towerLoadout(tower: TowerState, options: TowerLoadoutOptions): T
   if (defense > 0) summary.push(`Postura: +${defense} de Defesa e Defesa Especial`);
   if (speed > 0) summary.push(`Passada: +${pct(speed)} de velocidade`);
   if (pickup > 0) summary.push(`Faro: +${pct(pickup)} de alcance de coleta`);
+  if (supportShare > 0) summary.push(`Elo de apoio: apoios somam ${pct(supportShare)} do seu dano`);
+  if (supportHaste > 0) summary.push(`Chamada rápida: apoios atacam ${pct(supportHaste)} mais rápido`);
   if (firstOffer) summary.push('Olhar treinado: 1 carta a mais na primeira escolha');
   if (has('desejo')) summary.push('Desejo de Jirachi: 1 desejo no início');
   if (options.luck) summary.push('Sorte do Carteiro: 1 desejo no início');
   if (bans > 0) summary.push(`Recusa: ${bans} ${bans === 1 ? 'banimento' : 'banimentos'}`);
   if (options.lunch) summary.push(`Marmita: ${options.lunch.name}`);
   const loadout: TowerLoadout = {
-    maxHpBonus: hp, defenseBonus: defense, speedBonus: speed, pickupBonus: pickup, firstOfferExtraChoices: firstOffer,
+    maxHpBonus: hp, defenseBonus: defense, speedBonus: speed, pickupBonus: pickup, supportShare, supportHaste, firstOfferExtraChoices: firstOffer,
     startingRerolls: rerolls, bans, lunch: options.lunch, trained: false, summary,
   };
   loadout.trained = summary.length > 0;

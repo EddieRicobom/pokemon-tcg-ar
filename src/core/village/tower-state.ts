@@ -5,7 +5,7 @@
 
 export type DojoLevel = 0 | 1 | 2 | 3;
 export type TrainingId = 'folego' | 'postura' | 'passada' | 'faro';
-export type LessonId = 'olhar-treinado' | 'desejo' | 'recusa' | 'recusa-firme';
+export type LessonId = 'olhar-treinado' | 'desejo' | 'recusa' | 'recusa-firme' | 'chamada-rapida' | 'elo-de-apoio';
 
 export const DOJO_LEVELS = [
   { level: 1, name: 'Tatame', icon: '🟫', coins: 400, cost: { tabua: 4 } },
@@ -31,7 +31,7 @@ export interface TrainingDef {
 }
 
 export const TRAININGS: Record<TrainingId, TrainingDef> = {
-  folego: { id: 'folego', name: 'Fôlego', icon: '❤️', perLevel: '+5 de vida máxima', coins: [180, 300, 480, 700], piece: 'boneco-treino', minDojo: [1, 1, 2, 3] },
+  folego: { id: 'folego', name: 'Fôlego', icon: '❤️', perLevel: '+5 de vida máxima', coins: [180, 300, 480, 700, 1000, 1400], piece: 'boneco-treino', minDojo: [1, 1, 2, 3, 3, 3] },
   postura: { id: 'postura', name: 'Postura', icon: '🛡️', perLevel: '+5 de Defesa e Defesa Especial', coins: [260, 480, 720], piece: 'placa-armadura', minDojo: [1, 1, 2] },
   passada: { id: 'passada', name: 'Passada', icon: '👟', perLevel: '+2% de velocidade', coins: [260, 440, 660], piece: 'faixa-treino', minDojo: [1, 1, 2] },
   faro: { id: 'faro', name: 'Faro', icon: '🧲', perLevel: '+5% de alcance para coletar orbes', coins: [220, 360, 540], piece: 'faixa-treino', minDojo: [1, 1, 2] },
@@ -55,6 +55,8 @@ export const LESSONS: Record<LessonId, LessonDef> = {
   desejo: { id: 'desejo', name: 'Desejo de Jirachi', icon: '⭐', effect: 'Começa a corrida com 1 Desejo de Jirachi (troca a oferta de upgrade).', coins: 900, piece: 'sino-desejo', pieces: 1, minDojo: 1 },
   recusa: { id: 'recusa', name: 'Recusa', icon: '🚫', effect: '1 banimento por corrida: a carta banida não aparece mais naquela corrida.', coins: 1400, piece: 'placa-armadura', pieces: 2, minDojo: 2 },
   'recusa-firme': { id: 'recusa-firme', name: 'Recusa firme', icon: '⛔', effect: '+2 banimentos por corrida (3 no total).', coins: 2200, piece: 'lente-foco', pieces: 2, minDojo: 3, requires: 'recusa' },
+  'chamada-rapida': { id: 'chamada-rapida', name: 'Chamada rápida', icon: '📣', effect: 'Pokémon de apoio atacam 15% mais rápido.', coins: 4500, piece: 'faixa-treino', pieces: 3, minDojo: 3 },
+  'elo-de-apoio': { id: 'elo-de-apoio', name: 'Elo de apoio', icon: '🔗', effect: 'Pokémon de apoio somam 35% do dano final do seu ataque a cada golpe.', coins: 10_000, piece: 'sino-desejo', pieces: 3, minDojo: 3 },
 };
 export const LESSON_IDS = Object.keys(LESSONS) as LessonId[];
 

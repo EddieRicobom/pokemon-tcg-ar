@@ -21,6 +21,7 @@ import { itemDef } from '../core/village/catalog';
 import { placeAccessory, replacesHeadGear } from '../core/village/accessory-fit';
 import { homeTileset, renovateHomeTileset } from './home-exterior';
 import { harmonizeTerrain, villageGrassSheet, villagePierTile } from './ground-palette';
+import { drawGroundDetails } from './village-ground-detail';
 import { cropAt, daylight, friendOf, isPlaced, needsWater } from '../core/village/life';
 import type { VillageState } from '../core/village/life';
 import { homeDecor, homeLevel, homeOf, homeStyleOf, isAsleep, ROOFS, roofIndex } from '../core/village/town';
@@ -630,6 +631,8 @@ export class VillageGame {
         }
       }
     }
+    // Detalhes miúdos por cima do tileset: tufos, florzinhas, cascalho, rachaduras e a franja de grama nas emendas.
+    drawGroundDetails(ctx, this.map);
     return c;
   }
 
@@ -686,6 +689,7 @@ export class VillageGame {
           ctx.drawImage(img, x * TILE, y * TILE);
         }
       }
+      drawGroundDetails(ctx, this.map);
       return c;
     });
   }
