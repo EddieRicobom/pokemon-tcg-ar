@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  adaptiveTarget, applyLevelBonus, SURVIVOR_THIEF_FIRST_MS, SURVIVOR_THIEF_LIFE_MS, damageRanking, emptyRunStats, recordDamage, sampleTimeline, stepAdaptive, thiefFleeTarget, thiefReward, ADAPTIVE_MAX, ADAPTIVE_MIN,
+  adaptiveTarget, applyLevelBonus, SURVIVOR_THIEF_FIRST_MS, SURVIVOR_THIEF_LIFE_MS, damageRanking, emptyRunStats, survivorRunNumbers, recordDamage, sampleTimeline, stepAdaptive, thiefFleeTarget, thiefReward, ADAPTIVE_MAX, ADAPTIVE_MIN,
 } from './survivor-extras';
 import type { SurvivorPlayer, SurvivorState } from './survivor-types';
 import { createSurvivorState, stepSurvivor } from './survivor';
@@ -75,6 +75,30 @@ describe('estatísticas do resumo', () => {
     recordDamage(stats, 'Bola de fogo', '#f00', 40.4);
     recordDamage(stats, 'Nada', '#000', 0);
     expect(damageRanking(stats).map((r) => [r.name, r.damage])).toEqual([['Bola de fogo', 70], ['Apoio', 50]]);
+  });
+
+  it('resume dano, DPS e o que está em campo para o menu de pausa', () => {
+    const stats = emptyRunStats();
+    recordDamage(stats, 'Bola de fogo', '#f00', 300);
+    recordDamage(stats, 'Apoio', '#0f0', 150);
+    const numbers = survivorRunNumbers({
+      runStats: stats,
+      elapsedMs: 60_000,
+      enemies: [
+        { hp: 10, grade: 'comum' },
+        { hp: 0, grade: 'elite' },
+        { hp: 10, grade: 'elite' },
+        { hp: 10, boss: true },
+        { hp: 10, grade: 'chefao' },
+        { hp: 10, shadowBoss: true },
+      ],
+    });
+    expect(numbers.totalDamage).toBe(450);
+    expect(numbers.dps).toBe(7.5);
+    expect(numbers.topSources.map((row) => row.name)).toEqual(['Bola de fogo', 'Apoio']);
+    expect(numbers.enemies).toBe(5);
+    expect(numbers.elites).toBe(1);
+    expect(numbers.bosses).toBe(3);
   });
 
   it('guarda uma amostra a cada 30 s', () => {

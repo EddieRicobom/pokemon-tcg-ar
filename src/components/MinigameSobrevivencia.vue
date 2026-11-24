@@ -81,6 +81,9 @@ import {
   SURVIVOR_LANDSCAPE_TILE_W,
 } from '../core/survivor';
 import type { SurvivorEnemy, SurvivorEvent, SurvivorEvolutionOption, SurvivorState, SurvivorSummary, SurvivorSupportCandidate, SurvivorUpgradeOption, SurvivorUpgradeRarity } from '../core/survivor';
+import { survivorRunNumbers } from '../core/survivor-extras';
+import { survivorCoachHints, survivorNewRecords } from '../core/survivor-coach';
+import { shouldSurvivorAutoPause } from '../core/survivor-pause';
 import { attackProfile, moveEffectForType, moveFor, moveWith, rankedCategories, MOVE_CATEGORY_LABELS_PT, MOVE_EFFECT_LABELS_PT, profileBars, SURVIVOR_TERASTAL_EFFECTS } from '../core/survivor-moves';
 import { survivorAttackChoices, survivorAttackOf, survivorSupportMove } from '../core/survivor-loadout';
 import { TYPE_LABELS_PT } from '../core/pokemon-data';
@@ -628,6 +631,9 @@ function settleRunLoadout(survivedMs: number): void {
 function recordRun(s: SurvivorSummary): void {
   // A recompensa só é emitida pelo evento gameover, e o mesmo resultado não pode ser aplicado duas vezes.
   if (!activeRunId || completedRunIds.has(activeRunId)) return;
+  runBestBefore.value = trainer.value.torre.bestMs;
+  runBestWave.value = trainer.value.torre.bestWave;
+  runBestLevel.value = trainer.value.torre.bestLevel;
   completedRunIds.add(activeRunId);
   if (!recordCardVictories(survivalWinners(runCompanion, s), 'survival')) say(cardJourneyError.value, 9000);
   recordEvent({ type: 'minigame', game: 'sobrevivencia', won: s.kills > 0, score: survivorScore(s) });
@@ -902,6 +908,16 @@ const bossBar = computed(() => {
     shadow: target.shadowBoss === true,
   };
 });
+/** Números do menu de pausa: dano, média por segundo e o que está em campo. */
+const runNumbers = computed(() => (state.value ? survivorRunNumbers(state.value) : null));
+/** Dicas curtas para a próxima corrida, calculadas só quando o resumo abre. */
+const coachHints = computed(() => (summary.value ? survivorCoachHints(summary.value, { bestMs: runBestBefore.value, trained: state.value?.trained }) : []));
+const runRecords = computed(() => (summary.value ? survivorNewRecords(summary.value, { ms: runBestBefore.value, wave: runBestWave.value, level: runBestLevel.value }) : []));
+function recordLabel(record: { id: 'tempo' | 'onda' | 'nivel'; from: number; to: number }): string {
+  const from = record.id === 'tempo' ? formatTime(record.from) : String(record.from);
+  const to = record.id === 'tempo' ? formatTime(record.to) : String(record.to);
+  return `${record.id === 'tempo' ? 'tempo' : record.id === 'onda' ? 'onda' : 'nível'} ${from} → ${to}`;
+}
 function cinemaBeat(beat: CinemaBeat): void {
   if (cinemaMotion.value) triggerCinema(cinemaCam, beat);
 }
@@ -1073,6 +1089,13 @@ function protectUpgradeOpening(): void {
 }
 const availableUpgradeRerolls = computed(() => state.value?.player.upgradeRerolls ?? 0);
 const summary = ref<SurvivorSummary | null>(null);
+/** Melhor tempo antes desta corrida, para o resumo e as dicas compararem sem o recorde já atualizado. */
+const runBestBefore = ref(0);
+/** Melhor onda e nível antes desta corrida, para celebrar recordes no resumo. */
+const runBestWave = ref(0);
+const runBestLevel = ref(0);
+/** Pausa automática ao sair do app; o texto do aviso muda quando ela foi a causa. */
+const autoPaused = ref(false);
 /** Corrida salva encontrada ao abrir a Torre. */
 const resumeOffer = ref<SurvivorCheckpoint | null>(null);
 const savedNote = ref('');
@@ -4079,6 +4102,7 @@ function reopenDeferredUpgrade(): boolean {
 
 function togglePause(): void {
   if (!state.value || state.value.over || summary.value || pendingUpgrade.value || evolving.value || trainerPresentation.value) return;
+  autoPaused.value = false;
   paused.value = !paused.value;
   if (paused.value) cancelCharge();
   menuPausedRun = false;
@@ -4091,12 +4115,14 @@ function togglePause(): void {
   say(paused.value ? 'Jogo pausado.' : 'Jogo retomado.', 1600);
 }
 
+
 /** O menu interrompe a ação para não deixar a pessoa vulnerável enquanto lê as opções. */
 function toggleHudMenu(): void {
   if (hudExpanded.value) {
     hudExpanded.value = false;
     if (menuPausedRun) {
       paused.value = false;
+      autoPaused.value = false;
       menuPausedRun = false;
       lastTs = performance.now();
     }
@@ -4313,6 +4339,7 @@ async function beginRun(dexId: number, name: string, picked?: PokemonType, infin
     blackChestOffer.value = false;
     clearTrainerPresentation();
     paused.value = false;
+    autoPaused.value = false;
     const { move, profile, secondMove, secondAttack, hypotheticalSecondaryType } = survivorAttackOf(dexId, picked, swapped, omegaCategory);
     runSeenDex.clear();
     // A Vila entrega o loadout (e gasta a sorte do Carteiro) antes de a corrida existir; vale no Survival e no BONK.
@@ -4707,7 +4734,28 @@ function onBlur(): void {
 function onVisibility(): void {
   sound.setPaused(document.hidden);
   syncMusic();
-  if (document.hidden) onBlur();
+  if (document.hidden) {
+    onBlur();
+    // Sair do app no meio da corrida é pausa de verdade: o jogador volta para o mesmo lugar, sem perder vida.
+    if (state.value && shouldSurvivorAutoPause({
+      hidden: document.hidden,
+      ready: ready.value,
+      over: state.value.over,
+      paused: paused.value,
+      summary: !!summary.value,
+      pendingUpgrade: !!pendingUpgrade.value,
+      leaveConfirm: leaveConfirm.value,
+      evolving: !!evolving.value,
+      trainerPresentation: !!trainerPresentation.value,
+      specialModal: specialModalOpen.value,
+      blackChest: blackChestOffer.value,
+      typeAffinity: !!typeAffinityOffer.value,
+    })) {
+      paused.value = true;
+      autoPaused.value = true;
+      checkpointNow();
+    }
+  }
 }
 document.addEventListener('visibilitychange', onVisibility);
 
@@ -4881,7 +4929,7 @@ onBeforeUnmount(() => {
           </section>
         </div>
 
-        <div v-if="ready && state && minimapEnabled" class="survivor-minimap" role="img" aria-label="Mapa local. Círculo azul: você. Quadrados vermelhos: chefes. Losangos amarelos: elites. Estrelas: Pokébolas. Quadrados roxos: baús negros, sem chave e com penalidades.">
+        <div v-if="ready && state && minimapEnabled" class="survivor-minimap" role="img" aria-label="Mapa local. Círculo azul: você. Anel ciano: baliza de encontro de campo. Quadrados vermelhos: chefes. Losangos amarelos: elites. Estrelas: Pokébolas. Quadrados roxos: baús negros, sem chave e com penalidades.">
           <span class="survivor-minimap-title" aria-hidden="true">Mapa local</span>
           <div class="survivor-minimap-plot" aria-hidden="true">
             <span v-if="!bonkRun" class="survivor-minimap-viewport" :style="{ left: `${minimapX(minimap.viewport.x)}%`, top: `${minimapY(minimap.viewport.y)}%`, width: `${(minimap.viewport.width / minimap.bounds.width) * 100}%`, height: `${(minimap.viewport.height / minimap.bounds.height) * 100}%` }"></span>
@@ -4916,12 +4964,21 @@ onBeforeUnmount(() => {
         <div v-if="paused && !trainerPresentation && !typeAffinityOffer && !leaveConfirm" class="survivor-overlay survivor-pause-overlay" role="dialog" aria-label="Jogo pausado" aria-modal="true">
           <div class="card survivor-pause survivor-pause-panel">
             <header class="survivor-pause-header">
-              <span class="survivor-pause-eyebrow">TORRE SURVIVOR</span>
-              <h2>Jogo pausado</h2>
-              <p>Respire e prepare sua próxima jogada.</p>
+              <span class="survivor-pause-eyebrow">{{ autoPaused ? 'VOCÊ SAIU DO APP' : 'TORRE SURVIVOR' }}</span>
+              <h2>{{ autoPaused ? 'Corrida pausada' : 'Jogo pausado' }}</h2>
+              <p>{{ autoPaused ? 'O relógio parou quando o app saiu da frente. Nada aconteceu com a sua vida ou os inimigos.' : 'Respire e prepare sua próxima jogada.' }}</p>
             </header>
             <button type="button" class="primary survivor-pause-resume" @pointerdown.stop @click.stop="togglePause">▶ Retomar partida <small class="gamepad-hint" aria-hidden="true">Start</small></button>
             <div class="survivor-pause-content">
+            <div v-if="runNumbers" class="survivor-info-section">
+              <strong>Números da corrida</strong>
+              <span class="chip">⚔ {{ runNumbers.totalDamage.toLocaleString('pt-BR') }} de dano</span>
+              <span class="chip" title="Média desde o início da corrida">≈ {{ runNumbers.dps.toLocaleString('pt-BR') }} DPS</span>
+              <span class="chip">👾 {{ runNumbers.enemies }} em campo</span>
+              <span v-if="runNumbers.elites" class="chip">◆ {{ runNumbers.elites }} elite{{ runNumbers.elites === 1 ? '' : 's' }}</span>
+              <span v-if="runNumbers.bosses" class="chip">👑 {{ runNumbers.bosses }} chefe{{ runNumbers.bosses === 1 ? '' : 's' }}</span>
+              <small v-if="runNumbers.topSources.length" class="survivor-run-sources">Mais dano: {{ runNumbers.topSources.map((row) => row.name).join(' · ') }}</small>
+            </div>
             <div v-if="!pvpRun" class="survivor-info-section">
               <button type="button" class="survivor-auto-defer" :aria-pressed="autoDeferUpgrades" @click.stop="autoDeferUpgrades = !autoDeferUpgrades">Guardar automaticamente: {{ autoDeferUpgrades ? 'ligado' : 'desligado' }}</button>
               <small>Guarda as próximas escolhas de nível. Os itens de baú continuam com escolha imediata.</small>
@@ -5392,7 +5449,14 @@ onBeforeUnmount(() => {
               <div><strong>{{ summary.kills }}</strong><small>Derrotas</small></div>
               <div><strong>{{ summary.wave }}</strong><small>Onda</small></div>
             </div>
+            <p v-if="runRecords.length" class="survivor-cleared" role="status">🏅 Novo recorde: {{ runRecords.map(recordLabel).join(' · ') }}.</p>
             <SurvivorDiscoveries :alphas="rareDiscoveries.alphas" :terastal="rareDiscoveries.terastal" />
+            <section v-if="coachHints.length" class="survivor-coach" aria-labelledby="survivor-coach-title">
+              <h3 id="survivor-coach-title">Para a próxima corrida</h3>
+              <ul>
+                <li v-for="hint in coachHints" :key="hint.id"><span aria-hidden="true">{{ hint.icon }}</span> {{ hint.text }}</li>
+              </ul>
+            </section>
             <section v-if="summary.damageBySource?.length" class="survivor-chart" aria-label="Dano por golpe">
               <strong>Quem causou o dano</strong>
               <ul>

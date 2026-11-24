@@ -141,3 +141,37 @@ export function damageRanking(stats: SurvivorRunStats, limit = 6): SurvivorDamag
     .sort((a, b) => b.damage - a.damage)
     .slice(0, limit);
 }
+
+/** Números ao vivo do menu de pausa: dano total, média por segundo e o que está em campo. */
+export interface SurvivorRunNumbers {
+  totalDamage: number;
+  /** Dano por segundo desde o início, com uma casa decimal. */
+  dps: number;
+  topSources: SurvivorDamageSource[];
+  enemies: number;
+  elites: number;
+  bosses: number;
+}
+
+export function survivorRunNumbers(
+  state: {
+    runStats?: SurvivorRunStats;
+    elapsedMs: number;
+    enemies: readonly { hp: number; grade?: string; boss?: boolean; shadowBoss?: boolean }[];
+  },
+  limit = 3,
+): SurvivorRunNumbers {
+  const rows = Object.values(state.runStats?.damage ?? {});
+  const totalDamage = rows.reduce((sum, row) => sum + row.damage, 0);
+  const seconds = Math.max(1, state.elapsedMs / 1000);
+  const active = state.enemies.filter((enemy) => enemy.hp > 0);
+  const bosses = active.filter((enemy) => enemy.boss === true || enemy.grade === 'chefao' || enemy.shadowBoss === true);
+  return {
+    totalDamage: Math.round(totalDamage),
+    dps: Math.round((totalDamage / seconds) * 10) / 10,
+    topSources: damageRanking(state.runStats ?? emptyRunStats(), limit),
+    enemies: active.length,
+    elites: active.filter((enemy) => enemy.grade === 'elite' && !bosses.includes(enemy)).length,
+    bosses: bosses.length,
+  };
+}
