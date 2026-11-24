@@ -14,6 +14,7 @@ describe('save da Fenda do Mew', () => {
     state.player.potions = 3;
     state.player.balls = 6;
     state.allies = [{ id: 'a1', dexId: 25, name: 'Pikachu', level: 5, hp: 30, maxHp: 60, x: 0, y: 0, attackMs: 0 }];
+    state.reserve = [{ id: 'r1', dexId: 7, name: 'Squirtle', level: 4, hp: 22, maxHp: 44, x: 0, y: 0, attackMs: 0 }];
     state.defeated = ['ruinas'];
     const save = riftSaveOf(state);
     expect(writeRiftSave(save)).toBe(true);
@@ -21,12 +22,14 @@ describe('save da Fenda do Mew', () => {
     expect(loaded.player.level).toBe(7);
     expect(loaded.player.weapon).toBe('martelo');
     expect(loaded.allies[0]?.name).toBe('Pikachu');
+    expect(loaded.reserve[0]?.name).toBe('Squirtle');
     expect(loaded.defeated).toEqual(['ruinas']);
     const next = createRiftState();
     applyRiftSave(next, loaded);
     expect(next.player.level).toBe(7);
     expect(next.player.xpNext).toBeGreaterThan(0);
     expect(next.allies).toHaveLength(1);
+    expect(next.reserve).toHaveLength(1);
   });
 
   it('recusa lixo e normaliza limites', () => {

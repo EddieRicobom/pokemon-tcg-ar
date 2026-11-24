@@ -123,6 +123,8 @@ export interface RiftState {
   seed: number;
   player: RiftPlayer;
   allies: RiftAlly[];
+  /** Pokémon capturados fora da equipe ativa (até 5); entram por troca no menu. */
+  reserve: RiftAlly[];
   enemies: RiftEnemy[];
   projectiles: RiftProjectile[];
   loot: RiftLoot[];
@@ -300,6 +302,7 @@ export function createRiftState(seed = 20261123): RiftState {
       unlocked: ['espada', 'laminas', 'emissor'],
     },
     allies: [],
+    reserve: [],
     enemies: [],
     projectiles: [],
     loot: [],
@@ -437,7 +440,7 @@ export function riftSpawnBoss(state: RiftState, zone: RiftZone): RiftEnemy | nul
 export function riftCapture(state: RiftState, rng: () => number, events: RiftEvent[]): boolean {
   if (state.dead) return false;
   if (state.player.balls <= 0) { events.push({ kind: 'message', text: 'Sem Pokébolas. Derrote inimigos para conseguir mais.' }); return false; }
-  if (state.allies.length >= RIFT_MAX_ALLIES) { events.push({ kind: 'message', text: `Sua equipe já tem ${RIFT_MAX_ALLIES} Pokémon.` }); return false; }
+  if (state.allies.length >= RIFT_MAX_ALLIES && state.reserve.length >= 5) { events.push({ kind: 'message', text: 'Equipe e reserva cheias.' }); return false; }
   const target = nearestEnemy(state, state.player.x, state.player.y, 160);
   if (!target || target.boss) { events.push({ kind: 'message', text: 'Aproxime-se de um Pokémon enfraquecido.' }); return false; }
   if (target.hp / target.maxHp > 0.35) { events.push({ kind: 'message', text: `${target.name} ainda está forte (deixe abaixo de 35%).` }); return false; }
@@ -445,13 +448,41 @@ export function riftCapture(state: RiftState, rng: () => number, events: RiftEve
   const chance = Math.min(0.95, 0.35 + (1 - target.hp / target.maxHp) * 0.6 + (state.player.level - target.level) * 0.03);
   if (rng() > chance) { events.push({ kind: 'message', text: `${target.name} escapou da bola!` }); return false; }
   state.enemies = state.enemies.filter((e) => e !== target);
-  state.allies.push({
+  const captured: RiftAlly = {
     id: nextId(state), dexId: target.dexId, name: target.name, level: target.level,
     hp: Math.round(target.maxHp * 0.7), maxHp: target.maxHp,
     x: state.player.x - 26, y: state.player.y + 16, attackMs: 0,
-  });
-  events.push({ kind: 'captured', name: target.name });
+  };
+  if (state.allies.length < RIFT_MAX_ALLIES) {
+    state.allies.push(captured);
+    events.push({ kind: 'captured', name: target.name });
+  } else {
+    state.reserve.push(captured);
+    events.push({ kind: 'message', text: `${target.name} foi para a reserva.` });
+  }
   return true;
+}
+
+/** Troca um Pokémon entre a equipe ativa e a reserva. */
+export function riftToggleAlly(state: RiftState, id: string): 'active' | 'reserve' | null {
+  const active = state.allies.find((ally) => ally.id === id);
+  if (active) {
+    state.allies = state.allies.filter((ally) => ally !== active);
+    state.reserve.push(active);
+    return 'reserve';
+  }
+  const reserved = state.reserve.find((ally) => ally.id === id);
+  if (!reserved) return null;
+  if (state.allies.length >= RIFT_MAX_ALLIES) {
+    const out = state.allies.shift();
+    if (out) state.reserve.push(out);
+  }
+  state.reserve = state.reserve.filter((ally) => ally !== reserved);
+  reserved.x = state.player.x - 24;
+  reserved.y = state.player.y + 20;
+  reserved.attackMs = 0;
+  state.allies.push(reserved);
+  return 'active';
 }
 
 export function riftUsePotion(state: RiftState, events: RiftEvent[]): boolean {

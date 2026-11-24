@@ -42,7 +42,7 @@ O projeto é totalmente estático e roda no GitHub Pages. Não há servidor pró
 | **Caixa em AR** | Coloca sua equipe no espaço com câmera e orientação. A batalha é uma apresentação automática para ver os Pokémon juntos, não um RPG manual completo. |
 | **Arena** | Duelo por turnos em que você escolhe cada golpe, com os efeitos dos jogos, além de Liga, Corridas 6×6 e PvP. A batalha livre é automática. |
 | **Pins** | Disputas sem câmera numa arena com paredes e aberturas: escolha a formação, mire de tabela e empurre os adversários para fora. Tem PvP. |
-| **Torre** | Survival com ondas, treinadores, regiões, baús com itens segurados, artefatos, meta-progressão e recompensas persistentes para corridas concluídas. |
+| **Torre** | Survival com ondas, treinadores, regiões, baús com itens segurados, artefatos, meta-progressão e recompensas persistentes. A corrida pode ser salva (checkpoint local) e continuada depois. |
 | **Masmorra** | Descida tática por turnos em andares sem fim, com armas, gemas e fusões. A descida fica guardada no aparelho. |
 | **Fenda do Mew** | Hack-n-slash top-down com o treinador: mapa imenso além da Vila, armas da Masmorra, captura de Pokémon aliados e progressão salva. Entrada pela Estátua do Mew. |
 | **Cartas** | Box local, filtros, seleção de Vila/equipe, evolução de companheiros e entrada para a Caixa. |

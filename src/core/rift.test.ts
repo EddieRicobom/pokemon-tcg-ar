@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  createRiftState, createRiftWorld, riftAttack, riftCapture, riftMove, riftRespawn, riftSanctuary, riftSpawnEnemy,
+  createRiftState, createRiftWorld, riftAttack, riftCapture, riftMove, riftRespawn, riftSanctuary, riftSpawnEnemy, riftToggleAlly,
   riftTile, riftWalkable, RIFT_H, RIFT_SANCTUARY, RIFT_TILE, RIFT_W, stepRift, type RiftEnemy, type RiftEvent,
 } from './rift';
 let seed = 987654321;
@@ -118,6 +118,21 @@ describe('Fenda do Mew', () => {
     const events = stepRift(world, state, { moveX: 0, moveY: 0, attack: false, dodge: false }, 1000);
     expect(state.player.hp).toBeGreaterThan(50);
     expect(events.some((e) => e.kind === 'hurt')).toBe(false);
+  });
+
+  it('captura vai para a reserva com a equipe cheia e permite trocar', () => {
+    const state = createRiftState();
+    state.player.balls = 10;
+    state.allies = Array.from({ length: 3 }, (_, index) => ({ id: `a${index}`, dexId: 25, name: `P${index}`, level: 3, hp: 20, maxHp: 40, x: 0, y: 0, attackMs: 0 }));
+    state.enemies = [enemy({ x: state.player.x + 30, y: state.player.y, hp: 10, maxHp: 100 })];
+    expect(riftCapture(state, () => 0, [])).toBe(true);
+    expect(state.allies).toHaveLength(3);
+    expect(state.reserve).toHaveLength(1);
+    const reservedId = state.reserve[0]!.id;
+    expect(riftToggleAlly(state, reservedId)).toBe('active');
+    expect(state.allies.some((ally) => ally.id === reservedId)).toBe(true);
+    expect(state.allies).toHaveLength(3);
+    expect(state.reserve).toHaveLength(1);
   });
 
   it('sobe de nível ao derrotar e ressuscita na clareira', () => {

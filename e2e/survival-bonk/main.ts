@@ -24,6 +24,8 @@ const setup = (vm.$.subTree.component as { setupState: Record<string, unknown> }
 };
 
 setTimeout(() => {
+  // Com checkpoint salvo, deixa a tela de "Continuar corrida" aparecer (teste do save).
+  if (localStorage.getItem('tcg-ar-survivor-checkpoint-v1')) return;
   void setup.beginRun(DEX, NAME, undefined, false, BONK).then(() => {
     if (params.get('god') === '1' && setup.state) {
       setup.state.player.hp = 1e9;

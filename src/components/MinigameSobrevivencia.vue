@@ -26,6 +26,7 @@ import villageAtlasUrl from '../village/vila-atlas.png?url';
 import { fetchSprite } from '../ar/sprite-source';
 import { pokemonSpriteUrl } from '../ar/sprite-url';
 import { recordEvent } from '../app/trainer-store';
+import { clearSurvivorCheckpoint, readSurvivorCheckpoint, writeSurvivorCheckpoint, type SurvivorCheckpoint, type SurvivorCheckpointOptions } from '../app/survivor-checkpoint';
 import { recordSightings } from '../app/pokedex-store';
 import { addCoins, withVillage } from '../app/wallet';
 import { settleTowerRun, startTowerRun } from '../core/village/dojo';
@@ -1057,6 +1058,11 @@ function protectUpgradeOpening(): void {
 }
 const availableUpgradeRerolls = computed(() => state.value?.player.upgradeRerolls ?? 0);
 const summary = ref<SurvivorSummary | null>(null);
+/** Corrida salva encontrada ao abrir a Torre. */
+const resumeOffer = ref<SurvivorCheckpoint | null>(null);
+const savedNote = ref('');
+let runOptions: SurvivorCheckpointOptions | null = null;
+let lastCheckpointAt = 0;
 // Apenas o resultado usa este registro; não adiciona trabalho visual ao HUD da corrida.
 const rareDiscoveries = ref<{
   alphas: Record<number, { found: number; defeated: number }>;
@@ -3623,6 +3629,7 @@ function loop(ts: number): void {
   lastTs = ts;
   if (document.hidden || !state.value) return;
   if (!paused.value) watchFrameCost(dt, fps);
+  if (!paused.value && ts - lastCheckpointAt > 20000) { lastCheckpointAt = ts; checkpointNow(); }
   if (paused.value) {
     if (trainerPresentation.value) animMs += dt;
     draw();
@@ -4178,6 +4185,12 @@ async function beginRun(dexId: number, name: string, picked?: PokemonType, infin
   runCompanion = companion;
   // Corrida iniciada por fora do seletor (Dojô, Carteiro, bancada): o aviso de "sem companheiro" ficou para trás.
   noCompanion.value = false;
+  clearSurvivorCheckpoint();
+  runOptions = {
+    dexId, name, picked, infinite, bonk, companion, preparation,
+    supportCandidates: [...supportCandidates], typeAffinityChoices: [...typeAffinityChoices],
+    fast, shiny, accessory, mega, swapped, omegaCategory,
+  };
   runShiny = shiny;
   runEpoch++;
   rareDiscoveries.value = { alphas: {}, terastal: {} };
@@ -4516,6 +4529,95 @@ function playAgain(): void {
   void openPicker();
 }
 
+type BeginRunArgs = Parameters<typeof beginRun>;
+
+/** Salva um checkpoint da corrida (sem inimigos/projéteis): build, tempo, itens e progresso. */
+function checkpointNow(): boolean {
+  const s = state.value;
+  if (!s || !ready.value || s.over || summary.value || props.pvpRun || !runOptions) return false;
+  if (s.pendingUpgrade || s.pendingBlackChest != null || evolving.value) return false;
+  try {
+    const copy = JSON.parse(JSON.stringify(s)) as Record<string, unknown>;
+    for (const key of ['enemies', 'projectiles', 'hostileProjectiles', 'orbs', 'fx', 'elementalTerrain', 'criticalHits', 'heldMines', 'timeBubbles', 'gravityWells', 'heldQueue', 'heldCharges', 'chests', 'keyDrops']) {
+      copy[key] = [];
+    }
+    copy.pendingUpgrade = null;
+    copy.deferredUpgrade = null;
+    copy.pendingBlackChest = null;
+    copy.lastHit = null;
+    copy.over = false;
+    const playerCopy = copy.player as Record<string, unknown> | undefined;
+    if (playerCopy) playerCopy.trailPath = [];
+    return writeSurvivorCheckpoint({
+      version: 1,
+      at: Date.now(),
+      label: `${avatarName.value} · ${formatTime(s.elapsedMs)} · Nv ${s.player.level}`,
+      options: runOptions,
+      state: copy,
+    });
+  } catch {
+    return false;
+  }
+}
+
+async function resumeSavedRun(): Promise<void> {
+  const checkpoint = resumeOffer.value;
+  if (!checkpoint) return;
+  resumeOffer.value = null;
+  const o = checkpoint.options;
+  await beginRun(
+    o.dexId, o.name, o.picked as BeginRunArgs[2], o.infinite, o.bonk,
+    o.companion as BeginRunArgs[5], o.preparation as BeginRunArgs[6],
+    o.supportCandidates as BeginRunArgs[7], o.typeAffinityChoices as BeginRunArgs[8],
+    o.fast, o.shiny, o.accessory, o.mega as BeginRunArgs[12], o.swapped, o.omegaCategory as BeginRunArgs[14],
+  );
+  const fresh = state.value;
+  if (!fresh) return;
+  const functions = {
+    rng: fresh.rng, evolutions: fresh.evolutions, enemyDexId: fresh.enemyDexId,
+    enemyArchetypeFor: fresh.enemyArchetypeFor, critRng: fresh.critRng, vegetationImpact: fresh.vegetationImpact,
+  };
+  const merged = { ...fresh, ...checkpoint.state, ...functions } as typeof fresh;
+  const transient = merged as unknown as Record<string, unknown>;
+  for (const key of ['enemies', 'projectiles', 'hostileProjectiles', 'orbs', 'fx', 'elementalTerrain', 'criticalHits', 'heldMines', 'timeBubbles', 'gravityWells', 'heldQueue', 'heldCharges', 'chests', 'keyDrops']) transient[key] = [];
+  merged.over = false;
+  merged.pendingUpgrade = null;
+  merged.deferredUpgrade = null;
+  merged.lastHit = undefined;
+  if (merged.player) merged.player.trailPath = [];
+  state.value = merged;
+  pendingUpgrade.value = null;
+  summary.value = null;
+  clearSurvivorCheckpoint();
+  const dex = merged.player.dexId > 0 ? merged.player.dexId : o.dexId;
+  const sprite = await loadSpriteOrNull(dex, o.shiny, runParticipant?.id.startsWith('dp_') === true && visual.metallic);
+  if (sprite) { normalPlayerSprite = sprite; playerSprite = sprite; }
+  if (o.bonk) {
+    const back = await loadBackSpriteOrNull(dex, o.shiny);
+    if (back) { normalPlayerBackSprite = back; playerBackSprite = back; }
+  }
+  ready.value = true;
+  say('Corrida retomada do ponto salvo.', 2800);
+}
+
+function startNewFromOffer(): void {
+  clearSurvivorCheckpoint();
+  resumeOffer.value = null;
+  void openPicker();
+}
+
+function saveRun(): void {
+  const ok = checkpointNow();
+  savedNote.value = ok ? 'Corrida salva. Você pode continuar depois pela Torre.' : 'Agora não dá para salvar.';
+}
+
+function saveAndLeave(): void {
+  checkpointNow();
+  requestLeave();
+}
+
+watch(summary, (value) => { if (value) clearSurvivorCheckpoint(); });
+
 onMounted(() => {
   ctx = canvasEl.value?.getContext('2d') ?? null;
   fitView();
@@ -4531,7 +4633,13 @@ onMounted(() => {
   window.addEventListener('tcg-gamepad-button', onGamepadButton);
   window.addEventListener('tcg-gamepad-back', onGamepadBack);
   window.addEventListener('tcg-gamepad-menu', onGamepadMenu);
-  void openPicker();
+  const saved = readSurvivorCheckpoint();
+  if (saved) {
+    resumeOffer.value = saved;
+    ready.value = false;
+  } else {
+    void openPicker();
+  }
 });
 function onBlur(): void {
   heldKeys.clear();
@@ -4737,6 +4845,16 @@ onBeforeUnmount(() => {
         <div v-if="ready && !summary && joystick.active" class="survivor-joy-base active" :style="{ left: `${joystick.lx}px`, top: `${joystick.ly}px` }" aria-hidden="true">
           <div class="survivor-joy-stick" :style="{ transform: `translate(${joystick.dx * JOY_MAX}px, ${joystick.dy * JOY_MAX}px)` }"></div>
         </div>
+        <div v-if="resumeOffer && !ready" class="survivor-overlay" role="dialog" aria-label="Corrida salva" aria-modal="true">
+          <div class="card survivor-pause" style="max-width: 330px">
+            <h2>Corrida salva</h2>
+            <p>{{ resumeOffer.label }}</p>
+            <p class="note">A build, o tempo, os itens e o progresso continuam. Inimigos e projéteis recomeçam do ponto salvo.</p>
+            <button type="button" class="primary" @click="resumeSavedRun">Continuar corrida</button>
+            <button type="button" @click="startNewFromOffer">Começar nova</button>
+          </div>
+        </div>
+
         <div v-if="paused && !trainerPresentation && !typeAffinityOffer && !leaveConfirm" class="survivor-overlay survivor-pause-overlay" role="dialog" aria-label="Jogo pausado" aria-modal="true">
           <div class="card survivor-pause survivor-pause-panel">
             <header class="survivor-pause-header">
@@ -4752,6 +4870,8 @@ onBeforeUnmount(() => {
             </div>
             <MusicControls v-model:enabled="survivorAudio.enabled" v-model:volume="survivorAudio.volume" v-model:attack-sounds="survivorAudio.attackSounds" :track="survivorMusicTitle(state?.elapsedMs ?? 0, state?.runSeed ?? 0)" :unavailable="musicUnavailable" regional @unlock="unlockMusic" />
             <p class="note">O relógio, os inimigos e os projéteis estão parados.</p>
+            <p class="note">A corrida é salva automaticamente a cada 20 segundos. «Salvar e sair» guarda agora para continuar depois.</p>
+            <p v-if="savedNote" class="note" role="status">{{ savedNote }}</p>
             <details class="survivor-help" :open="helpOpen" @toggle="helpOpen = ($event.target as HTMLDetailsElement).open">
               <summary>Como jogar · controles</summary>
               <ul>
@@ -4783,6 +4903,8 @@ onBeforeUnmount(() => {
             </div>
             <div class="survivor-pause-actions">
             <button type="button" class="link survivor-back" @pointerdown.stop @click.stop="requestBack">← Voltar</button>
+            <button type="button" class="link survivor-save" @pointerdown.stop @click.stop="saveRun">Salvar corrida</button>
+            <button type="button" class="link survivor-save" @pointerdown.stop @click.stop="saveAndLeave">Salvar e sair</button>
             <button type="button" class="link survivor-exit" @pointerdown.stop @click.stop="requestLeave">Sair da Torre</button>
             </div>
           </div>

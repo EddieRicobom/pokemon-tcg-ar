@@ -3,7 +3,7 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref, shallowRef, trigge
 import {
   createRiftState, createRiftWorld, RIFT_MAX_ALLIES, RIFT_TILE, RIFT_WEAPONS, RIFT_W, RIFT_H, RIFT_SANCTUARY,
   riftCapture, riftRespawn, riftSpawnBoss, riftSpawnEnemy, riftTile, riftUsePotion, riftWalkable, riftZone,
-  stepRift, toggleRiftWeapon, type RiftEvent, type RiftWorld,
+  stepRift, toggleRiftWeapon, riftToggleAlly, type RiftEvent, type RiftWorld,
 } from '../core/rift';
 import { applyRiftSave, clearRiftSave, readRiftSave, riftSaveOf, writeRiftSave } from '../app/rift-store';
 import { addCoins } from '../app/wallet';
@@ -62,6 +62,12 @@ const hpPct = computed(() => Math.max(0, Math.min(100, (player.value.hp / player
 const xpPct = computed(() => Math.max(0, Math.min(100, (player.value.xp / Math.max(1, player.value.xpNext)) * 100)));
 const zone = computed(() => riftZone(player.value.x, player.value.y));
 const weapon = computed(() => RIFT_WEAPONS[player.value.weapon] ?? RIFT_WEAPONS.espada!);
+const captureTarget = computed(() => {
+  const p = state.value.player;
+  return state.value.enemies.find((enemy) => !enemy.boss && enemy.hp / enemy.maxHp <= 0.35 && Math.hypot(enemy.x - p.x, enemy.y - p.y) <= 160) ?? null;
+});
+const attackFill = computed(() => Math.min(100, (player.value.attackMs / Math.max(1, weapon.value.cooldownMs)) * 100));
+const dodgeFill = computed(() => Math.min(100, (player.value.dodgeCdMs / 1300) * 100));
 
 function say(text: string): void {
   toast.value = text;
@@ -591,6 +597,13 @@ function potion(): void {
 function chooseWeapon(id: string): void {
   if (toggleRiftWeapon(state.value, id)) { say(`${RIFT_WEAPONS[id]?.name} equipada.`); save(); }
 }
+function toggleAlly(id: string): void {
+  const result = riftToggleAlly(state.value, id);
+  if (!result) return;
+  say(result === 'active' ? 'Pokémon entrou na equipe.' : 'Pokémon foi para a reserva.');
+  triggerRef(state);
+  save();
+}
 function respawn(): void {
   riftRespawn(state.value);
   state.value.enemies = state.value.enemies.filter((enemy) => Math.hypot(enemy.x - state.value.player.x, enemy.y - state.value.player.y) > 420);
@@ -677,7 +690,7 @@ onBeforeUnmount(() => {
     <div class="rift-pills">
       <span>🧪 {{ player.potions }}</span>
       <span>⚪ {{ player.balls }}</span>
-      <span>🐾 {{ state.allies.length }}/{{ RIFT_MAX_ALLIES }}</span>
+      <span>🐾 {{ state.allies.length }}/{{ RIFT_MAX_ALLIES }}<template v-if="state.reserve.length"> · 📦 {{ state.reserve.length }}/5</template></span>
       <span v-if="state.defeated.length">🏆 {{ state.defeated.length }}/2</span>
     </div>
 
@@ -695,10 +708,12 @@ onBeforeUnmount(() => {
       <span class="rift-pad-knob" :style="{ transform: `translate(${pad.dx * 40}px, ${pad.dy * 40}px)` }" />
     </div>
 
+    <p v-if="captureTarget && !menuOpen && !state.dead" class="rift-capture" role="status">⚪ {{ captureTarget.name }} está fraco · pode capturar!</p>
+
     <div class="rift-actions">
-      <button type="button" class="rift-attack" aria-label="Atacar" @pointerdown.prevent="attackDown" @pointerup="attackUp" @pointercancel="attackUp" @lostpointercapture="attackUp">⚔</button>
-      <button type="button" aria-label="Esquivar" @click="dodge">💨</button>
-      <button type="button" aria-label="Capturar Pokémon enfraquecido" @click="capture">⚪</button>
+      <button type="button" class="rift-attack" aria-label="Atacar" @pointerdown.prevent="attackDown" @pointerup="attackUp" @pointercancel="attackUp" @lostpointercapture="attackUp"><i class="rift-cd" :style="{ height: `${attackFill}%` }" />⚔</button>
+      <button type="button" aria-label="Esquivar" @click="dodge"><i class="rift-cd" :style="{ height: `${dodgeFill}%` }" />💨</button>
+      <button type="button" :class="{ ready: !!captureTarget }" :aria-label="captureTarget ? `Capturar ${captureTarget.name}` : 'Capturar Pokémon enfraquecido'" @click="capture">⚪</button>
       <button type="button" aria-label="Usar poção" @click="potion">🧪</button>
     </div>
 
@@ -725,15 +740,31 @@ onBeforeUnmount(() => {
           </div>
         </section>
         <section>
-          <h3>Equipe</h3>
-          <p v-if="!state.allies.length" class="rift-note">Enfraqueça um Pokémon selvagem (abaixo de 35%) e use ⚪ para capturar.</p>
-          <ul class="rift-team">
-            <li v-for="ally in state.allies" :key="ally.id"><span>{{ ally.name }}</span><b>Nv {{ ally.level }}</b><small>{{ Math.ceil(ally.hp) }}/{{ ally.maxHp }}</small></li>
-          </ul>
+          <h3>Inventário</h3>
+          <div class="rift-bag">
+            <div><span>🧪</span><b>{{ player.potions }}</b><small>Poções</small><button type="button" :disabled="player.potions <= 0 || player.hp >= player.maxHp" @click="potion">Usar</button></div>
+            <div><span>⚪</span><b>{{ player.balls }}</b><small>Pokébolas</small><button type="button" :disabled="!captureTarget" @click="capture">Capturar</button></div>
+          </div>
+        </section>
+        <section>
+          <h3>Equipe · {{ state.allies.length }}/{{ RIFT_MAX_ALLIES }}</h3>
+          <p v-if="!state.allies.length && !state.reserve.length" class="rift-note">Enfraqueça um Pokémon selvagem (abaixo de 35%) e use ⚪ para capturar. São 3 ativos e até 5 na reserva.</p>
+          <div class="rift-roster">
+            <div v-for="ally in state.allies" :key="ally.id" class="rift-member">
+              <img :src="spriteFor(ally.dexId).src" alt="" />
+              <span><b>{{ ally.name }}</b><small>Nv {{ ally.level }} · {{ Math.ceil(ally.hp) }}/{{ ally.maxHp }}</small></span>
+              <button type="button" @click="toggleAlly(ally.id)">Reservar</button>
+            </div>
+            <div v-for="ally in state.reserve" :key="ally.id" class="rift-member reserve">
+              <img :src="spriteFor(ally.dexId).src" alt="" />
+              <span><b>{{ ally.name }}</b><small>Reserva · Nv {{ ally.level }}</small></span>
+              <button type="button" @click="toggleAlly(ally.id)">Ativar</button>
+            </div>
+          </div>
         </section>
         <section>
           <h3>Progresso</h3>
-          <p class="rift-note">{{ state.defeated.length }}/2 chefes · Nv {{ player.level }} · {{ player.unlocked.length }} armas · {{ state.allies.length }} Pokémon</p>
+          <p class="rift-note">{{ state.defeated.length }}/2 chefes · Nv {{ player.level }} · {{ player.unlocked.length }} armas · {{ state.allies.length }} ativos · {{ state.reserve.length }} na reserva</p>
           <p class="rift-note">WASD/setas andam · Espaço/J ataca · Shift esquiva · C captura · Q poção · M menu</p>
         </section>
         <div class="rift-menu-actions">
@@ -768,7 +799,7 @@ onBeforeUnmount(() => {
 .rift-pad{position:absolute;left:max(14px,env(safe-area-inset-left));bottom:max(14px,env(safe-area-inset-bottom));width:112px;height:112px;border-radius:50%;border:2px solid #ffffff38;background:#08120e99;display:grid;place-items:center;touch-action:none}
 .rift-pad-knob{width:48px;height:48px;border-radius:50%;background:#e9f5ee55;border:2px solid #fff9;pointer-events:none}
 .rift-actions{position:absolute;right:max(12px,env(safe-area-inset-right));bottom:max(14px,env(safe-area-inset-bottom));display:grid;grid-template-columns:56px 56px;gap:8px}
-.rift-actions button{width:56px;height:56px;border:2px solid #ffe9a6aa;border-radius:16px;background:#173f36e8;color:#fff;font:800 1.2rem system-ui;box-shadow:0 3px 0 #071c17;touch-action:none}
+.rift-actions button{position:relative;overflow:hidden;width:56px;height:56px;border:2px solid #ffe9a6aa;border-radius:16px;background:#173f36e8;color:#fff;font:800 1.2rem system-ui;box-shadow:0 3px 0 #071c17;touch-action:none}
 .rift-actions .rift-attack{grid-row:span 2;width:56px;height:120px;background:#a83e43e8;font-size:1.6rem}
 .rift-actions button:active{transform:translateY(2px);box-shadow:0 1px 0 #071c17}
 .rift-overlay{position:absolute;inset:0;z-index:5;display:grid;place-items:center;padding:16px;background:#04100cd9}
@@ -792,6 +823,24 @@ onBeforeUnmount(() => {
 .rift-team{display:grid;gap:4px;margin:0;padding:0;list-style:none}
 .rift-team li{display:flex;align-items:baseline;gap:6px;padding:5px 7px;border-radius:8px;background:#ffffff10;font-size:.76rem}
 .rift-team b{color:#ffe066}.rift-team small{margin-left:auto;color:#b9d9cb}
+.rift-bag{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.rift-bag > div{display:grid;grid-template-columns:auto 1fr;gap:1px 6px;align-items:center;padding:8px;border:1px solid #ffffff20;border-radius:10px;background:#ffffff0d;font-size:.8rem}
+.rift-bag span{grid-row:span 2;font-size:1.4rem}
+.rift-bag b{font-size:1rem;color:#ffe066}
+.rift-bag small{color:#b9d9cb;font-size:.64rem}
+.rift-bag button{grid-column:1/-1;margin-top:4px;min-height:32px;padding:4px;font-size:.7rem}
+.rift-roster{display:grid;gap:5px}
+.rift-member{display:flex;align-items:center;gap:7px;padding:6px 8px;border:1px solid #ffffff20;border-radius:10px;background:#ffffff0d}
+.rift-member img{width:34px;height:34px;object-fit:contain;image-rendering:pixelated}
+.rift-member span{display:grid;min-width:0}.rift-member b{font-size:.8rem}.rift-member small{color:#b9d9cb;font-size:.64rem}
+.rift-member button{margin-left:auto;min-height:32px;padding:4px 8px;font-size:.66rem}
+.rift-member.reserve{opacity:.8}
+.rift-capture{position:absolute;left:50%;top:max(150px,calc(env(safe-area-inset-top) + 138px));transform:translateX(-50%);margin:0;padding:5px 11px;border-radius:999px;background:#ffe066;color:#2a1c00;font-size:.7rem;font-weight:800;white-space:nowrap;box-shadow:0 0 14px #ffe06688;animation:rift-capture .8s ease-in-out infinite alternate}
+@keyframes rift-capture{to{box-shadow:0 0 22px #ffe066cc}}
+.rift-actions button.ready{border-color:#ffe066;box-shadow:0 0 0 2px #ffe06688,0 0 16px #ffe066aa;animation:rift-ready .8s ease-in-out infinite alternate}
+@keyframes rift-ready{to{box-shadow:0 0 0 3px #ffe066cc,0 0 22px #ffe066}}
+.rift-cd{position:absolute;left:0;right:0;bottom:0;background:#00000066;pointer-events:none}
+@media(prefers-reduced-motion:reduce){.rift-capture,.rift-actions button.ready{animation:none}}
 .rift-note{color:#b9d9cb;font-size:.74rem;line-height:1.4}
 @media (max-width:380px){.rift-minimap{width:80px;height:60px;bottom:calc(max(8px,env(safe-area-inset-bottom)) + 190px)}.rift-pad{width:96px;height:96px}.rift-actions{grid-template-columns:50px 50px}.rift-actions button{width:50px;height:50px}.rift-actions .rift-attack{height:108px;width:50px}}
 </style>

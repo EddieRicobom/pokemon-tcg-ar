@@ -17,6 +17,7 @@ export interface RiftSaveV1 {
     unlocked: string[];
   };
   allies: { dexId: number; name: string; level: number; hp: number; maxHp: number }[];
+  reserve: { dexId: number; name: string; level: number; hp: number; maxHp: number }[];
   defeated: string[];
 }
 
@@ -44,6 +45,12 @@ export function normalizeRiftSave(raw: unknown): RiftSaveV1 | null {
     const allyMax = Math.max(1, clampInt(a.maxHp, 1, 9999));
     return [{ dexId: a.dexId as number, name: a.name.trim().slice(0, 24), level: clampInt(a.level, 1, 99), hp: Math.min(allyMax, clampInt(a.hp, 1, allyMax)), maxHp: allyMax }];
   });
+  const reserve = (Array.isArray(value.reserve) ? value.reserve : []).slice(0, 5).flatMap((ally) => {
+    const a = ally as Partial<RiftSaveV1['reserve'][number]>;
+    if (!Number.isInteger(a.dexId) || typeof a.name !== 'string' || !a.name.trim()) return [];
+    const allyMax = Math.max(1, clampInt(a.maxHp, 1, 9999));
+    return [{ dexId: a.dexId as number, name: a.name.trim().slice(0, 24), level: clampInt(a.level, 1, 99), hp: Math.min(allyMax, clampInt(a.hp, 1, allyMax)), maxHp: allyMax }];
+  });
   return {
     version: 1,
     seed: Number.isInteger(value.seed) ? (value.seed as number) : 20261123,
@@ -60,6 +67,7 @@ export function normalizeRiftSave(raw: unknown): RiftSaveV1 | null {
       unlocked,
     },
     allies,
+    reserve,
     defeated: Array.isArray(value.defeated) ? value.defeated.filter((id): id is string => id === 'ruinas' || id === 'brasa') : [],
   };
 }
@@ -99,6 +107,7 @@ export function riftSaveOf(state: RiftState): RiftSaveV1 {
       potions: p.potions, balls: p.balls, x: Math.round(p.x), y: Math.round(p.y), unlocked: [...p.unlocked],
     },
     allies: state.allies.map((ally) => ({ dexId: ally.dexId, name: ally.name, level: ally.level, hp: Math.max(1, Math.round(ally.hp)), maxHp: ally.maxHp })),
+    reserve: state.reserve.map((ally) => ({ dexId: ally.dexId, name: ally.name, level: ally.level, hp: Math.max(1, Math.round(ally.hp)), maxHp: ally.maxHp })),
     defeated: [...state.defeated],
   };
 }
@@ -120,5 +129,9 @@ export function applyRiftSave(state: RiftState, save: RiftSaveV1): void {
   state.allies = save.allies.map((ally, index) => ({
     id: `a${index + 1}`, dexId: ally.dexId, name: ally.name, level: ally.level, hp: ally.hp, maxHp: ally.maxHp,
     x: p.x - 24 + index * 24, y: p.y + 30, attackMs: 0,
+  }));
+  state.reserve = save.reserve.map((ally, index) => ({
+    id: `r${index + 1}`, dexId: ally.dexId, name: ally.name, level: ally.level, hp: ally.hp, maxHp: ally.maxHp,
+    x: 0, y: 0, attackMs: 0,
   }));
 }

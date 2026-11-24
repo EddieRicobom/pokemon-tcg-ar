@@ -14,9 +14,14 @@ Hack-n-slash top-down onde **o treinador** (não um Pokémon) atravessa um mapa 
 
 - O treinador usa as armas do catálogo da Masmorra adaptadas para tempo real (`core/rift.ts`): espada, lâminas, lança, martelo, emissor, rifle e canhão.
 - Inimigos perseguem e atacam de perto; chefes têm mais vida, dano e tamanho.
-- Pokémon selvagens abaixo de **35% de vida** podem ser capturados com uma Pokébola. Até **3** acompanham o treinador e atacam sozinhos.
+- Pokémon selvagens abaixo de **35% de vida** podem ser capturados com uma Pokébola. Até **3** ficam na equipe ativa e mais **5** na reserva; o menu troca quem está em campo.
 - Poções curam 45% da vida; Poções e Pokébolas caem de inimigos; chefes soltam armas novas.
 - Ao cair, o treinador volta à clareira, perde 10% do XP atual e mantém nível, arma, itens e Pokémon.
+
+## Inventário e equipe
+
+- O menu da Fenda tem o inventário (Poções e Pokébolas, com botões de usar/capturar), as armas liberadas e a equipe.
+- Cada Pokémon capturado mostra sprite, nível e vida; **Reservar** tira da equipe, **Ativar** coloca em campo (se as 3 vagas estiverem cheias, o primeiro ativo vai para a reserva).
 
 ## Progressão salva
 
