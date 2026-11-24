@@ -5,6 +5,13 @@ O estado atual, as fases, as pendências e os riscos continuam no [plano](../IMP
 datadas (com o que foi e o que não foi validado em cada uma). A regra de validação do plano vale também para estas entradas:
 🔶 significa que **nada foi visto num celular real**.
 
+## Pinball: bola mais lenta, saída direita livre e câmera (24/11/2026)
+
+- **Bola mais devagar:** gravidade de 820 para 680, teto de velocidade de 1.250 para 950, lançamento de −960 para −820, repique mínimo dos bumpers de 420 para 360 e flipper de 22 para 20 rad/s. O conjunto continua subindo até o topo, mas dá mais tempo de ler a mesa e defender.
+- **Saída direita:** a guia da entrada direita foi afastada da parede (de 286,458→260,522 para 274,456→266,500). O vão antigo de 14 px prendia a bola parada em (293,451), sem cair nem drenar; agora ela passa e cai para o flipper ou para o dreno. A canaleta do lançador também ganhou uma via de saída no topo, para a bola não voltar e ficar presa no canto direito. Há teste de regressão para a posição exata da trava.
+- **Câmera acompanhando:** o campo ganha zoom de 1,10 dentro da moldura fixa e segue a bola com suavização; quando a bola não está em jogo, a câmera centraliza. A HUD, a etapa e o botão de lançamento continuam parados, e a moldura da mesa não se mexe.
+- 🔶 Typecheck, 344 arquivos / 3431 testes, build e os 14 testes de layout passaram. No navegador conferi a bola saindo de (293,451), o zoom seguindo a bola até o topo e a mesa inteira parada antes do lançamento. Não testei em celular real nem o ajuste da câmera em todas as proporções de tela.
+
 ## Pinball: aventura infinita, física refinada e Pokédex do Pinball (24/11/2026)
 
 - **Pesquisa:** conferi as mecânicas no disassembly `pret/pokepinball` (GBC) e na decompilação `pret/pokepinballrs` (GBA): gravidade aplicada em forças diferentes conforme a velocidade de descida, bumpers com repique próprio, flippers com estados/ângulos, spin da bola e bola extra com teto que vira pontos. Também usei referências abertas de pinball (Visual Pinball/Rapier e simulações de canvas) para passo fixo e flipper com velocidade angular. Nada de ROM, arte ou código copiado — só as ideias de física.

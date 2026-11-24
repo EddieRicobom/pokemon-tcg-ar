@@ -199,6 +199,14 @@ const trail: { x: number; y: number }[] = [];
 let frame = 0;
 let lastTime = 0;
 let hudTime = 0;
+/** Câmera suave: dá zoom no campo e segue a bola, mantendo a moldura da mesa fixa. */
+const CAMERA_SCALE = 1.10;
+const CAMERA_MIN_X = 22 + 158 / CAMERA_SCALE;
+const CAMERA_MAX_X = 338 - 158 / CAMERA_SCALE;
+const CAMERA_MIN_Y = 33 + 267 / CAMERA_SCALE;
+const CAMERA_MAX_Y = 569 - 269 / CAMERA_SCALE;
+let cameraX = 180;
+let cameraY = 300;
 let audio: AudioContext | null = null;
 let persistedBest = state.value.best;
 
@@ -261,6 +269,20 @@ function paint(): void {
   c.clearRect(0, 0, PINBALL_W, PINBALL_H);
   if (boardArt.complete && boardArt.naturalWidth) c.drawImage(boardArt, 0, 0, PINBALL_W, PINBALL_H);
   else { c.fillStyle = '#144d35'; c.fillRect(0, 0, PINBALL_W, PINBALL_H); }
+  const targetX = s.phase === 'playing'
+    ? Math.max(CAMERA_MIN_X, Math.min(CAMERA_MAX_X, 180 + (s.ball.x - 180) * 0.4))
+    : 180;
+  const targetY = s.phase === 'playing'
+    ? Math.max(CAMERA_MIN_Y, Math.min(CAMERA_MAX_Y, s.ball.y + 16))
+    : 300;
+  cameraX += (targetX - cameraX) * 0.14;
+  cameraY += (targetY - cameraY) * 0.14;
+  c.save();
+  c.beginPath(); c.rect(22, 33, 316, 536); c.clip();
+  c.translate(180 - cameraX * CAMERA_SCALE, 300 - cameraY * CAMERA_SCALE);
+  c.scale(CAMERA_SCALE, CAMERA_SCALE);
+  if (boardArt.complete && boardArt.naturalWidth) c.drawImage(boardArt, 0, 0, PINBALL_W, PINBALL_H);
+  else { c.fillStyle = '#144d35'; c.fillRect(0, 0, PINBALL_W, PINBALL_H); }
   c.fillStyle = '#042d1a38'; c.fillRect(22, 33, 316, 536);
   drawStageMood(c, s.stage, performance.now());
   c.lineCap = 'round';
@@ -269,7 +291,7 @@ function paint(): void {
   c.strokeStyle = '#665727'; c.lineWidth = 2;
   c.beginPath(); c.moveTo(300, 170); c.lineTo(300, 515); c.stroke();
   c.strokeStyle = '#ffe395'; c.lineWidth = 4;
-  c.beginPath(); c.moveTo(74, 458); c.lineTo(100, 522); c.moveTo(286, 458); c.lineTo(260, 522); c.stroke();
+  c.beginPath(); c.moveTo(74, 458); c.lineTo(100, 522); c.moveTo(274, 456); c.lineTo(266, 500); c.stroke();
   c.fillStyle = '#f7da77'; c.font = 'bold 11px system-ui'; c.textAlign = 'center';
   c.fillText('TRILHA', 314, 290);
   c.beginPath(); c.moveTo(76, 389); c.lineTo(119, 428); c.lineTo(91, 423); c.closePath();
@@ -347,6 +369,7 @@ function paint(): void {
   c.strokeStyle = '#e24f61'; c.lineWidth = 3; c.beginPath(); c.arc(s.ball.x, s.ball.y, 7, Math.PI, 2 * Math.PI); c.stroke();
   c.fillStyle = '#283954'; c.fillRect(s.ball.x - 6, s.ball.y - 1, 12, 2);
   c.beginPath(); c.arc(s.ball.x, s.ball.y, 2, 0, Math.PI * 2); c.fillStyle = '#f5f9ff'; c.fill();
+  c.restore();
   if (s.phase !== 'playing') {
     c.fillStyle = '#071420cf'; c.fillRect(31, 345, 298, 93);
     c.fillStyle = '#f4f7ff'; c.font = 'bold 17px system-ui';
