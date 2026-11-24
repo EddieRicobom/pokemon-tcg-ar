@@ -5,6 +5,14 @@ O estado atual, as fases, as pendências e os riscos continuam no [plano](../IMP
 datadas (com o que foi e o que não foi validado em cada uma). A regra de validação do plano vale também para estas entradas:
 🔶 significa que **nada foi visto num celular real**.
 
+## Torre: um chefe periódico por vez (24/11/2026)
+
+- **O que a simulação mostrou:** no robô de balanceamento (40 corridas), a mediana era 439 s, só 10% de quem via um chefe derrotava algum, 100% morriam com chefe em campo e 50% levavam o golpe final do chefe. Os chefes periódicos nasciam a cada 60 s e **ficavam no campo** se não caíssem, então eles se acumulavam: em 20 minutos podiam coexistir vários, cada um com ataque-assinatura e perseguição.
+- **Ajuste:** o relógio do chefe continua avançando, mas `stepSurvivor` só chama o próximo **quando não há chefe periódico vivo**. Chefes sombrios (opcionais) não bloqueiam; o chefão final dos 20 min e os chefes do Infinito continuam com a agenda própria. É a regra «um chefe por vez», testada em `survivor.test.ts`.
+- **Testes adaptados:** o teste de repetição agora derruba o primeiro chefe antes de esperar o segundo; o comparador regional ignora chefes entre medições porque o ataque-assinatura segue a espécie visível, que é diferente de propósito entre as regiões (o ataque tem teste próprio em `survivor-status-boss.test.ts`).
+- **Simulação depois do ajuste (20 corridas):** mediana 487 s, 15% derrotaram algum chefe, 85% morreram com chefe em campo e 30% com golpe final de chefe; duas corridas chegaram ao limite de 21 min. A amostra é menor, mas o sentido é o esperado: menos empilhamento, mais tempo e mais chefes derrotados. Ajuste final ainda depende de partidas reais.
+- 🔶 Typecheck, 65 arquivos / 713 testes do Survival, suíte completa (344 arquivos / 3432 testes), build e os 14 testes de layout passaram. Não testei em celular real nem uma corrida humana de 20 min.
+
 ## Pinball: bola mais lenta, saída direita livre e câmera (24/11/2026)
 
 - **Bola mais devagar:** gravidade de 820 para 680, teto de velocidade de 1.250 para 950, lançamento de −960 para −820, repique mínimo dos bumpers de 420 para 360 e flipper de 22 para 20 rad/s. O conjunto continua subindo até o topo, mas dá mais tempo de ler a mesa e defender.

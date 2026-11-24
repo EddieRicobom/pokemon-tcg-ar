@@ -101,6 +101,9 @@ it('preserva combate, recompensas e RNG em ondas, treinadores, chefão e infinit
           s.player.attackRange = 2000;
           s.nextBossAtMs = time;
           s.nextTrainerAtMs = time;
+          // O ataque-assinatura do chefe segue a espécie visível; como as duas corridas usam espécies
+          // regionais diferentes, os chefes ficam fora da comparação (os ataques têm teste próprio).
+          s.enemies = s.enemies.filter((enemy) => !enemy.boss);
         }
         for (let frame = 0; frame < 25; frame++) {
           const input = { dx: frame % 2, dy: -1 };

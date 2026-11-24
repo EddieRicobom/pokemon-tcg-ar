@@ -3887,8 +3887,11 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
   }
   if (state.elapsedMs >= state.nextBossAtMs) {
     state.nextBossAtMs += BALANCE.bossEveryMs * (state.fast ? FAST_TIME_SCALE : 1);
-    spawnEnemy(state, events, true);
-    events.push({ type: 'bossSpawn' });
+    // Um chefe por vez: o próximo só entra quando o atual cair (ou sair), sem empilhar chefes no campo.
+    if (!state.enemies.some((e) => e.boss && !e.shadowBoss)) {
+      spawnEnemy(state, events, true);
+      events.push({ type: 'bossSpawn' });
+    }
   }
 
   // Treinadores (minuto 5, 10, 15, …): 3 Pokémon elite juntos. O chefão final (minuto 20) tem 6 Pokémon.

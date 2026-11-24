@@ -504,6 +504,21 @@ describe('stepSurvivor', () => {
     expect(boss!.maxHp).toBeGreaterThan(100);
   });
 
+  it('não acumula chefes periódicos: espera o atual cair para chamar outro', () => {
+    const s = createSurvivorState(7, { kindCount: 2 });
+    s.player.maxHp = 1_000_000;
+    s.player.hp = 1_000_000;
+    s.spawnAccumMs = -1e9;
+    s.nextBossAtMs = 0;
+    const first = stepSurvivor(s, { dx: 0, dy: 0 }, 16);
+    expect(first.some((e) => e.type === 'bossSpawn')).toBe(true);
+    expect(s.enemies.filter((e) => e.boss && !e.shadowBoss)).toHaveLength(1);
+    s.nextBossAtMs = s.elapsedMs + 16;
+    const second = stepSurvivor(s, { dx: 0, dy: 0 }, 16);
+    expect(second.some((e) => e.type === 'bossSpawn')).toBe(false);
+    expect(s.enemies.filter((e) => e.boss && !e.shadowBoss)).toHaveLength(1);
+  });
+
   it('xpForLevel cresce com o nível (upgrades ficam mais caros)', () => {
     expect(xpForLevel(2)).toBeGreaterThan(xpForLevel(1));
     expect(xpForLevel(10)).toBeGreaterThan(xpForLevel(5));
@@ -1450,8 +1465,10 @@ describe('treinadores e chefão final', () => {
     expect(boss?.speed).toBe(BALANCE.bossSpeed);
 
     s.elapsedMs = BALANCE.firstBossMs + BALANCE.bossEveryMs - 100;
+    s.enemies = s.enemies.filter((enemy) => !enemy.boss);
     const second = stepSurvivor(s, { dx: 0, dy: 0 }, 200);
     expect(second).toContainEqual({ type: 'bossSpawn' });
+    expect(s.enemies.filter((enemy) => enemy.boss)).toHaveLength(1);
   });
 
   it('modo infinito: derrotar o chefão não termina a corrida (segue até morrer)', () => {
