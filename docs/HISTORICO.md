@@ -5,6 +5,14 @@ O estado atual, as fases, as pendências e os riscos continuam no [plano](../IMP
 datadas (com o que foi e o que não foi validado em cada uma). A regra de validação do plano vale também para estas entradas:
 🔶 significa que **nada foi visto num celular real**.
 
+## Torre: pausa justa, números da corrida e dicas (24/11/2026)
+
+- **Pausa automática:** sair do app durante uma corrida ativa agora pausa de verdade (relógio, inimigos e projéteis), guarda o checkpoint e mostra “Você saiu do app” na folha de pausa. A regra pura `shouldSurvivorAutoPause` ignora resumo, escolhas, evolução, chefe, baú e afinidade em andamento.
+- **Números da corrida:** a folha de pausa mostra dano total, DPS médio, inimigos em campo, elites/chefes e as três maiores fontes de dano (`survivorRunNumbers`). É leitura pura sobre o `runStats` existente.
+- **Minimapa:** a baliza de Ressonância/Caçada ganhou um anel ciano pulsante, inclusive fora da câmera, e o texto acessível do mapa foi atualizado.
+- **Fim de corrida:** o resumo ganhou “Para a próxima corrida” com até três dicas contextuais (`survivorCoachHints`: primeiro minuto, chefe/elite/projétil, quase-recorde, Dojô, abates, treinadores, infinito) e uma linha de novos recordes de tempo, onda e nível (`survivorNewRecords`), sempre calculados antes de o recorde ser atualizado.
+- 🔶 Typecheck, 341 arquivos / 3408 testes, build e os 14 testes de layout passaram; no navegador do PC conferi o anel no minimapa, os números na pausa, a pausa automática simulando `document.hidden` e as dicas no resumo. Não testei troca de app, tela apagada ou toque em celular real.
+
 ## Interface compacta e teste de sobreposição (24/11/2026)
 
 - A casca ficou mais compacta sem perder alvos de toque: `--nav-height` de 68 para 62 px, paddings e gaps menores, marca e título discretos, barra de abas opaca (o conteúdo não aparece mais por trás dos rótulos), pílulas de modo mais baixas, cartões com 13 px de padding e títulos menores. O espaço inferior continua reservando a barra fixa, e o rodapé escapa dela no fim da rolagem.

@@ -45,4 +45,13 @@ describe('minimapa da Torre', () => {
     const snapshot = survivorMinimapSnapshot({ player, enemies: [], artifacts: [artifact] }, { width: ARENA_W, height: ARENA_H }, { width: 300, height: 200 });
     expect(snapshot.markers).toContainEqual({ ...artifact, kind: 'artifact' });
   });
+
+  it('mostra a baliza do encontro de campo como farol', () => {
+    const fieldEvent = { phase: 'beacon' as const, kind: 'resonance' as const, x: player.x + 60, y: player.y - 40, remainingMs: 5000, enemyIds: [] };
+    const snapshot = survivorMinimapSnapshot({ player, enemies: [], artifacts: [], fieldEvent }, { width: ARENA_W, height: ARENA_H }, { width: 300, height: 200 });
+    expect(snapshot.markers).toContainEqual({ id: -1, x: fieldEvent.x, y: fieldEvent.y, kind: 'beacon' });
+    // Fora da janela local, a baliza não ocupa o minimapa.
+    const far = survivorMinimapSnapshot({ player, enemies: [], artifacts: [], fieldEvent: { ...fieldEvent, x: player.x + 5000, y: player.y } }, { width: ARENA_W, height: ARENA_H }, { width: 300, height: 200 });
+    expect(far.markers.some((marker) => marker.kind === 'beacon')).toBe(false);
+  });
 });
