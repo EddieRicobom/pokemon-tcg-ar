@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  adaptiveTarget, applyLevelBonus, SURVIVOR_THIEF_FIRST_MS, SURVIVOR_THIEF_LIFE_MS, damageRanking, emptyRunStats, survivorRunNumbers, recordDamage, sampleTimeline, stepAdaptive, thiefFleeTarget, thiefReward, ADAPTIVE_MAX, ADAPTIVE_MIN,
+  adaptiveTarget, applyLevelBonus, SURVIVOR_THIEF_FIRST_MS, SURVIVOR_THIEF_LIFE_MS, damageRanking, emptyRunStats, survivorRunNumbers, damageTakenRanking, recordDamageTaken, recordDamage, sampleTimeline, stepAdaptive, thiefFleeTarget, thiefReward, ADAPTIVE_MAX, ADAPTIVE_MIN,
 } from './survivor-extras';
 import type { SurvivorPlayer, SurvivorState } from './survivor-types';
 import { createSurvivorState, stepSurvivor } from './survivor';
@@ -186,5 +186,16 @@ describe('na corrida de verdade', () => {
     expect(summary?.damageBySource?.[0]?.name).toBe(s.player.move.name);
     expect(summary?.damageBySource?.[0]?.damage).toBeGreaterThan(0);
     expect(summary?.timeline?.at(-1)?.ms).toBe(s.elapsedMs);
+  });
+});
+
+describe('dano recebido no resumo', () => {
+  it('agrupa por tipo e ordena do maior para o menor', () => {
+    const stats = emptyRunStats();
+    recordDamageTaken(stats, 'projétil', 30.4);
+    recordDamageTaken(stats, 'queimadura', 10);
+    recordDamageTaken(stats, 'projétil', 5);
+    expect(damageTakenRanking(stats).map((row) => [row.name, row.damage])).toEqual([['Projéteis', 35], ['Queimadura', 10]]);
+    expect(damageTakenRanking(emptyRunStats())).toEqual([]);
   });
 });

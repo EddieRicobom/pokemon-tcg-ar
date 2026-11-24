@@ -131,8 +131,10 @@ import { loadCardCompanionEntry } from '../app/companion-creatures';
 import { companionCard } from '../app/card-evolution-store';
 import type { CachedCard } from '../cache/types';
 import QuizDialog from './QuizDialog.vue';
-import { generateDailyMail, mailActionLabel, mailKindLabel, markAllMailRead, markMailRead, queueMomentMail, respondToMail } from '../core/village/mail';
+import { generateDailyMail, mailActionLabel, mailKindLabel, markAllMailRead, markMailRead, queueMomentMail, respondToMail, restoreMail } from '../core/village/mail';
 import type { MailAction } from '../core/village/mail';
+import { filterMail, villageChatterExchange } from '../core/village/chatter';
+import type { VillageMailView } from '../core/village/chatter';
 import { browseItems } from '../core/village/item-browser';
 import type { ItemBrowserSort } from '../core/village/item-browser';
 
@@ -379,6 +381,9 @@ const shopTab = ref<'comprar' | 'vender'>('comprar');
 const dressFor = ref<string>('player');
 const dialog = ref<{ id?: string; name: string; text: string; actions: { label: string; run: () => void; disabled?: boolean }[] } | null>(null);
 const mailUnread = computed(() => state.mail.inbox.filter((entry) => !entry.read).length);
+const mailView = ref<VillageMailView>('novas');
+const mailQuery = ref('');
+const visibleMail = computed(() => filterMail(state.mail.inbox, state.mail.archive, mailView.value, mailQuery.value));
 /** O morador em destaque no minimapa enquanto uma conversa ou momento está acontecendo. */
 const minimapSpeakerId = ref<string | null>(null);
 /** Texto curto para a rota atual, sem transformar o minimapa em outro menu. */
@@ -1655,6 +1660,13 @@ function readMail(id: string): void {
 function readAllMail(): void {
   const marked = markAllMailRead(state.mail);
   if (marked > 0) changed();
+}
+
+function restoreArchived(id: string): void {
+  if (restoreMail(state.mail, id)) {
+    say('Carta devolvida à caixa de entrada.', 3200);
+    changed();
+  }
 }
 
 function answerMail(id: string, action: MailAction): void {
@@ -3408,7 +3420,46 @@ watch(() => state.coins, (value, previous) => {
 watch(() => effectiveVisual.value.villageHd2d, () => {
   if (wrapEl.value) game?.resize(wrapEl.value.clientWidth, wrapEl.value.clientHeight);
 });
+let chatterTimer: ReturnType<typeof setInterval> | null = null;
+let chatterFirstTimer: ReturnType<typeof setTimeout> | null = null;
+let chatterReplyTimer: ReturnType<typeof setTimeout> | null = null;
+let chatterSeed = 97;
+
+/** Moradores puxam assunto sozinhos, com uma resposta curta de outro. Nunca cria momento nem recompensa. */
+function ambientChatter(): void {
+  if (document.hidden || loading.value || sheet.value || dialog.value || cutsceneOpen.value) return;
+  const residents = mons.value;
+  if (residents.length === 0 || !game) return;
+  const nearIds = game.nearbyResidentIds(residents.map((mon) => mon.id));
+  const candidates = residents.filter((mon) => nearIds.includes(mon.id));
+  if (candidates.length === 0) return;
+  chatterSeed = (chatterSeed * 1664525 + 1013904223) >>> 0;
+  const follower = state.follower ? candidates.find((mon) => mon.id === state.follower) : undefined;
+  const first = follower ?? candidates[chatterSeed % candidates.length]!;
+  const pool = candidates.length > 1 ? candidates.filter((mon) => mon.id !== first.id) : candidates;
+  const second = pool[(chatterSeed >>> 9) % pool.length]!;
+  const last = [...state.diary].reverse()[0];
+  const exchange = villageChatterExchange(chatterSeed, {
+    hour: villageHour(),
+    weather: game.weatherKind ?? null,
+    friendPoints: friendOf(state, first.id).points,
+    recentTitle: last?.title,
+  });
+  game.ambientSpeech(first.id, exchange.a, 5200);
+  if (second.id !== first.id) {
+    if (chatterReplyTimer) clearTimeout(chatterReplyTimer);
+    chatterReplyTimer = setTimeout(() => {
+      if (!document.hidden && !sheet.value && !dialog.value && !cutsceneOpen.value) game?.ambientSpeech(second.id, exchange.b, 3600);
+    }, 2300);
+  }
+}
+if (import.meta.env.DEV) (window as unknown as { villageChatter?: () => void }).villageChatter = ambientChatter;
+
 onBeforeUnmount(() => {
+  if (chatterTimer) clearInterval(chatterTimer);
+  if (chatterFirstTimer) clearTimeout(chatterFirstTimer);
+  if (chatterReplyTimer) clearTimeout(chatterReplyTimer);
+  chatterTimer = chatterFirstTimer = chatterReplyTimer = null;
   detachLiveVillage(state);
   sound.dispose();
   music.dispose();
@@ -3421,6 +3472,8 @@ onMounted(async () => {
   }
   reducedMotionQuery?.addEventListener('change', syncReducedMotion);
   document.addEventListener('focusin', rememberVillageActionFocus);
+  chatterFirstTimer = setTimeout(ambientChatter, 11_000);
+  chatterTimer = setInterval(ambientChatter, 26_000);
   // Baixa o treinador enquanto cache e moradores são preparados, sem somar até 8 s à abertura.
   const trainerAtlasPromise = loadTrainerAtlas(profile.sprite);
   // Cutscene da primeira entrada (Fase 4): só na primeira vez de verdade, antes do aviso de controles.
@@ -4039,28 +4092,40 @@ onBeforeUnmount(() => {
         </div>
 
         <div v-else-if="tab === 'correio'" class="diary village-mail-panel">
-          <p class="hint">Cartas ligadas a momentos que realmente aconteceram. Os nomes abaixo são os Pokémon envolvidos no Diário; responder pode criar um novo compromisso social.</p>
+          <p class="hint">Cartas ligadas a momentos que realmente aconteceram. Responder pode criar um novo compromisso social; o arquivo guarda o que você já leu.</p>
+          <div class="mail-tools">
+            <input v-model="mailQuery" type="search" placeholder="Buscar por remetente, assunto ou texto" aria-label="Buscar carta" />
+            <div class="mail-views" role="group" aria-label="Filtrar cartas">
+              <button type="button" :class="{ active: mailView === 'novas' }" :aria-pressed="mailView === 'novas'" @click="mailView = 'novas'">Novas<template v-if="mailUnread"> · {{ mailUnread }}</template></button>
+              <button type="button" :class="{ active: mailView === 'todas' }" :aria-pressed="mailView === 'todas'" @click="mailView = 'todas'">Todas</button>
+              <button type="button" :class="{ active: mailView === 'arquivo' }" :aria-pressed="mailView === 'arquivo'" @click="mailView = 'arquivo'">Arquivo<template v-if="state.mail.archive.length"> · {{ state.mail.archive.length }}</template></button>
+            </div>
+          </div>
           <section aria-labelledby="mail-inbox-title">
-            <div class="mail-inbox-head"><h4 id="mail-inbox-title">📬 Caixa de entrada <small v-if="mailUnread">· {{ mailUnread }} nova(s)</small></h4><button type="button" :disabled="mailUnread === 0" @click="readAllMail">Marcar todas como lidas</button></div>
-            <ul v-if="state.mail.inbox.length" class="village-list mail-list">
-              <li v-for="mail in state.mail.inbox.slice().reverse()" :key="mail.id" class="mail-card" :class="{ unread: !mail.read }">
-                <div class="mail-card-head"><span>{{ mailKindLabel[mail.kind] }} · {{ mail.day }}</span><b v-if="!mail.read">NOVA</b></div>
+            <div class="mail-inbox-head">
+              <h4 id="mail-inbox-title">{{ mailView === 'arquivo' ? '🗄️ Arquivo' : mailView === 'novas' ? '📬 Novas cartas' : '📬 Todas as cartas' }} <small>· {{ visibleMail.length }}</small></h4>
+              <button v-if="mailView !== 'arquivo'" type="button" :disabled="mailUnread === 0" @click="readAllMail">Marcar todas como lidas</button>
+            </div>
+            <ul v-if="visibleMail.length" class="village-list mail-list">
+              <li v-for="mail in visibleMail.slice().reverse()" :key="mail.id" class="mail-card" :class="{ unread: !mail.read }">
+                <div class="mail-card-head"><span>{{ mailKindLabel[mail.kind] }} · {{ mail.day }}</span><b v-if="!mail.read">NOVA</b><b v-else-if="mailView === 'arquivo'">ARQUIVADA</b></div>
                 <strong>{{ mail.subject }}</strong>
                 <small>De {{ mail.fromName }}<span v-if="mail.involvedIds.length"> · envolvidos: {{ mail.involvedIds.map(nameOf).join(', ') }}</span></small>
                 <p>{{ mail.body }}</p>
                 <div class="summary-actions mail-actions">
-                  <button v-if="!mail.read" type="button" @click="readMail(mail.id)">Marcar como lida</button>
-                  <button v-if="mail.fromId && !mail.responded" type="button" @click="answerMail(mail.id, 'responder')">{{ mailActionLabel('responder', mail.kind) }}</button>
-                  <button v-if="mail.fromId && mail.involvedIds.length > 1 && !mail.responded" type="button" @click="answerMail(mail.id, 'ajudar')">{{ mailActionLabel('ajudar', mail.kind) }}</button>
-                  <button type="button" @click="answerMail(mail.id, 'arquivar')">Guardar</button>
+                  <template v-if="mailView === 'arquivo'">
+                    <button type="button" @click="restoreArchived(mail.id)">Restaurar</button>
+                  </template>
+                  <template v-else>
+                    <button v-if="!mail.read" type="button" @click="readMail(mail.id)">Marcar como lida</button>
+                    <button v-if="mail.fromId && !mail.responded" type="button" @click="answerMail(mail.id, 'responder')">{{ mailActionLabel('responder', mail.kind) }}</button>
+                    <button v-if="mail.fromId && mail.involvedIds.length > 1 && !mail.responded" type="button" @click="answerMail(mail.id, 'ajudar')">{{ mailActionLabel('ajudar', mail.kind) }}</button>
+                    <button type="button" @click="answerMail(mail.id, 'arquivar')">Guardar</button>
+                  </template>
                 </div>
               </li>
             </ul>
-            <p v-else class="hint">Nenhuma carta esperando. Um momento novo entre moradores fará o carteiro voltar.</p>
-          </section>
-          <section v-if="state.mail.archive.length" aria-labelledby="mail-archive-title">
-            <h4 id="mail-archive-title">🗄️ Arquivo</h4>
-            <ul class="village-list mail-list archived"><li v-for="mail in state.mail.archive.slice().reverse().slice(0, 12)" :key="mail.id"><span><strong>{{ mail.subject }}</strong><small>{{ mail.fromName }} · {{ mail.day }}<span v-if="mail.responded"> · resposta enviada</span></small></span></li></ul>
+            <p v-else class="hint">{{ mailQuery.trim() ? 'Nenhuma carta combina com a busca.' : mailView === 'arquivo' ? 'O arquivo está vazio. Cartas guardadas aparecem aqui.' : mailView === 'novas' ? 'Nenhuma carta nova. Um momento entre moradores faz o carteiro voltar.' : 'Nenhuma carta esperando. Um momento novo entre moradores fará o carteiro voltar.' }}</p>
           </section>
         </div>
 
