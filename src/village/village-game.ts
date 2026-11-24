@@ -120,6 +120,8 @@ export class VillageGame {
   private calledUntil = 0;
   /** Toque na tela: o bloco aonde você está indo a pé (o caminho contorna o que estiver no meio). */
   private goal: { x: number; y: number } | null = null;
+  /** Quando definido, a câmera segue este morador e o jogador fica parado (modo "assistir"). */
+  private observeId: string | null = null;
   /** A câmera do último quadro, para converter um toque na tela em bloco do mapa. */
   private view = { camX: 0, camY: 0, groundTilt: 1 };
   private stick: Pick<StickDirs, 'primary' | 'secondary'> | null = null;
@@ -996,6 +998,47 @@ export class VillageGame {
     });
   }
 
+  /** Moradores acordados perto de um ponto/âncora, para os momentos acontecerem em qualquer canto da Vila. */
+  nearbyResidentIdsOf(anchorId: string, ids: readonly string[], maxTiles = 10): string[] {
+    const anchor = this.villagers.get(anchorId);
+    if (!anchor) return [];
+    return ids.filter((id) => {
+      const walker = this.villagers.get(id);
+      return !!walker && !this.asleep.has(id) && Math.hypot(walker.x - anchor.x, walker.y - anchor.y) <= maxTiles;
+    });
+  }
+
+  /** Câmera de observação: segue o morador e congela o jogador até sair. `null` devolve a câmera a você. */
+  setObserve(id: string | null): void {
+    this.observeId = id && this.villagers.has(id) ? id : null;
+    this.goal = null;
+    if (this.observeId) {
+      this.held = null;
+      this.stick = null;
+    }
+  }
+
+  get observing(): string | null {
+    return this.observeId;
+  }
+
+  hasResident(id: string): boolean {
+    return this.villagers.has(id);
+  }
+
+  /** O que o morador está fazendo agora, para a faixa do modo "assistir". */
+  residentStatus(id: string): string {
+    if (this.asleep.has(id)) return 'dormindo em casa';
+    if (this.sceneBusy(id)) return 'conversando';
+    const work = this.communityWork.get(id);
+    if (work && performance.now() < work.until) return COMMUNITY_ACTIVITY_NAMES[work.activity] ?? 'trabalhando';
+    if (this.farmTasks.has(id)) return 'na fazenda';
+    if (this.state.follower === id) return 'seguindo o treinador';
+    if (this.getCafe().seats.visits.has(id)) return 'no Café';
+    const walker = this.villagers.get(id);
+    return walker && moving(walker) ? 'passeando' : 'na Vila';
+  }
+
   clearBubble(id: string): void {
     this.bubbles.delete(id);
     this.speech.delete(id);
@@ -1224,7 +1267,7 @@ export class VillageGame {
       for (let k = 0; k < 2; k++) this.particles.push({ kind: 'dust', x: p.x + 0.5 + (this.rng() - 0.5) * 0.4, y: p.y + 0.95, vx: (this.rng() - 0.5) * 0.8, vy: -0.25 - this.rng() * 0.3, born: now, life: 420 });
     }
     // Teclado (uma direção) ou joystick (na diagonal alterna os eixos; bloqueado num, tenta o outro e desliza).
-    const order = this.stick ? stepOrder(this.stick, this.stepParity) : this.held ? [this.held] : [];
+    const order = this.observeId ? [] : this.stick ? stepOrder(this.stick, this.stepParity) : this.held ? [this.held] : [];
     if (!moving(p) && order.length > 0) {
       const blocked = (x: number, y: number) => this.occupied(x, y, 'eu');
       if (order.some((dir) => tryStep(p, dir, this.map, blocked))) {
@@ -1239,7 +1282,7 @@ export class VillageGame {
       }
     } else if (order.length === 0) {
       this.pushMs = 0;
-      if (!moving(p) && this.goal) this.stepTowardGoal();
+      if (!this.observeId && !moving(p) && this.goal) this.stepTowardGoal();
     }
     const behind = { x: p.x, y: p.y };
     this.updateSleep(now);
@@ -1532,7 +1575,7 @@ export class VillageGame {
     const cinema = !this.diorama && this.smoothSprites();
     ctx.imageSmoothingEnabled = cinema;
     const castShadows = cinema && this.castShadows();
-    const pp = drawPos(this.player);
+    const pp = drawPos(this.observeId ? this.villagers.get(this.observeId) ?? this.player : this.player);
     // A Vila 2D-HD continua sendo um canvas: o chão é comprimido no eixo y,
     // enquanto os objetos apoiados nele permanecem em pé. Isso cria a leitura
     // de câmera inclinada sem tocar no Diorama AR nem em modelos 3D.

@@ -5,6 +5,14 @@ O estado atual, as fases, as pendências e os riscos continuam no [plano](../IMP
 datadas (com o que foi e o que não foi validado em cada uma). A regra de validação do plano vale também para estas entradas:
 🔶 significa que **nada foi visto num celular real**.
 
+## Vila: vida autônoma e Câmera da Vila (24/11/2026)
+
+- Os momentos sociais não esperam mais o jogador chegar perto: a cada 55–120 s a Vila escolhe um morador livre como âncora e reúne quem está perto dele (até 10 blocos), então a cena acontece em qualquer canto sem teleportar gente do outro lado do mapa. O café continua tendo prioridade quando há dois clientes por perto.
+- **Câmera da Vila** (aba «Lugares da Vila»): segue um morador, congela o jogador e mostra uma faixa com nome, rotina atual (`residentStatus`: passeando, conversando, na fazenda, no Café, dormindo…), o momento em andamento e «Acontece na Vila» com os três últimos momentos reais do Diário. Dá para pular para outro morador, sair ou clicar num momento para seguir um participante.
+- Quando um momento começa com a câmera ligada, ela troca sozinha para o elenco — o “show” continua. Sem a câmera, a cena acontece longe e entra no Diário/Correio do mesmo jeito.
+- As conversas ambientes continuam só com moradores próximos, para o balão não nascer sob o minimapa.
+- 🔶 Typecheck, 344 arquivos / 3423 testes, build e os 14 testes de layout passaram. Conferi no navegador a Câmera da Vila seguindo o Bulbasaur, a rotina “passeando/conversando”, um momento autônomo (“Chuva de pinhas”) e o feed. Não testei em celular real nem a câmera em todas as posições de mapa.
+
 ## Torre: status, dano recebido e chefes com ataques próprios; Vila: conversas e Correio (24/11/2026)
 
 - **Tiros inimigos com consequência:** queimadura (3 s, 1,2% da vida máxima por segundo), lentidão (1,8 s a 65% do passo) e atordoamento (0,34 s) agora afetam o jogador quando o dano entra. O HUD mostra ícone, cor e segundos restantes; a queimadura não pisca o flash/som a cada tique. O status é bloqueado por escudo/invulnerabilidade e o dano por queimadura entra no relatório.
