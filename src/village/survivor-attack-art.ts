@@ -847,3 +847,163 @@ export function drawConeGuide(
   ctx.stroke();
   ctx.restore();
 }
+
+// ----------------------------------------------------------------------------- tiros inimigos
+
+export type HostileShotEffect = 'burn' | 'slow' | 'stun';
+export type HostileShotGrade = 'comum' | 'elite' | 'chefao';
+
+export interface HostileShotLook {
+  /** Cabeça do projétil em pixels de tela. */
+  x: number;
+  y: number;
+  /** Direção do voo, em radianos. */
+  angle: number;
+  /** Raio visual em pixels de tela. */
+  size: number;
+  effect?: HostileShotEffect;
+  grade?: HostileShotGrade;
+  timeMs: number;
+  detailed: boolean;
+  id: number;
+}
+
+/** Cor-base do tiro inimigo, compartilhada com o rastro de saída. */
+export function hostileShotColor(effect?: HostileShotEffect): string {
+  return effect === 'burn' ? '#ff8c3a' : effect === 'slow' ? '#7bdcff' : effect === 'stun' ? '#d9a6ff' : '#ff6c64';
+}
+
+/**
+ * Tiro de inimigo: forma própria por efeito (chama, cristal de gelo, faísca ou dardo comum), rastro curto na direção
+ * do voo e anel de leitura quando o atirador é elite ou chefe. Só desenho: o círculo que fere continua sendo o do motor.
+ */
+export function drawHostileProjectile(ctx: CanvasRenderingContext2D, shot: HostileShotLook): void {
+  const t = shot.timeMs / 1000;
+  const phase = t * 7 + shot.id * 1.7;
+  const size = Math.max(1.5, shot.size);
+  const body = hostileShotColor(shot.effect);
+  const dark = shot.effect === 'burn' ? '#7a2a10' : shot.effect === 'slow' ? '#245a7a' : shot.effect === 'stun' ? '#4d2a78' : '#7a1f2b';
+  const core = shot.effect === 'burn' ? '#fff4bf' : shot.effect === 'slow' ? '#f2fdff' : shot.effect === 'stun' ? '#fff0ff' : '#ffe2d6';
+  ctx.save();
+  ctx.translate(shot.x, shot.y);
+
+  if (!shot.detailed) {
+    ctx.globalAlpha = 0.3;
+    ctx.fillStyle = body;
+    ctx.beginPath(); ctx.arc(0, 0, size * 1.7, 0, Math.PI * 2); ctx.fill();
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = body;
+    ctx.beginPath(); ctx.arc(0, 0, size * 0.8, 0, Math.PI * 2); ctx.fill();
+    ctx.lineWidth = Math.max(1, size * 0.25);
+    ctx.strokeStyle = dark;
+    ctx.stroke();
+    ctx.restore();
+    return;
+  }
+
+  // Halo curto e rastro na direção contrária ao voo.
+  ctx.rotate(shot.angle);
+  ctx.globalAlpha = 0.18;
+  ctx.fillStyle = body;
+  ctx.beginPath(); ctx.arc(0, 0, size * 2.2, 0, Math.PI * 2); ctx.fill();
+  for (let i = 1; i <= 3; i++) {
+    const wobble = shot.effect === 'burn' ? Math.sin(phase * 1.6 + i) * size * 0.18 : 0;
+    ctx.globalAlpha = 0.3 / i;
+    ctx.fillStyle = i === 3 ? dark : body;
+    ctx.beginPath();
+    ctx.ellipse(-size * (0.9 + i * 0.55), wobble, size * (0.85 - i * 0.16), size * (0.55 - i * 0.1), 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  ctx.globalAlpha = 1;
+  ctx.lineJoin = 'round';
+  if (shot.effect === 'burn') {
+    // Chama apontada para frente, com brasas subindo atrás.
+    ctx.fillStyle = body;
+    ctx.beginPath();
+    ctx.moveTo(size * 1.45, 0);
+    ctx.quadraticCurveTo(size * 0.2, -size * 1.05, -size * 0.95, -size * 0.2);
+    ctx.quadraticCurveTo(-size * 0.2, 0, -size * 0.95, size * 0.2);
+    ctx.quadraticCurveTo(size * 0.2, size * 1.05, size * 1.45, 0);
+    ctx.fill();
+    ctx.lineWidth = Math.max(1, size * 0.2);
+    ctx.strokeStyle = dark;
+    ctx.stroke();
+    ctx.fillStyle = core;
+    ctx.beginPath(); ctx.ellipse(size * 0.2, 0, size * 0.55, size * 0.38, 0, 0, Math.PI * 2); ctx.fill();
+    for (const k of [0, 1]) {
+      ctx.globalAlpha = 0.65;
+      ctx.fillStyle = '#ffd25a';
+      ctx.beginPath();
+      ctx.arc(-size * (1.5 + k * 0.7), Math.sin(phase * 2 + k) * size * 0.5, Math.max(1, size * 0.18), 0, Math.PI * 2);
+      ctx.fill();
+    }
+  } else if (shot.effect === 'slow') {
+    // Cristal de gelo com reflexo branco e faíscas.
+    ctx.fillStyle = body;
+    ctx.beginPath();
+    ctx.moveTo(size * 1.55, 0); ctx.lineTo(0, -size * 0.85); ctx.lineTo(-size * 1.15, 0); ctx.lineTo(0, size * 0.85);
+    ctx.closePath(); ctx.fill();
+    ctx.lineWidth = Math.max(1, size * 0.2);
+    ctx.strokeStyle = dark;
+    ctx.stroke();
+    ctx.globalAlpha = 0.85;
+    ctx.fillStyle = core;
+    ctx.beginPath();
+    ctx.moveTo(size * 0.7, 0); ctx.lineTo(0, -size * 0.36); ctx.lineTo(-size * 0.45, 0); ctx.lineTo(0, size * 0.36);
+    ctx.closePath(); ctx.fill();
+    ctx.globalAlpha = 0.8;
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = Math.max(1, size * 0.12);
+    ctx.beginPath(); ctx.moveTo(-size * 2.1, -size * 0.5); ctx.lineTo(-size * 1.5, -size * 0.5); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(-size * 1.8, -size * 0.9); ctx.lineTo(-size * 1.8, -size * 0.1); ctx.stroke();
+  } else if (shot.effect === 'stun') {
+    // Núcleo elétrico com arcos em ziguezague.
+    ctx.fillStyle = body;
+    ctx.beginPath(); ctx.arc(0, 0, size * 0.78, 0, Math.PI * 2); ctx.fill();
+    ctx.lineWidth = Math.max(1, size * 0.22);
+    ctx.strokeStyle = dark;
+    ctx.stroke();
+    ctx.fillStyle = core;
+    ctx.beginPath(); ctx.arc(size * 0.12, 0, size * 0.34, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = core;
+    ctx.lineWidth = Math.max(1, size * 0.16);
+    for (const side of [-1, 1]) {
+      ctx.globalAlpha = 0.75;
+      ctx.beginPath();
+      ctx.moveTo(-size * 0.4, side * size * 0.7);
+      ctx.lineTo(size * 0.1, side * size * 1.15);
+      ctx.lineTo(size * 0.5, side * size * 0.8);
+      ctx.lineTo(size * 1.0, side * size * 1.3 + Math.sin(phase * 2) * size * 0.15);
+      ctx.stroke();
+    }
+  } else {
+    // Dardo comum: ponta, contorno escuro e centro quente.
+    ctx.fillStyle = body;
+    ctx.beginPath();
+    ctx.moveTo(size * 1.45, 0); ctx.lineTo(-size * 0.25, -size * 0.68); ctx.lineTo(-size * 0.9, 0); ctx.lineTo(-size * 0.25, size * 0.68);
+    ctx.closePath(); ctx.fill();
+    ctx.lineWidth = Math.max(1, size * 0.22);
+    ctx.strokeStyle = dark;
+    ctx.stroke();
+    ctx.fillStyle = core;
+    ctx.beginPath(); ctx.arc(0, 0, size * 0.3, 0, Math.PI * 2); ctx.fill();
+  }
+
+  // Elite ganha aro dourado; chefe, aro duplo pulsante. A leitura vem antes do dano.
+  if (shot.grade === 'elite' || shot.grade === 'chefao') {
+    const boss = shot.grade === 'chefao';
+    ctx.globalAlpha = boss ? 0.8 : 0.55;
+    ctx.strokeStyle = boss ? '#ffcf5a' : '#ffd86b';
+    ctx.lineWidth = Math.max(1, size * (boss ? 0.2 : 0.16));
+    ctx.beginPath();
+    ctx.arc(0, 0, size * (1.6 + Math.sin(phase) * (boss ? 0.12 : 0.06)), 0, Math.PI * 2);
+    ctx.stroke();
+    if (boss) {
+      ctx.globalAlpha = 0.38;
+      ctx.strokeStyle = '#ff6c64';
+      ctx.beginPath(); ctx.arc(0, 0, size * 2.05, 0, Math.PI * 2); ctx.stroke();
+    }
+  }
+  ctx.restore();
+}

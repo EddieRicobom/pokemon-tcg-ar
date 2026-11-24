@@ -5,6 +5,14 @@ O estado atual, as fases, as pendências e os riscos continuam no [plano](../IMP
 datadas (com o que foi e o que não foi validado em cada uma). A regra de validação do plano vale também para estas entradas:
 🔶 significa que **nada foi visto num celular real**.
 
+## Torre: tiros inimigos mais legíveis (24/11/2026)
+
+- Cada tiro inimigo ganhou forma própria pelo efeito: dardo comum, chama (queimadura), cristal de gelo (lentidão) e faísca em ziguezague (atordoamento), com contorno escuro, centro quente, rastro curto e halo. Elites ganham aro dourado e chefes, aro duplo pulsante.
+- O disparo agora guarda origem e instante: nos primeiros 180 ms aparece um risco/estouro de boca de cano ligando o atirador ao projétil. A origem e o instante são só visuais; a colisão continua no círculo do motor.
+- Quando a vida do jogador cai, um estilhaço curto (anel + lascas) marca o impacto no corpo, colorido pelo tipo do golpe final (contato, projétil ou explosão), além do flash e do tremor já existentes.
+- A arte fica em `drawHostileProjectile` (`village/survivor-attack-art.ts`) e a versão leve (efeitos reduzidos/Rotom) desenha só os círculos. `survivor-attack-art.test.ts` cobre os quatro efeitos e a versão leve; o teste do atirador confere origem e instante.
+- 🔶 Typecheck, 342 arquivos / 3410 testes e build passaram. Conferi no navegador do PC os quatro formatos, os aros de elite/chefe e o estilhaço ao levar dano, na vista de cima e no BONK. Não testei em celular real nem com muitos projéteis simultâneos.
+
 ## Torre: pausa justa, números da corrida e dicas (24/11/2026)
 
 - **Pausa automática:** sair do app durante uma corrida ativa agora pausa de verdade (relógio, inimigos e projéteis), guarda o checkpoint e mostra “Você saiu do app” na folha de pausa. A regra pura `shouldSurvivorAutoPause` ignora resumo, escolhas, evolução, chefe, baú e afinidade em andamento.

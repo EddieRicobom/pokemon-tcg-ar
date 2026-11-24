@@ -131,7 +131,7 @@ import type { SurvivorPointerSample } from '../core/survivor-gesture';
 import { bonkGroundEllipse, bonkObstacleDrawables, createBonkArt, drawBonkGround } from '../village/survivor-bonk-landscape';
 import type { BonkArt } from '../village/survivor-bonk-landscape';
 import { PROJECTILE_TIER_NAMES, survivorProjectileTier } from '../core/survivor-projectile-power';
-import { drawConeGuide, drawElementAuraField, drawElementFx, drawElementOrbiter, drawElementProjectile, drawOrbitPath } from '../village/survivor-attack-art';
+import { drawConeGuide, drawElementAuraField, drawElementFx, drawElementOrbiter, drawElementProjectile, drawHostileProjectile, drawOrbitPath, hostileShotColor } from '../village/survivor-attack-art';
 import { drawBubblePopFx, drawChainFx, drawChest, drawBlackChest, drawChestOpenFx, drawDestinyChains, drawDistortFx, drawGravityWell, drawHeldChargeOrb, drawHeldGems, drawHeldHitFx, drawHeldProjectileOverlay, drawImplodeFx, drawKey, drawMirrorOrbiter, drawPortalFx, drawStickyBarb, drawSuctionField, drawTimeBubble } from '../village/survivor-held-art';
 import { HELD_ITEM_BY_ID, HELD_OFFER_PREFIX, heldChargePosition, heldGems, heldItemSpriteUrl, isHeldItemId, mirrorOrbiters } from '../core/survivor-held';
 import type { HeldItemId, HeldStacks } from '../core/survivor-held';
@@ -2571,12 +2571,27 @@ function drawBonkScene(s: SurvivorState, physics: BonkPhysics): void {
   for (const projectile of s.hostileProjectiles) {
     const p = drawPoint(projectile, 16);
     if (!p) continue;
-    c.fillStyle = projectile.effect === 'stun' ? '#e6b6ff' : projectile.effect === 'slow' ? '#7bdcff' : '#ff6c64';
-    // Halo em volta do tiro: dá para ver de longe o que vem na sua direção.
-    c.globalAlpha = 0.35;
-    c.beginPath(); c.arc(p.x, p.y, clamp(projectile.size * p.scale * 1.5, 3, 22), 0, Math.PI * 2); c.fill();
-    c.globalAlpha = 1;
-    c.beginPath(); c.arc(p.x, p.y, clamp(projectile.size * p.scale * 0.65, 1.5, 10), 0, Math.PI * 2); c.fill();
+    const age = projectile.bornMs !== undefined ? s.elapsedMs - projectile.bornMs : Infinity;
+    if (detailed && age >= 0 && age < 180 && projectile.originX !== undefined && projectile.originY !== undefined) {
+      const origin = drawPoint({ x: projectile.originX, y: projectile.originY }, 14);
+      if (origin) {
+        const fade = 1 - age / 180;
+        c.save();
+        c.globalAlpha = 0.5 * fade;
+        c.strokeStyle = hostileShotColor(projectile.effect);
+        c.lineWidth = Math.max(1.5, p.scale * 2);
+        c.beginPath(); c.moveTo(origin.x, origin.y); c.lineTo(p.x, p.y); c.stroke();
+        c.globalAlpha = 0.55 * fade;
+        c.fillStyle = '#fff4d0';
+        c.beginPath(); c.arc(origin.x, origin.y, clamp(projectile.size * p.scale * 0.5, 1.5, 6), 0, Math.PI * 2); c.fill();
+        c.restore();
+      }
+    }
+    drawHostileProjectile(c, {
+      x: p.x, y: p.y, angle: Math.atan2(projectile.vy, projectile.vx),
+      size: clamp(projectile.size * p.scale * 0.8, 2, 24),
+      effect: projectile.effect, grade: projectile.grade, timeMs: animMs, detailed, id: projectile.id,
+    });
   }
   if (!effectiveVisual.value.rotomMode) {
     const lifted = (point: { x: number; y: number }, z: number): { x: number; y: number } | null => {
@@ -2749,6 +2764,26 @@ const cinemaLights: CinemaLight[] = [];
 /** Partículas dos golpes: só desenho, a física e o caminho dos inimigos não mudam. */
 const impactSparks = new ImpactSparks();
 let seenImpactFx = new WeakSet<object>();
+/** Estilhaços locais quando a vida do jogador cai: só desenho, sem tocar no motor. */
+const hurtBursts: { x: number; y: number; born: number; color: string }[] = [];
+
+function drawHurtBurst(c: CanvasRenderingContext2D, x: number, y: number, t: number, color: string, scale: number): void {
+  c.save();
+  c.globalAlpha = (1 - t) * 0.8;
+  c.strokeStyle = color;
+  c.lineWidth = Math.max(1.2, 3 * scale * (1 - t));
+  c.beginPath();
+  c.arc(x, y, (7 + t * 24) * scale, 0, Math.PI * 2);
+  c.stroke();
+  c.globalAlpha = (1 - t) * 0.9;
+  c.fillStyle = '#fff3d6';
+  for (let i = 0; i < 6; i++) {
+    const angle = (i / 6) * Math.PI * 2 + t * 1.4;
+    const radius = (9 + t * 22) * scale;
+    c.fillRect(x + Math.cos(angle) * radius, y + Math.sin(angle) * radius, Math.max(1, 2.5 * scale * (1 - t)), Math.max(1, 2.5 * scale * (1 - t)));
+  }
+  c.restore();
+}
 
 /** Clima decorativo da geração atual: não altera dano, surto nem RNG. */
 function drawWeather(c: CanvasRenderingContext2D, w: number, h: number, elapsedMs: number, runSeed: number, now: number): void {
@@ -2790,12 +2825,17 @@ function draw(): void {
   if (!ctx || !canvasEl.value || !state.value) return;
   // O motor escreve no objeto cru (ver `loop`); o proxy do Vue só custava leituras e escritas a mais no desenho.
   const s = toRaw(state.value);
+  while (hurtBursts.length && animMs - hurtBursts[0]!.born > 460) hurtBursts.shift();
   // Trocar o tamanho do canvas zera a transformação: ela é refeita a cada quadro.
   ctx.setTransform(renderScale.value, 0, 0, renderScale.value, 0, 0);
   ctx.imageSmoothingEnabled = effectiveVisual.value.renderProfile === 'cinema';
   const cine = cinemaFrame(cinemaCam, animMs);
   if (bonkRun.value && bonkPhysics.value) {
     drawBonkScene(s, bonkPhysics.value);
+    for (const burst of hurtBursts) {
+      const t = (animMs - burst.born) / 420;
+      if (t >= 0 && t <= 1) drawHurtBurst(ctx, view.w / 2, view.h * 0.52, t, burst.color, 1.6);
+    }
     drawWeather(ctx, view.w, view.h, s.elapsedMs, s.runSeed, animMs);
     drawCinemaOverlay(s, view.w, view.h, cine);
     return;
@@ -3080,27 +3120,24 @@ function draw(): void {
   }
 
   for (const proj of s.hostileProjectiles) {
-    ctx.save();
-    const tint = proj.effect === 'burn' ? '#ff7b42' : proj.effect === 'slow' ? '#7bdcff' : proj.effect === 'stun' ? '#e6b6ff' : '#ff5b5b';
-    ctx.globalAlpha = proj.grade === 'chefao' ? 0.5 : 0.35;
-    ctx.fillStyle = tint;
-    ctx.beginPath();
-    ctx.arc(proj.x, proj.y, proj.size * 2, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.globalAlpha = 1;
-    ctx.fillStyle = proj.effect ? tint : '#fff0a8';
-    ctx.beginPath();
-    ctx.arc(proj.x, proj.y, proj.size, 0, Math.PI * 2);
-    ctx.fill();
-    if (proj.effect && !effectiveVisual.value.rotomMode) {
-      ctx.globalAlpha = 0.65;
-      ctx.strokeStyle = tint;
-      ctx.lineWidth = 1.5;
-      ctx.beginPath();
-      ctx.arc(proj.x, proj.y, proj.size * (2.8 + Math.sin(animMs / 120) * 0.25), 0, Math.PI * 2);
-      ctx.stroke();
+    const age = proj.bornMs !== undefined ? s.elapsedMs - proj.bornMs : Infinity;
+    if (detailed && age >= 0 && age < 180 && proj.originX !== undefined && proj.originY !== undefined) {
+      const fade = 1 - age / 180;
+      ctx.save();
+      ctx.globalAlpha = 0.45 * fade;
+      ctx.strokeStyle = hostileShotColor(proj.effect);
+      ctx.lineWidth = Math.max(1, proj.size * 0.28);
+      ctx.beginPath(); ctx.moveTo(proj.originX, proj.originY); ctx.lineTo(proj.x, proj.y); ctx.stroke();
+      ctx.globalAlpha = 0.55 * fade;
+      ctx.fillStyle = '#fff4d0';
+      ctx.beginPath(); ctx.arc(proj.originX, proj.originY, proj.size * 0.5 * fade, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
     }
-    ctx.restore();
+    drawHostileProjectile(ctx, {
+      x: proj.x, y: proj.y, angle: Math.atan2(proj.vy, proj.vx),
+      size: proj.size * 0.9,
+      effect: proj.effect, grade: proj.grade, timeMs: animMs, detailed, id: proj.id,
+    });
   }
 
   // Baús e chaves ficam visíveis até no Modo Rotom: são recompensas, não enfeite.
@@ -3139,6 +3176,10 @@ function draw(): void {
 
   // Golpes com a arte do elemento (aura, área, cone, toques da órbita) e, no fim, as marcas genéricas.
   // No Modo Rotom só o leque do cone continua (é ele que mostra para onde o golpe saiu), em versão leve.
+  for (const burst of hurtBursts) {
+    const t = (animMs - burst.born) / 420;
+    if (t >= 0 && t <= 1) drawHurtBurst(ctx, burst.x, burst.y, t, burst.color, 1);
+  }
   for (const f of s.fx) {
     if (effectiveVisual.value.rotomMode && f.kind !== 'cone') continue;
     if (drawElementFx(ctx, f, flat, animMs, detailed)) continue;
@@ -3846,6 +3887,9 @@ function loop(ts: number): void {
     if (s.player.hp < hpBefore) {
       playSound('survivor-hurt');
       showDamageFeedback();
+      const kind = s.lastHit?.kind;
+      hurtBursts.push({ x: s.player.x, y: s.player.y, born: animMs, color: kind === 'explosão' ? '#ff8c3a' : kind === 'projétil' ? '#ffb36b' : '#ff6c64' });
+      if (hurtBursts.length > 6) hurtBursts.splice(0, hurtBursts.length - 6);
     }
     for (const ev of events) {
       recordRareDiscovery(ev);

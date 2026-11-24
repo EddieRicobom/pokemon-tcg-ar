@@ -3240,6 +3240,7 @@ function spawnHostileProjectile(state: SurvivorState, enemy: SurvivorEnemy, targ
     id: state.nextId++, x: enemy.x, y: enemy.y, vx: (dx / distance) * speed, vy: (dy / distance) * speed,
      damage: Math.max(1, Math.round(enemy.damage * damageMultiplier)), lifeMs: 2600, size: enemy.grade === 'chefao' ? 8 : enemy.grade === 'elite' ? 7 : 6,
     grade: enemy.grade, source: hitSource(enemy), ...(effect ? { effect } : {}),
+    originX: enemy.x, originY: enemy.y, bornMs: state.elapsedMs,
   });
 }
 
