@@ -1,6 +1,24 @@
 import type { MusicEntry } from '../core/music';
 
-interface Voice { path: string; audio: HTMLAudioElement; source: MediaElementAudioSourceNode; gain: GainNode; targetGain: number | null; pending: boolean; failed: boolean; controller: AbortController; loading: boolean; objectUrl?: string }
+interface Voice { path: string; audio: HTMLAudioElement; source: MediaElementAudioSourceNode; gain: GainNode; filter: BiquadFilterNode; shaper: WaveShaperNode; targetGain: number | null; filterTarget: number | null; pending: boolean; failed: boolean; controller: AbortController; loading: boolean; objectUrl?: string }
+
+/**
+ * Curva do "8-bit": quantiza a amplitude em 40 degraus e satura de leve, como um DAC de 8 bits. Não mexe na taxa de
+ * amostragem (o Web Audio não expõe isso sem worklet), mas o filtro passa-baixa em cima dela fecha o som retrô.
+ */
+const CHIP_STEPS = 40;
+const CHIP_CURVE = (() => {
+  const samples = 2048;
+  const curve = new Float32Array(samples);
+  const drive = Math.tanh(1.6);
+  for (let i = 0; i < samples; i++) {
+    const x = (i / (samples - 1)) * 2 - 1;
+    curve[i] = Math.tanh((Math.round(x * CHIP_STEPS) / CHIP_STEPS) * 1.6) / drive;
+  }
+  return curve;
+})();
+/** Corte do filtro quando o "8-bit" está ligado (som de amostragem baixa). */
+const CHIP_CUTOFF_HZ = 7200;
 
 /** Duas faixas compactadas no máximo; o navegador faz a decodificação progressiva. */
 export class MusicPlayer {
@@ -12,10 +30,31 @@ export class MusicPlayer {
   private disposed = false;
   private unlocked = false;
   private failures = new Set<string>();
+  private chiptune = false;
   private contextTarget: 'running' | 'suspended' | null = null;
   private contextOperation: Promise<void> | null = null;
 
   constructor(private readonly url: (path: string) => string, private readonly unavailable: () => void = () => undefined) {}
+
+  /** Liga ou desliga o tratamento 8-bit; o crossfade continua igual com ou sem ele. */
+  setChiptune(on: boolean): void {
+    if (this.chiptune === on) return;
+    this.chiptune = on;
+    for (const voice of this.voices) {
+      voice.shaper.curve = on ? CHIP_CURVE : null;
+      voice.filterTarget = null;
+    }
+    this.refresh();
+  }
+
+  /** Corte do filtro: varre de agudo para grave na saída e de grave para agudo na entrada (transição sem choque). */
+  private cutoffFor(gain: number, transition: boolean, incoming: boolean): number {
+    if (!transition) return this.chiptune ? CHIP_CUTOFF_HZ : 20_000;
+    const level = Math.max(0, Math.min(1, gain));
+    const shaped = incoming ? Math.pow(level, 1.4) : Math.pow(level, 0.7);
+    const cutoff = 220 + shaped * 19_780;
+    return this.chiptune ? Math.min(cutoff, CHIP_CUTOFF_HZ) : cutoff;
+  }
 
   /** Chamado somente por toque/tecla do jogador. */
   unlock(): void {
@@ -67,8 +106,15 @@ export class MusicPlayer {
         audio.preload = 'none'; audio.loop = true;
         const source = ctx.createMediaElementSource(audio);
         const gain = ctx.createGain(); gain.gain.value = 0;
-        source.connect(gain); gain.connect(ctx.destination);
-        voice = { path: entry.path, audio, source, gain, targetGain: null, pending: false, failed: false, controller: new AbortController(), loading: true };
+        const filter = ctx.createBiquadFilter();
+        filter.type = 'lowpass';
+        filter.frequency.value = 20_000;
+        filter.Q.value = 0.5;
+        const shaper = ctx.createWaveShaper();
+        shaper.curve = this.chiptune ? CHIP_CURVE : null;
+        shaper.oversample = 'none';
+        source.connect(shaper); shaper.connect(filter); filter.connect(gain); gain.connect(ctx.destination);
+        voice = { path: entry.path, audio, source, gain, filter, shaper, targetGain: null, filterTarget: null, pending: false, failed: false, controller: new AbortController(), loading: true };
         const created = voice;
         audio.onerror = () => {
           if (this.disposed || !this.voices.includes(created)) return;
@@ -83,6 +129,11 @@ export class MusicPlayer {
       if (voice.targetGain === null || Math.abs(voice.targetGain - targetGain) > 0.0005) {
         voice.gain.gain.setTargetAtTime(targetGain, ctx.currentTime, 0.15);
         voice.targetGain = targetGain;
+      }
+      const cutoff = this.cutoffFor(entry.gain, this.mix.length > 1, this.mix.indexOf(entry) === 1);
+      if (voice.filterTarget === null || Math.abs(voice.filterTarget - cutoff) > 15) {
+        voice.filter.frequency.setTargetAtTime(cutoff, ctx.currentTime, this.mix.length > 1 ? 0.25 : 0.15);
+        voice.filterTarget = cutoff;
       }
       if (voice.audio.paused && !voice.loading && !voice.pending && !voice.failed) {
         const current = voice;
@@ -140,7 +191,7 @@ export class MusicPlayer {
     voice.controller.abort();
     voice.audio.onerror = null;
     voice.audio.pause(); voice.audio.removeAttribute('src'); voice.audio.load();
-    voice.source.disconnect(); voice.gain.disconnect();
+    voice.source.disconnect(); voice.shaper.disconnect(); voice.filter.disconnect(); voice.gain.disconnect();
     if (voice.objectUrl) URL.revokeObjectURL(voice.objectUrl);
   }
 

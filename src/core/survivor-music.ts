@@ -33,6 +33,8 @@ export interface SurvivorMusicSettings {
   volume: number;
   /** Sons curtos dos ataques automáticos; separados da música e do som geral. */
   attackSounds: boolean;
+  /** Tratamento 8-bit na trilha (quantização + filtro), no mesmo crossfade. */
+  chip: boolean;
 }
 export function normalizeSurvivorMusicSettings(raw: unknown): SurvivorMusicSettings {
   const data = raw && typeof raw === 'object' ? raw as Record<string, unknown> : {};
@@ -40,5 +42,6 @@ export function normalizeSurvivorMusicSettings(raw: unknown): SurvivorMusicSetti
     enabled: data.enabled !== false,
     volume: typeof data.volume === 'number' && Number.isFinite(data.volume) ? Math.max(0, Math.min(100, data.volume)) : 35,
     attackSounds: data.attackSounds !== false,
+    chip: data.chip !== false,
   };
 }

@@ -4,6 +4,8 @@ import { MusicPlayer } from './music-player';
 function audioEnvironment() {
   const sources: { disconnect: ReturnType<typeof vi.fn> }[] = [];
   const gains: { gain: { value: number; setTargetAtTime: ReturnType<typeof vi.fn> }; disconnect: ReturnType<typeof vi.fn> }[] = [];
+  const filters: { type: string; frequency: { value: number; setTargetAtTime: ReturnType<typeof vi.fn> }; Q: { value: number }; connect: ReturnType<typeof vi.fn>; disconnect: ReturnType<typeof vi.fn> }[] = [];
+  const shapers: { curve: Float32Array | null; oversample: string; connect: ReturnType<typeof vi.fn>; disconnect: ReturnType<typeof vi.fn> }[] = [];
   const audios: FakeAudio[] = [];
   const closed = vi.fn(); const suspended = vi.fn();
   let resolvePlay: (() => void) | null = null;
@@ -22,13 +24,15 @@ function audioEnvironment() {
     suspend() { suspended(); this.state = 'suspended'; return Promise.resolve(); }
     close() { closed(); return Promise.resolve(); }
     createGain() { const gain = { gain: { value: 0, setTargetAtTime: vi.fn() }, connect: vi.fn(), disconnect: vi.fn() }; gains.push(gain); return gain; }
+    createBiquadFilter() { const filter = { type: '', frequency: { value: 0, setTargetAtTime: vi.fn() }, Q: { value: 0 }, connect: vi.fn(), disconnect: vi.fn() }; filters.push(filter); return filter; }
+    createWaveShaper() { const shaper = { curve: null as Float32Array | null, oversample: 'none', connect: vi.fn(), disconnect: vi.fn() }; shapers.push(shaper); return shaper; }
     createMediaElementSource() { const source = { connect: vi.fn(), disconnect: vi.fn() }; sources.push(source); return source; }
   }
   vi.stubGlobal('Audio', FakeAudio);
   vi.stubGlobal('AudioContext', FakeContext);
   const fetchAudio = vi.fn(async (_url: string, _options?: RequestInit) => new Response(new Blob(['mp3'], { type: 'audio/mpeg' })));
   vi.stubGlobal('fetch', fetchAudio);
-  return { audios, gains, sources, closed, suspended, fetchAudio, resolve: () => resolvePlay?.() };
+  return { audios, gains, filters, shapers, sources, closed, suspended, fetchAudio, resolve: () => resolvePlay?.() };
 }
 afterEach(() => vi.unstubAllGlobals());
 
@@ -104,5 +108,22 @@ describe('MusicPlayer', () => {
     await Promise.resolve(); await Promise.resolve();
     expect(env.audios[0]?.src).toBe('');
     expect(env.audios[0]?.play).not.toHaveBeenCalled();
+  });
+  it('faz o crossfade com varredura de filtro e liga o tratamento 8-bit', async () => {
+    const env = audioEnvironment(); const player = new MusicPlayer(path => path);
+    player.setChiptune(true);
+    player.update([{ path: 'a.mp3', gain: 0.5 }, { path: 'b.mp3', gain: 0.5 }], true, 1);
+    player.unlock();
+    await vi.waitFor(() => expect(env.audios[1]?.src).toMatch(/^blob:/));
+    expect(env.shapers).toHaveLength(2);
+    expect(env.shapers.every(shaper => shaper.curve !== null)).toBe(true);
+    const cutoff = (index: number) => env.filters[index]!.frequency.setTargetAtTime.mock.calls.at(-1)![0] as number;
+    expect(Math.max(cutoff(0), cutoff(1))).toBeLessThanOrEqual(7200);
+    player.setChiptune(false);
+    expect(env.shapers.every(shaper => shaper.curve === null)).toBe(true);
+    // Sem o 8-bit, a trilha que sai fica mais aberta que a que entra: as duas se cruzam sem choque de tonalidade.
+    expect(cutoff(0)).toBeGreaterThan(7200);
+    expect(cutoff(0)).toBeGreaterThan(cutoff(1));
+    player.dispose();
   });
 });
