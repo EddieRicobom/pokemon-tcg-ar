@@ -945,6 +945,10 @@ describe('arquétipos de inimigos', () => {
     stepSurvivor(s, { dx: 0, dy: 0 }, 16);
     expect(s.hostileProjectiles).toHaveLength(1);
     expect(Math.hypot(s.hostileProjectiles[0]!.vx, s.hostileProjectiles[0]!.vy)).toBeCloseTo(BALANCE.hostileProjectileSpeed);
+    // Origem e instante alimentam só o rastro visual do disparo.
+    expect(Number.isFinite(s.hostileProjectiles[0]!.originX)).toBe(true);
+    expect(Number.isFinite(s.hostileProjectiles[0]!.originY)).toBe(true);
+    expect(s.hostileProjectiles[0]!.bornMs).toBe(s.elapsedMs);
     s.hostileProjectiles[0]!.x = ARENA_W + 100;
     stepSurvivor(s, { dx: 0, dy: 0 }, 16);
     expect(s.hostileProjectiles).toHaveLength(0);

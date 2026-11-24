@@ -342,6 +342,10 @@ export interface SurvivorHostileProjectile {
   /** Ataques de Pokémon de treinadores têm leitura visual própria. */
   grade?: SurvivorEnemyGrade;
   effect?: 'burn' | 'slow' | 'stun';
+  /** Origem e instante do disparo: só o rastro visual usa; a colisão continua no círculo do projétil. */
+  originX?: number;
+  originY?: number;
+  bornMs?: number;
 }
 
 export interface SurvivorProjectile {
