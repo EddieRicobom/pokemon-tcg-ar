@@ -5,6 +5,13 @@ O estado atual, as fases, as pendências e os riscos continuam no [plano](../IMP
 datadas (com o que foi e o que não foi validado em cada uma). A regra de validação do plano vale também para estas entradas:
 🔶 significa que **nada foi visto num celular real**.
 
+## Torre: tileset mais variado na trilha e nas poças (24/11/2026)
+
+- Cada tipo de chão da Torre passou a ter quatro ladrilhos-base de 64 px, sorteados por bloco alinhado ao mundo; os canvas ficam em cache por tipo/variante e o sorteio é determinístico, então a repetição do piso caiu sem custo por quadro.
+- A trilha ganhou marcas estáticas por célula (`survivorTrailMarks`): franja de grama invadindo a borda, cascalho e rachaduras ocasionais. Nada disso entra na colisão.
+- As poças de Hoenn ganharam miolo mais fundo, espuma clara na margem, terra úmida ao redor, juncos com ponta de taboa e vitórias-régias no miolo.
+- 🔶 Typecheck, testes e build passaram. Conferido no navegador do PC: trilha de Johto com franja e cascalho, praça de Unova com as rachaduras e poça de Hoenn com espuma, juncos e vitórias-régias. Não testei em celular real, nem o custo de GPU com a câmera atravessando vários chunks.
+
 ## Chão da Vila, clima da Torre e novas lições do Dojô (24/11/2026)
 
 - **Chão da Vila**: uma passada nova de detalhes (`village/village-ground-detail.ts`) é pintada uma vez no chão pré-renderizado, por cima do atlas: fio de grama e trevo, florzinhas de três cores, pedrinhas, grão fino contra a repetição do ladrilho, cascalho e rachaduras na trilha, musgo e sombra de contato nas emendas, areia molhada e ondulações na praia, franja de grama invadindo a calçada, folhas caídas e cogumelos sob árvores e arbustos. Manchas suaves de sol e sombra (ruído de valor interpolado) quebram o verde uniforme. Nada disso muda a colisão: é só o desenho do chão, que continua sendo pixel art em 1 px por pixel de bloco.

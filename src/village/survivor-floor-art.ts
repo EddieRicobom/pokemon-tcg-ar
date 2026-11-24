@@ -36,6 +36,8 @@ export const SURVIVOR_FLOOR_PALETTES: Record<SurvivorFloorKind, SurvivorFloorPal
 
 export const FLOOR_TEXTURE_SIZE = 64;
 export const DECOR_SIZE = 16;
+/** Quantos ladrilhos-base diferentes cada tipo de chão tem; o chunk escolhe um por bloco de 64 px. */
+export const FLOOR_TEXTURE_VARIANTS = 4;
 
 function put(buf: PixelBuf, x: number, y: number, rgb: number, a = 255): void {
   if (x < 0 || y < 0 || x >= buf.w || y >= buf.h) return;
@@ -86,15 +88,17 @@ const CRACK = ['d..', '.dd', '...d'];
 
 /**
  * Textura de 64 × 64 da base: cor chapada e marcas numa grade com pequeno desvio, como nos ladrilhos feitos à mão
- * (nada de ruído pixel a pixel, que no celular vira chuvisco).
+ * (nada de ruído pixel a pixel, que no celular vira chuvisco). `variant` troca a semente das marcas, então blocos
+ * vizinhos de 64 px não repetem o mesmo desenho.
  */
-export function survivorFloorTexture(kind: SurvivorFloorKind): PixelBuf {
+export function survivorFloorTexture(kind: SurvivorFloorKind, variant = 0): PixelBuf {
   const p = SURVIVOR_FLOOR_PALETTES[kind];
   const size = FLOOR_TEXTURE_SIZE;
   const buf = createBuf(size, size);
   for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) put(buf, x, y, p.base);
   const colors = { d: p.shade, D: p.deep, L: p.light, l: p.light, s: p.shade };
-  const salt = kind.length * 97 + kind.charCodeAt(0);
+  const step = Math.abs(Math.floor(variant)) % FLOOR_TEXTURE_VARIANTS;
+  const salt = kind.length * 97 + kind.charCodeAt(0) + step * 7919;
   for (let row = 0; row < size / 8; row++) {
     for (let col = 0; col < size / 8; col++) {
       const h = floorHash(salt, row, col);

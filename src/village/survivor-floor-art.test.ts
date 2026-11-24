@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { FLOOR_TEXTURE_SIZE, FOLIAGE_TINTS, GRASS_BASE_TONES, SURVIVOR_FLOOR_PALETTES, TALL_GRASS_TONES, floorHash, floorTone, recolorGrassBase, survivorDecorTile, survivorFloorTexture, tintFoliage } from './survivor-floor-art';
+import { FLOOR_TEXTURE_SIZE, FLOOR_TEXTURE_VARIANTS, FOLIAGE_TINTS, GRASS_BASE_TONES, SURVIVOR_FLOOR_PALETTES, TALL_GRASS_TONES, floorHash, floorTone, recolorGrassBase, survivorDecorTile, survivorFloorTexture, tintFoliage } from './survivor-floor-art';
 import type { SurvivorDecorKind, SurvivorFloorKind } from './survivor-floor-art';
 
 const rgbAt = (data: Uint8Array | Uint8ClampedArray, i: number) => (data[i]! << 16) | (data[i + 1]! << 8) | data[i + 2]!;
@@ -30,6 +30,24 @@ describe('pixel art do chão da Torre', () => {
     const a = survivorFloorTexture('grass');
     expect(Array.from(a.data)).toEqual(Array.from(survivorFloorTexture('grass').data));
     expect(Array.from(a.data)).not.toEqual(Array.from(survivorFloorTexture('meadow').data));
+  });
+
+  it('tem quatro ladrilhos-base diferentes por chão, todos determinísticos e sem estourar a paleta', () => {
+    for (const floor of floors) {
+      const seen = new Set<string>();
+      for (let variant = 0; variant < FLOOR_TEXTURE_VARIANTS; variant++) {
+        const buf = survivorFloorTexture(floor, variant);
+        expect(Array.from(buf.data)).toEqual(Array.from(survivorFloorTexture(floor, variant).data));
+        let base = 0;
+        for (let i = 0; i < buf.data.length; i += 4) if (rgbAt(buf.data, i) === SURVIVOR_FLOOR_PALETTES[floor].base) base += 1;
+        expect(base / (buf.w * buf.h), `${floor} ${variant}`).toBeGreaterThan(0.75);
+        seen.add(Array.from(buf.data).join());
+      }
+      expect(seen.size, floor).toBe(FLOOR_TEXTURE_VARIANTS);
+      // A variante volta ao começo depois da última (o sorteio usa módulo).
+      expect(Array.from(survivorFloorTexture(floor, FLOOR_TEXTURE_VARIANTS).data))
+        .toEqual(Array.from(survivorFloorTexture(floor, 0).data));
+    }
   });
 
   it('os detalhes têm fundo transparente e mudam com a variante', () => {
