@@ -981,6 +981,21 @@ export class VillageGame {
     this.bubbles.set(id, { emoji, until: performance.now() + ms });
   }
 
+  /** Fala curta sem interação: um morador puxa assunto sozinho enquanto a Vila roda. */
+  ambientSpeech(id: string, text: string, ms = 4200): void {
+    const now = performance.now();
+    this.speech.set(id, { text: text.slice(0, 140), name: this.names.get(id) ?? '', start: now, until: now + ms, tint: '#2a6ad8' });
+    this.bubbles.delete(id);
+  }
+
+  /** Moradores acordados perto do jogador: a conversa ambiente aparece no centro da câmera, longe do minimapa. */
+  nearbyResidentIds(ids: readonly string[], maxTiles = 6): string[] {
+    return ids.filter((id) => {
+      const walker = this.villagers.get(id);
+      return !!walker && !this.asleep.has(id) && Math.hypot(walker.x - this.player.x, walker.y - this.player.y) <= maxTiles;
+    });
+  }
+
   clearBubble(id: string): void {
     this.bubbles.delete(id);
     this.speech.delete(id);

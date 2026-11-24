@@ -4965,6 +4965,19 @@ body.no-scroll .reward-toasts {
   gap: 8px;
 }
 
+/* Busca e filtros do Correio: a caixa de entrada cresce, então precisa de uma visão por novas/todas/arquivo. */
+.mail-tools { display: grid; gap: 6px; margin: 0 0 10px; }
+.mail-tools input {
+  width: 100%; min-height: 38px; padding: 6px 10px; border-radius: 9px;
+  border: 1px solid var(--line); background: var(--surface-2); color: var(--text); font: inherit; font-size: .82rem;
+}
+.mail-views { display: flex; flex-wrap: wrap; gap: 4px; }
+.mail-views button {
+  flex: 1 1 auto; min-height: 34px; padding: 4px 10px; border-radius: 999px;
+  border: 1px solid var(--line); background: var(--surface); color: var(--muted); font: inherit; font-size: .78rem; font-weight: 700;
+}
+.mail-views button.active { border-color: var(--gold); background: color-mix(in srgb, var(--gold) 16%, var(--surface)); color: var(--text); }
+
 .mail-inbox-head h4 { margin: 0; }
 
 .mail-inbox-head button {
@@ -8842,4 +8855,21 @@ body.no-scroll .reward-toasts {
 .survivor-boss-bar.shadow i b { background: linear-gradient(90deg, #7d35ca, #d68cff); }
 .survivor-boss-bar.low i b { animation: survivor-boss-low .7s ease-in-out infinite alternate; }
 @keyframes survivor-boss-low { to { filter: brightness(1.5); } }
+
+/* Status que os tiros inimigos deixam no jogador: cor + ícone + tempo restante. */
+.survivor-status-chip { font-weight: 800; border-width: 2px; }
+.survivor-status-chip.burn { border-color: #ff8c3a !important; background: #4a1b12e6 !important; color: #ffd9b8 !important; }
+.survivor-status-chip.slow { border-color: #7bdcff !important; background: #102f42e6 !important; color: #d6f7ff !important; }
+.survivor-status-chip.stun { border-color: #d9a6ff !important; background: #2b1740e6 !important; color: #f2dfff !important; }
+
+/* Aviso do ataque do chefe: o desenho no chão mostra a área; aqui fica o nome e a ordem de sair. */
+.survivor-boss-warning {
+  display: flex; flex-wrap: wrap; align-items: baseline; justify-content: center; gap: 6px;
+  margin-top: 3px; padding: 4px 8px; border: 2px solid #ffcf5a; border-radius: 6px;
+  background: #3a1313e8; color: #fff4d0; font-size: .74rem; font-weight: 900; letter-spacing: .02em;
+  box-shadow: 0 0 0 1px #00000055, 0 0 12px #ff6c6444; animation: survivor-boss-warn .7s ease-in-out infinite alternate;
+}
+.survivor-boss-warning small { color: #ffd9a0; font-size: .62rem; font-weight: 700; }
+@keyframes survivor-boss-warn { to { border-color: #ff6c64; box-shadow: 0 0 0 1px #00000055, 0 0 18px #ff6c6477; } }
+@media (prefers-reduced-motion: reduce) { .survivor-boss-warning { animation: none; } }
 @media (prefers-reduced-motion: reduce) { .survivor-boss-bar.low i b { animation: none; } }

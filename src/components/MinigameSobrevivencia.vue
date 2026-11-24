@@ -131,7 +131,7 @@ import type { SurvivorPointerSample } from '../core/survivor-gesture';
 import { bonkGroundEllipse, bonkObstacleDrawables, createBonkArt, drawBonkGround } from '../village/survivor-bonk-landscape';
 import type { BonkArt } from '../village/survivor-bonk-landscape';
 import { PROJECTILE_TIER_NAMES, survivorProjectileTier } from '../core/survivor-projectile-power';
-import { drawConeGuide, drawElementAuraField, drawElementFx, drawElementOrbiter, drawElementProjectile, drawHostileProjectile, drawOrbitPath, hostileShotColor } from '../village/survivor-attack-art';
+import { drawBossAttack, drawConeGuide, drawElementAuraField, drawElementFx, drawElementOrbiter, drawElementProjectile, drawHostileProjectile, drawOrbitPath, hostileShotColor } from '../village/survivor-attack-art';
 import { drawBubblePopFx, drawChainFx, drawChest, drawBlackChest, drawChestOpenFx, drawDestinyChains, drawDistortFx, drawGravityWell, drawHeldChargeOrb, drawHeldGems, drawHeldHitFx, drawHeldProjectileOverlay, drawImplodeFx, drawKey, drawMirrorOrbiter, drawPortalFx, drawStickyBarb, drawSuctionField, drawTimeBubble } from '../village/survivor-held-art';
 import { HELD_ITEM_BY_ID, HELD_OFFER_PREFIX, heldChargePosition, heldGems, heldItemSpriteUrl, isHeldItemId, mirrorOrbiters } from '../core/survivor-held';
 import type { HeldItemId, HeldStacks } from '../core/survivor-held';
@@ -907,6 +907,12 @@ const bossBar = computed(() => {
     maxHp: Math.ceil(target.maxHp),
     shadow: target.shadowBoss === true,
   };
+});
+/** Aviso curto do ataque-assinatura do chefe; o desenho no chão mostra a área exata. */
+const bossAttackWarning = computed(() => {
+  const attack = state.value?.bossAttack;
+  if (!attack || attack.phase !== 'telegraph') return null;
+  return attack.kind === 'tsunami' ? '🌊 Tsunami!' : attack.kind === 'boulders' ? '🪨 Pedras!' : attack.kind === 'vines' ? '🌿 Vinhas!' : '💥 Onda de choque!';
 });
 /** Números do menu de pausa: dano, média por segundo e o que está em campo. */
 const runNumbers = computed(() => (state.value ? survivorRunNumbers(state.value) : null));
@@ -2766,6 +2772,8 @@ const impactSparks = new ImpactSparks();
 let seenImpactFx = new WeakSet<object>();
 /** Estilhaços locais quando a vida do jogador cai: só desenho, sem tocar no motor. */
 const hurtBursts: { x: number; y: number; born: number; color: string }[] = [];
+/** Último dano direto já apresentado, para a queimadura não disparar flash/som a cada quadro. */
+let lastDirectHitSeen = -1;
 
 function drawHurtBurst(c: CanvasRenderingContext2D, x: number, y: number, t: number, color: string, scale: number): void {
   c.save();
@@ -2832,6 +2840,15 @@ function draw(): void {
   const cine = cinemaFrame(cinemaCam, animMs);
   if (bonkRun.value && bonkPhysics.value) {
     drawBonkScene(s, bonkPhysics.value);
+    if (s.bossAttack) {
+      const viewport = { width: view.w, height: view.h };
+      const physics = bonkPhysics.value;
+      const mapBoss: WorldToScreen = (x, y, z = 0) => {
+        const p = projectBonkPoint(physics, s.player, { x, y, z }, viewport);
+        return p ? { x: p.x, y: p.y, s: p.scale } : null;
+      };
+      drawBossAttack(ctx, s.bossAttack, mapBoss, animMs, detailedSpecialEffects.value);
+    }
     for (const burst of hurtBursts) {
       const t = (animMs - burst.born) / 420;
       if (t >= 0 && t <= 1) drawHurtBurst(ctx, view.w / 2, view.h * 0.52, t, burst.color, 1.6);
@@ -3174,6 +3191,7 @@ function draw(): void {
     ctx.restore();
   }
 
+  if (s.bossAttack) drawBossAttack(ctx, s.bossAttack, flat, animMs, detailed);
   // Golpes com a arte do elemento (aura, área, cone, toques da órbita) e, no fim, as marcas genéricas.
   // No Modo Rotom só o leque do cone continua (é ele que mostra para onde o golpe saiu), em versão leve.
   for (const burst of hurtBursts) {
@@ -3885,11 +3903,15 @@ function loop(ts: number): void {
     }
     if (s.player.xp > xpBefore) playSound('survivor-pickup');
     if (s.player.hp < hpBefore) {
-      playSound('survivor-hurt');
-      showDamageFeedback();
-      const kind = s.lastHit?.kind;
-      hurtBursts.push({ x: s.player.x, y: s.player.y, born: animMs, color: kind === 'explosão' ? '#ff8c3a' : kind === 'projétil' ? '#ffb36b' : '#ff6c64' });
-      if (hurtBursts.length > 6) hurtBursts.splice(0, hurtBursts.length - 6);
+      const direct = s.lastDirectHitAtMs;
+      if (direct !== undefined && direct !== lastDirectHitSeen) {
+        lastDirectHitSeen = direct;
+        playSound('survivor-hurt');
+        showDamageFeedback();
+        const kind = s.lastHit?.kind;
+        hurtBursts.push({ x: s.player.x, y: s.player.y, born: animMs, color: kind === 'explosão' ? '#ff8c3a' : kind === 'projétil' ? '#ffb36b' : '#ff6c64' });
+        if (hurtBursts.length > 6) hurtBursts.splice(0, hurtBursts.length - 6);
+      }
     }
     for (const ev of events) {
       recordRareDiscovery(ev);
@@ -4384,6 +4406,7 @@ async function beginRun(dexId: number, name: string, picked?: PokemonType, infin
     clearTrainerPresentation();
     paused.value = false;
     autoPaused.value = false;
+    lastDirectHitSeen = -1;
     const { move, profile, secondMove, secondAttack, hypotheticalSecondaryType } = survivorAttackOf(dexId, picked, swapped, omegaCategory);
     runSeenDex.clear();
     // A Vila entrega o loadout (e gasta a sorte do Carteiro) antes de a corrida existir; vale no Survival e no BONK.
@@ -4669,6 +4692,8 @@ function checkpointNow(): boolean {
     copy.pendingUpgrade = null;
     copy.deferredUpgrade = null;
     copy.pendingBlackChest = null;
+    copy.bossAttack = null;
+    copy.nextBossAttackAtMs = Number(copy.elapsedMs ?? 0) + 5000;
     copy.lastHit = null;
     copy.over = false;
     const playerCopy = copy.player as Record<string, unknown> | undefined;
@@ -4895,6 +4920,9 @@ onBeforeUnmount(() => {
             <button v-if="canReopenUpgrade && state.deferredUpgrade" type="button" class="chip survivor-resume-upgrades" aria-keyshortcuts="U" title="Escolher melhorias guardadas · U no teclado ou L1/LB no controle" @pointerdown.stop @click.stop="reopenDeferredUpgrade">Melhorias ({{ state.upgradesOwed + 1 }})</button>
             <span v-if="state.player.terastal" class="chip survivor-tera-chip" :aria-label="`Terastalização ${TYPE_LABELS_PT[state.player.terastal.type]}: ${Math.ceil(state.player.terastal.remainingMs / 1000)} segundos restantes`" :title="`Terastalização ${TYPE_LABELS_PT[state.player.terastal.type]}`">💎 {{ TYPE_GLYPHS[state.player.terastal.type] }} {{ TYPE_LABELS_PT[state.player.terastal.type] }} · {{ Math.ceil(state.player.terastal.remainingMs / 1000) }}s</span>
             <span v-if="(state.player.healBlockMs ?? 0) > 0" class="chip survivor-heal-block" role="status">🚫 CURA BLOQUEADA · {{ Math.ceil((state.player.healBlockMs ?? 0) / 1000) }}s</span>
+            <span v-if="(state.player.burnMs ?? 0) > 0" class="chip survivor-status-chip burn" role="status" aria-label="Queimando">🔥 Queimando · {{ Math.ceil((state.player.burnMs ?? 0) / 1000) }}s</span>
+            <span v-if="(state.player.slowMs ?? 0) > 0" class="chip survivor-status-chip slow" role="status" aria-label="Lento">🧊 Lento · {{ Math.ceil((state.player.slowMs ?? 0) / 1000) }}s</span>
+            <span v-if="(state.player.stunMs ?? 0) > 0" class="chip survivor-status-chip stun" role="status" aria-label="Atordoado">⚡ Atordoado · {{ Math.ceil((state.player.stunMs ?? 0) / 1000) }}s</span>
             <span v-if="bonkRun" class="chip survivor-bonk-chip" title="Câmera em terceira pessoa, terreno físico e salto">💥 BONK</span>
             <span v-if="state.player.mega?.active" class="chip survivor-mega-chip" role="status" title="Stats base da forma Mega (PokéAPI) até o fim da corrida.">💎 {{ state.player.mega.label }}</span>
             <span v-if="state.blackChestCurses" class="chip survivor-black-curse" :title="`Penalidades permanentes acumuladas ${state.blackChestCurses} vez(es)`">Maldições ×{{ state.blackChestCurses }}</span>
@@ -4923,6 +4951,7 @@ onBeforeUnmount(() => {
             <span><b>{{ bossBar.name }}</b><small>{{ bossBar.hp }}/{{ bossBar.maxHp }}</small></span>
             <i><b :style="{ width: `${bossBar.pct}%` }" /></i>
           </div>
+          <div v-if="bossAttackWarning" class="survivor-boss-warning" role="status" aria-live="assertive">{{ bossAttackWarning }} <small>saia da área marcada</small></div>
           <section v-if="hudExpanded" id="survivor-info-panel" class="survivor-info-panel" aria-label="Menu da Torre: pausa, informações e opções" @pointerdown.stop>
             <div v-if="!summary && !pendingUpgrade && !evolving && !specialModalOpen" class="survivor-info-actions">
               <button type="button" class="chip survivor-pause-btn" :aria-pressed="paused" @click.stop="togglePause">{{ paused ? '▶ Retomar' : '⏸ Pausar' }}</button>
@@ -5508,6 +5537,16 @@ onBeforeUnmount(() => {
                   <span>{{ row.name }}</span>
                   <i><b :style="{ width: `${Math.round((row.damage / summary.damageBySource[0]!.damage) * 100)}%`, background: row.color }"></b></i>
                   <em>{{ row.damage.toLocaleString('pt-BR') }} · {{ Math.round((row.damage / summary.damageBySource.reduce((n, r) => n + r.damage, 0)) * 100) }}%</em>
+                </li>
+              </ul>
+            </section>
+            <section v-if="summary.damageTaken?.length" class="survivor-chart survivor-taken-chart" aria-label="Dano recebido">
+              <strong>O que mais te machucou</strong>
+              <ul>
+                <li v-for="row in summary.damageTaken" :key="row.kind">
+                  <span>{{ row.name }}</span>
+                  <i><b :style="{ width: `${Math.round((row.damage / (summary.damageTaken[0]?.damage || 1)) * 100)}%`, background: row.color }"></b></i>
+                  <em>{{ row.damage.toLocaleString('pt-BR') }} · {{ Math.round((row.damage / summary.damageTaken.reduce((n, r) => n + r.damage, 0)) * 100) }}%</em>
                 </li>
               </ul>
             </section>

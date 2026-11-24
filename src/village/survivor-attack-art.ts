@@ -1,5 +1,6 @@
 import type { PokemonType } from '../core/pokemon-data';
 import type { SurvivorFx, SurvivorPlayer } from '../core/survivor';
+import type { SurvivorBossAttack } from '../core/survivor-types';
 import { projectileTierScale, type SurvivorProjectileLook } from '../core/survivor-projectile-power';
 import { SURVIVOR_CONE_HALF_ANGLE, survivorAimAngle, survivorOrbiterHitRadius, survivorOrbiters, survivorOrbitRadius } from '../core/survivor-shapes';
 
@@ -1003,6 +1004,169 @@ export function drawHostileProjectile(ctx: CanvasRenderingContext2D, shot: Hosti
       ctx.globalAlpha = 0.38;
       ctx.strokeStyle = '#ff6c64';
       ctx.beginPath(); ctx.arc(0, 0, size * 2.05, 0, Math.PI * 2); ctx.stroke();
+    }
+  }
+  ctx.restore();
+}
+
+// ----------------------------------------------------------------------------- ataques dos chefes
+
+/**
+ * Telegrafo e efeito dos ataques-assinatura dos chefes. O desenho usa o mesmo `WorldToScreen` do resto da arte, então
+ * serve à vista de cima e ao BONK. O dano nunca é decidido aqui: o motor já resolveu a área antes.
+ */
+export function drawBossAttack(ctx: CanvasRenderingContext2D, attack: SurvivorBossAttack, map: WorldToScreen, timeMs: number, detailed: boolean): void {
+  const telegraph = attack.phase === 'telegraph';
+  const t = clamp01(1 - attack.timerMs / Math.max(1, attack.totalMs));
+  const pulse = 0.5 + 0.5 * Math.sin(timeMs / 130);
+  const point = (x: number, y: number) => map(x, y, 0);
+  ctx.save();
+  if (attack.kind === 'tsunami') {
+    const endX = attack.x + Math.cos(attack.angle) * attack.length;
+    const endY = attack.y + Math.sin(attack.angle) * attack.length;
+    const nx = -Math.sin(attack.angle) * attack.halfWidth;
+    const ny = Math.cos(attack.angle) * attack.halfWidth;
+    const a = point(attack.x + nx, attack.y + ny);
+    const b = point(endX + nx, endY + ny);
+    const c = point(endX - nx, endY - ny);
+    const d = point(attack.x - nx, attack.y - ny);
+    if (a && b && c && d) {
+      ctx.globalAlpha = telegraph ? 0.16 + pulse * 0.06 : 0.1;
+      ctx.fillStyle = '#2c8cba';
+      ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.lineTo(c.x, c.y); ctx.lineTo(d.x, d.y); ctx.closePath(); ctx.fill();
+      ctx.globalAlpha = telegraph ? 0.55 : 0.35;
+      ctx.strokeStyle = '#9fe8ff';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([9, 7]);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      if (detailed) {
+        // Linhas de correnteza correndo na faixa.
+        ctx.globalAlpha = 0.3;
+        ctx.strokeStyle = '#d8f6ff';
+        ctx.lineWidth = 1.5;
+        for (let k = 1; k <= 3; k++) {
+          const p = k / 4;
+          const x = attack.x + Math.cos(attack.angle) * attack.length * p;
+          const y = attack.y + Math.sin(attack.angle) * attack.length * p;
+          const q1 = point(x + nx * 0.7, y + ny * 0.7);
+          const q2 = point(x - nx * 0.7, y - ny * 0.7);
+          if (q1 && q2) { ctx.beginPath(); ctx.moveTo(q1.x, q1.y); ctx.lineTo(q2.x, q2.y); ctx.stroke(); }
+        }
+      }
+    }
+    if (!telegraph) {
+      // A crista atravessa a faixa; o aviso já mostrou exatamente onde ela passa.
+      const front = attack.length * (0.15 + t * 0.85);
+      const cx = attack.x + Math.cos(attack.angle) * front;
+      const cy = attack.y + Math.sin(attack.angle) * front;
+      const f1 = point(cx + nx, cy + ny);
+      const f2 = point(cx - nx, cy - ny);
+      if (f1 && f2) {
+        ctx.globalAlpha = 0.85;
+        ctx.strokeStyle = '#e8fbff';
+        ctx.lineWidth = 8;
+        ctx.lineCap = 'round';
+        ctx.beginPath(); ctx.moveTo(f1.x, f1.y); ctx.lineTo(f2.x, f2.y); ctx.stroke();
+        ctx.globalAlpha = 0.45;
+        ctx.strokeStyle = '#7bdcff';
+        ctx.lineWidth = 18;
+        ctx.beginPath(); ctx.moveTo(f1.x, f1.y); ctx.lineTo(f2.x, f2.y); ctx.stroke();
+      }
+    }
+  } else if (attack.kind === 'shockwave') {
+    const center = point(attack.x, attack.y);
+    if (center) {
+      const scale = center.s;
+      const radius = attack.radius * (telegraph ? 1 : 0.8 + t * 0.5) * scale;
+      ctx.globalAlpha = telegraph ? 0.12 + pulse * 0.05 : 0.08;
+      ctx.fillStyle = '#ffb35c';
+      ctx.beginPath(); ctx.arc(center.x, center.y, radius, 0, Math.PI * 2); ctx.fill();
+      ctx.globalAlpha = telegraph ? 0.65 : 0.45;
+      ctx.strokeStyle = '#ffcf5a';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([10, 8]);
+      ctx.beginPath(); ctx.arc(center.x, center.y, radius, 0, Math.PI * 2); ctx.stroke();
+      ctx.setLineDash([]);
+      if (!telegraph) {
+        ctx.globalAlpha = 0.9;
+        ctx.lineWidth = 6;
+        ctx.strokeStyle = '#fff2c0';
+        ctx.beginPath(); ctx.arc(center.x, center.y, radius, 0, Math.PI * 2); ctx.stroke();
+      }
+    }
+  } else {
+    for (const circle of attack.circles) {
+      const center = point(circle.x, circle.y);
+      if (!center) continue;
+      const scale = center.s;
+      const radius = circle.radius * scale;
+      const green = attack.kind === 'vines';
+      ctx.globalAlpha = telegraph ? (green ? 0.26 + pulse * 0.06 : 0.14 + pulse * 0.05) : 0.08;
+      ctx.fillStyle = green ? '#2f6b32' : '#a87848';
+      ctx.beginPath(); ctx.arc(center.x, center.y, radius, 0, Math.PI * 2); ctx.fill();
+      ctx.globalAlpha = telegraph ? (green ? 0.9 : 0.7) : 0.4;
+      ctx.strokeStyle = green ? '#d8ff96' : '#ffcf5a';
+      ctx.lineWidth = green ? 3 : 2;
+      ctx.setLineDash([8, 6]);
+      ctx.beginPath(); ctx.arc(center.x, center.y, radius, 0, Math.PI * 2); ctx.stroke();
+      ctx.setLineDash([]);
+      if (telegraph && detailed && green) {
+        // Brotos crescendo: mais visíveis que uma rachadura fina no gramado.
+        ctx.globalAlpha = 0.85;
+        ctx.strokeStyle = '#8fe86a';
+        ctx.lineWidth = 3.5;
+        for (let k = 0; k < 5; k++) {
+          const angle = (k / 5) * Math.PI * 2 + attack.angle;
+          const tip = radius * (0.45 + t * 0.45);
+          ctx.beginPath();
+          ctx.moveTo(center.x, center.y);
+          ctx.quadraticCurveTo(center.x + Math.cos(angle - 0.5) * radius * 0.35, center.y + Math.sin(angle - 0.5) * radius * 0.22, center.x + Math.cos(angle) * tip, center.y + Math.sin(angle) * tip);
+          ctx.stroke();
+          ctx.fillStyle = '#e8ffb0';
+          ctx.beginPath(); ctx.arc(center.x + Math.cos(angle) * tip, center.y + Math.sin(angle) * tip, 2, 0, Math.PI * 2); ctx.fill();
+        }
+      } else if (telegraph && detailed) {
+        // As rachaduras crescem durante o aviso; a pedra/vinha só cai no fim.
+        ctx.globalAlpha = 0.5 + pulse * 0.2;
+        ctx.strokeStyle = green ? '#6fbf57' : '#7a5232';
+        ctx.lineWidth = 2.5;
+        for (let k = 0; k < 4; k++) {
+          const angle = (k / 4) * Math.PI * 2 + attack.angle;
+          const inner = radius * 0.2;
+          const outer = radius * (0.45 + t * 0.45);
+          ctx.beginPath();
+          ctx.moveTo(center.x + Math.cos(angle) * inner, center.y + Math.sin(angle) * inner);
+          ctx.lineTo(center.x + Math.cos(angle) * outer, center.y + Math.sin(angle) * outer);
+          ctx.stroke();
+        }
+      }
+      if (!telegraph) {
+        if (green) {
+          ctx.globalAlpha = 0.85;
+          ctx.strokeStyle = '#4f9a58';
+          ctx.lineWidth = 4;
+          for (let k = 0; k < 5; k++) {
+            const angle = (k / 5) * Math.PI * 2;
+            ctx.beginPath();
+            ctx.moveTo(center.x, center.y + radius * 0.55);
+            ctx.quadraticCurveTo(center.x + Math.cos(angle) * radius * 0.35, center.y + Math.sin(angle) * radius * 0.2, center.x + Math.cos(angle) * radius * 0.7, center.y + Math.sin(angle) * radius * (0.1 + t * 0.25));
+            ctx.stroke();
+          }
+        } else {
+          ctx.globalAlpha = 0.9;
+          ctx.fillStyle = '#8e6a4a';
+          ctx.beginPath();
+          ctx.moveTo(center.x - radius * 0.45, center.y + radius * 0.15);
+          ctx.lineTo(center.x - radius * 0.2, center.y - radius * 0.65);
+          ctx.lineTo(center.x + radius * 0.35, center.y - radius * 0.5);
+          ctx.lineTo(center.x + radius * 0.5, center.y + radius * 0.2);
+          ctx.closePath(); ctx.fill();
+          ctx.globalAlpha = 0.45;
+          ctx.fillStyle = '#d8b080';
+          ctx.beginPath(); ctx.arc(center.x, center.y + radius * 0.55, radius * (0.7 + t * 0.3), 0, Math.PI * 2); ctx.fill();
+        }
+      }
     }
   }
   ctx.restore();

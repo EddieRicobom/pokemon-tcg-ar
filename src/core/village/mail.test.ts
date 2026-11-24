@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { emptyVillage, normalizeVillage } from './life';
-import { emptyMail, generateDailyMail, mailFromMoment, markAllMailRead, markMailRead, queueMomentMail, respondToMail } from './mail';
+import { emptyMail, generateDailyMail, mailFromMoment, markAllMailRead, markMailRead, queueMomentMail, respondToMail, restoreMail } from './mail';
 import type { Moment } from './social-state';
 
 const moment: Moment = {
@@ -96,5 +96,17 @@ describe('cartas com a voz de quem escreve', () => {
     const state = emptyVillage(1, { x: 2, y: 2 });
     queueMomentMail(state.mail, moment);
     expect(respondToMail(state, 'carta-momento-1', 'responder', '2026-10-22').message).toContain('+4 amizade com Pikachu');
+  });
+
+  it('restaura uma carta arquivada sem duplicar', () => {
+    const state = emptyVillage(1, { x: 2, y: 2 });
+    queueMomentMail(state.mail, moment);
+    respondToMail(state, 'carta-momento-1', 'arquivar', '2026-10-22');
+    expect(state.mail.archive).toHaveLength(1);
+    expect(restoreMail(state.mail, 'carta-momento-1')).toBe(true);
+    expect(state.mail.inbox).toHaveLength(1);
+    expect(state.mail.archive).toHaveLength(0);
+    expect(state.mail.inbox[0]?.read).toBe(true);
+    expect(restoreMail(state.mail, 'carta-momento-1')).toBe(false);
   });
 });

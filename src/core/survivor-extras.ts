@@ -108,6 +108,8 @@ export interface SurvivorTimelinePoint {
 
 export interface SurvivorRunStats {
   damage: Record<string, SurvivorDamageSource>;
+  /** Dano que o jogador recebeu, por tipo de golpe (contato, projétil, explosão, queimadura). */
+  taken: Record<string, number>;
   timeline: SurvivorTimelinePoint[];
   nextSampleMs: number;
   thievesCaught: number;
@@ -117,13 +119,41 @@ export interface SurvivorRunStats {
 export const SURVIVOR_TIMELINE_EVERY_MS = 30_000;
 const MAX_TIMELINE = 240;
 
-export const emptyRunStats = (): SurvivorRunStats => ({ damage: {}, timeline: [{ ms: 0, kills: 0, level: 1 }], nextSampleMs: SURVIVOR_TIMELINE_EVERY_MS, thievesCaught: 0 });
+export const emptyRunStats = (): SurvivorRunStats => ({ damage: {}, taken: {}, timeline: [{ ms: 0, kills: 0, level: 1 }], nextSampleMs: SURVIVOR_TIMELINE_EVERY_MS, thievesCaught: 0 });
 
 /** Soma o dano que de fato saiu da vida do inimigo (sem contar o que passou de zero). */
 export function recordDamage(stats: SurvivorRunStats, name: string, color: string, dealt: number): void {
   if (!(dealt > 0)) return;
   const row = stats.damage[name] ?? (stats.damage[name] = { name, color, damage: 0 });
   row.damage += dealt;
+}
+
+/** Soma o dano que o jogador levou, por tipo de golpe; lido no resumo e nas dicas. */
+export function recordDamageTaken(stats: SurvivorRunStats, kind: string, damage: number): void {
+  if (!(damage > 0)) return;
+  stats.taken ??= {};
+  stats.taken[kind] = (stats.taken[kind] ?? 0) + damage;
+}
+
+export interface SurvivorDamageTakenRow { kind: string; name: string; color: string; damage: number }
+
+const TAKEN_LABELS: Record<string, { name: string; color: string }> = {
+  contato: { name: 'Contato', color: '#ff6c64' },
+  'projétil': { name: 'Projéteis', color: '#ffb36b' },
+  'explosão': { name: 'Explosões', color: '#ff8c3a' },
+  queimadura: { name: 'Queimadura', color: '#ff5b3a' },
+};
+
+/** Dano recebido do maior para o menor, com nomes legíveis para o resumo. */
+export function damageTakenRanking(stats: SurvivorRunStats, limit = 4): SurvivorDamageTakenRow[] {
+  return Object.entries(stats.taken ?? {})
+    .map(([kind, damage]) => {
+      const label = TAKEN_LABELS[kind] ?? { name: kind, color: '#ff8a80' };
+      return { kind, name: label.name, color: label.color, damage: Math.round(damage) };
+    })
+    .filter((row) => row.damage > 0)
+    .sort((a, b) => b.damage - a.damage)
+    .slice(0, limit);
 }
 
 export function sampleTimeline(stats: SurvivorRunStats, elapsedMs: number, kills: number, level: number): void {

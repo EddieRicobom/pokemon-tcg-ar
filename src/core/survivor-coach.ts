@@ -61,6 +61,19 @@ export function survivorCoachHints(summary: SurvivorSummary, context: SurvivorCo
     hints.push({ id: 'projetil', icon: '➤', text: 'Projéteis vêm em linha reta: troque de direção quando eles saírem, em vez de correr em linha.' });
   }
 
+  const taken = summary.damageTaken?.[0];
+  const takenTotal = summary.damageTaken?.reduce((sum, row) => sum + row.damage, 0) ?? 0;
+  if (taken && takenTotal > 0 && taken.damage / takenTotal >= 0.35) {
+    const text = taken.kind === 'projétil'
+      ? 'A maior parte do dano veio de tiros: ande em diagonal e mude de direção assim que eles saírem.'
+      : taken.kind === 'contato'
+        ? 'Contato foi o maior dano: não deixe o cerco fechar; ande em círculos e guarde o especial para abrir espaço.'
+        : taken.kind === 'explosão'
+          ? 'Explosões dominaram: derrube os explosivos de longe e saia das áreas marcadas antes de atacar.'
+          : 'A queimadura acumulou: quando o ícone 🔥 aparecer, evite apanhar de novo até o efeito esfriar.';
+    hints.push({ id: 'dano-recebido', icon: '🩹', text });
+  }
+
   if (context.bestMs && context.bestMs > 0 && summary.survivedMs < context.bestMs && context.bestMs - summary.survivedMs <= 15_000) {
     const seconds = Math.ceil((context.bestMs - summary.survivedMs) / 1000);
     hints.push({ id: 'recorde', icon: '⏱', text: `Faltaram ${seconds} s para o seu recorde. Segure o especial para a próxima onda e tente de novo.` });

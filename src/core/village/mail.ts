@@ -195,6 +195,17 @@ export function markAllMailRead(state: MailState): number {
   return marked;
 }
 
+/** Tira uma carta do arquivo e devolve à caixa de entrada (sem duplicar). */
+export function restoreMail(state: MailState, id: string): boolean {
+  const index = state.archive.findIndex((entry) => entry.id === id);
+  if (index < 0) return false;
+  const [mail] = state.archive.splice(index, 1);
+  if (!mail) return false;
+  mail.read = true;
+  state.inbox = [...state.inbox, mail].slice(-40);
+  return true;
+}
+
 function shiftDay(day: string, days: number): string {
   const parsed = Date.parse(`${day}T00:00:00Z`);
   if (!Number.isFinite(parsed)) return day;

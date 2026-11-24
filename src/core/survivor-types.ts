@@ -5,7 +5,7 @@ import type { ChargeStyle, SurvivorChargeState } from './survivor-charge';
 import type { PokemonType } from './pokemon-data';
 import type { SurvivorSpecialState } from './survivor-specials';
 import type { SurvivorSupremeState } from './survivor-supreme';
-import type { SurvivorDamageSource, SurvivorRunStats, SurvivorTimelinePoint } from './survivor-extras';
+import type { SurvivorDamageSource, SurvivorDamageTakenRow, SurvivorRunStats, SurvivorTimelinePoint } from './survivor-extras';
 import type { LunchEffect } from './survivor-lunch';
 import type { SurvivorMegaState } from './survivor-mega';
 import type { SurvivorProjectileLook } from './survivor-projectile-power';
@@ -98,6 +98,13 @@ export interface SurvivorPlayer {
   shots: number;
   /** Janela de invencibilidade após levar dano (ms restantes). */
   invulnMs: number;
+  /** Queimadura de tiro inimigo: ms restantes e dano por segundo. */
+  burnMs?: number;
+  burnDps?: number;
+  /** Lentidão de tiro inimigo: ms restantes (movimento reduzido). */
+  slowMs?: number;
+  /** Atordoamento de tiro inimigo: ms restantes (sem andar). */
+  stunMs?: number;
   /** Buffs temporários concedidos pelos artefatos coletados na arena. */
   artifactSpeedMs: number;
   artifactPowerMs: number;
@@ -329,6 +336,30 @@ export interface SurvivorFinalHit extends SurvivorHitSource {
   hpBefore: number;
 }
 
+/** Ataques-assinatura dos chefes: sempre telegrafados e com uma saída clara. */
+export type SurvivorBossAttackKind = 'tsunami' | 'boulders' | 'vines' | 'shockwave';
+
+export interface SurvivorBossAttackCircle { x: number; y: number; radius: number }
+
+export interface SurvivorBossAttack {
+  kind: SurvivorBossAttackKind;
+  phase: 'telegraph' | 'active';
+  /** Tempo restante da fase atual. */
+  timerMs: number;
+  /** Duração total da fase atual, para o desenho e a barra de aviso. */
+  totalMs: number;
+  bossId: number;
+  x: number;
+  y: number;
+  angle: number;
+  length: number;
+  halfWidth: number;
+  radius: number;
+  circles: SurvivorBossAttackCircle[];
+  /** O dano já foi aplicado neste ataque (uma vez só). */
+  hit: boolean;
+}
+
 export interface SurvivorHostileProjectile {
   id: number;
   x: number;
@@ -521,6 +552,11 @@ export interface SurvivorState {
   elapsedMs: number;
   player: SurvivorPlayer;
   enemies: SurvivorEnemy[];
+  /** Instante do último dano direto (não conta queimadura): a interface usa para flash/som sem piscar a cada tick. */
+  lastDirectHitAtMs?: number;
+  /** Ataque especial em andamento do chefe mais próximo; null quando nenhum está telegrafando. */
+  bossAttack: SurvivorBossAttack | null;
+  nextBossAttackAtMs: number;
   projectiles: SurvivorProjectile[];
   hostileProjectiles: SurvivorHostileProjectile[];
   orbs: SurvivorOrb[];
@@ -713,6 +749,8 @@ export interface SurvivorSummary {
   bonusCoins?: number;
   /** Para os gráficos do fim: quem causou mais dano e como derrotas e nível evoluíram. */
   damageBySource?: SurvivorDamageSource[];
+  /** O que mais machucou o jogador, por tipo de golpe. */
+  damageTaken?: SurvivorDamageTakenRow[];
   timeline?: SurvivorTimelinePoint[];
   thievesCaught?: number;
   /** Desafio adaptável no fim da corrida (sem a opção, não vem). */
@@ -822,6 +860,7 @@ export type SurvivorEvent =
   | { type: 'fieldEventExpired'; kind: SurvivorFieldEventKind }
   /** Treinador apareceu: solta um grupo de `count` Pokémon elite (3 no normal, 6 no chefão final e no infinito). */
   | { type: 'trainerSpawn'; count: number; final: boolean; trainerId: number; trigger?: 'digital-danger' }
+  | { type: 'bossAttack'; kind: SurvivorBossAttackKind; bossId: number }
   /** Treinador derrotado (todos os Pokémon dele caíram). */
   | { type: 'trainerDown'; final: boolean }
   /** Primeiro treinador derrotado: oferece a afinidade do segundo tipo real da espécie. */

@@ -634,3 +634,10 @@ Distância entre a melhor e a pior forma: **1,59× sem eventos e 1,65× com even
 teto de 1,67×. Na política evasiva: 1,52× e 1,63×. Com os eventos ligados, o p10 da Órbita (330 → 289) e do Foco (359 → 309)
 caiu nessas 12 sementes, sem medição extra para separar do sorteio. O mesmo vale para a Aura na política evasiva (p10 245 → 214,
 com o robô quase sem abates). Ficam anotados para a próxima rodada.
+
+## Ataques de chefe e status no jogador (24/11/2026)
+
+- **Chefes** (peri��dico, final e sombrio) ganham um ataque-assinatura a cada 9,5 s, o primeiro 5 s depois de nascerem. O ataque escolhe a forma pelo tipo: ��gua/gelo = tsunami em faixa, pedra/terra/a��o = pedras em c��rculos, planta/inseto/fada = vinhas, demais = onda de choque. O telegrafo dura 1,2 s e o efeito ativo 0,52 s.
+- **Dano**: 55% do dano do chefe no tsunami/onda, 65% nas pedras e 50% nas vinhas. A defesa e a dificuldade do jogador continuam valendo, o escudo especial quebra em vez de deixar passar, e pular no BONK ou estar invulner��vel evita o golpe.
+- **Status dos tiros inimigos**: queimadura por 3 s a 1,2% da vida m��xima por segundo, lentid��o por 1,8 s a 65% do passo e atordoamento por 0,34 s. S�� entram quando o dano de fato acontece (escudo/invulnerabilidade limpam o golpe). O HUD mostra ��cone, cor e tempo restante; a queimadura n��o dispara o flash/som de impacto a cada tique.
+- A regra dos testes fica em `survivor-status-boss.test.ts` (dano, dodge, cooldown, sem chefe, status e invulnerabilidade).

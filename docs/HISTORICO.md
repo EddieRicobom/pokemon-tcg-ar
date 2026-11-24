@@ -5,6 +5,15 @@ O estado atual, as fases, as pendências e os riscos continuam no [plano](../IMP
 datadas (com o que foi e o que não foi validado em cada uma). A regra de validação do plano vale também para estas entradas:
 🔶 significa que **nada foi visto num celular real**.
 
+## Torre: status, dano recebido e chefes com ataques próprios; Vila: conversas e Correio (24/11/2026)
+
+- **Tiros inimigos com consequência:** queimadura (3 s, 1,2% da vida máxima por segundo), lentidão (1,8 s a 65% do passo) e atordoamento (0,34 s) agora afetam o jogador quando o dano entra. O HUD mostra ícone, cor e segundos restantes; a queimadura não pisca o flash/som a cada tique. O status é bloqueado por escudo/invulnerabilidade e o dano por queimadura entra no relatório.
+- **Dano recebido no resumo:** o `runStats` agrupa o que machucou o jogador (contato, projéteis, explosões e queimadura), e o resumo ganhou “O que mais te machucou” com barras. As dicas finais usam esse ranking (“a maior parte veio de tiros: ande em diagonal” etc.).
+- **Chefes com ataques-assinatura:** tsunamis em faixa, pedras em três círculos, vinhas que crescem no gramado e ondas de choque, escolhidos pelo tipo do chefe. Tudo com telegrafo de 1,2 s no chão, aviso no HUD (“Tsunami!”, “Pedras!”, “Vinhas!”, “Onda de choque!”), dano único e cooldown de 9,5 s. Dá para sair da área, pular no BONK ou quebrar o escudo; o chefão não ataca sem aviso.
+- **Vila com conversas no mundo:** moradores acordados perto do jogador puxam assunto a cada ~26 s, com uma resposta curta de outro morador, usando clima, hora, amizade e o último título real do Diário. A fala usa o balão de conversa (texto) e não cria momento, recompensa ou RNG social. Um gancho de desenvolvimento (`window.villageChatter`) permite testar a fala no navegador.
+- **Correio organizado:** busca por remetente/assunto/corpo (sem diferenciar acentos), abas Novas/Todas/Arquivo, contagem de não lidas, restauração de cartas arquivadas e mensagens de vazio específicas. `filterMail` e `restoreMail` são puros e testados.
+- 🔶 Typecheck, 344 arquivos / 3423 testes, build e testes de layout passaram. Conferi no navegador: telegrafos de tsunami/pedras/vinhas, chips de status, HUD de dano, uma fala de morador e as abas do Correio. Não testei em celular real, com muitos projéteis simultâneos, nem a fala em todas as posições de câmera.
+
 ## Torre: tiros inimigos mais legíveis (24/11/2026)
 
 - Cada tiro inimigo ganhou forma própria pelo efeito: dardo comum, chama (queimadura), cristal de gelo (lentidão) e faísca em ziguezague (atordoamento), com contorno escuro, centro quente, rastro curto e halo. Elites ganham aro dourado e chefes, aro duplo pulsante.

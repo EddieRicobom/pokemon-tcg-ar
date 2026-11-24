@@ -69,6 +69,17 @@ describe('dicas para a próxima corrida', () => {
     expect(survivorCoachHints(input, { bestMs: 40_000, trained: false })).toEqual(survivorCoachHints(input, { bestMs: 40_000, trained: false }));
   });
 
+  it('ensina a partir do tipo de dano que mais machucou', () => {
+    const hints = survivorCoachHints(summary({
+      damageTaken: [
+        { kind: 'projétil', name: 'Projéteis', color: '#ffb36b', damage: 80 },
+        { kind: 'contato', name: 'Contato', color: '#ff6c64', damage: 20 },
+      ],
+    }));
+    expect(hints.map((hint) => hint.id)).toContain('dano-recebido');
+    expect(hints.find((hint) => hint.id === 'dano-recebido')?.text).toContain('diagonal');
+  });
+
   it('detecta recordes de tempo, onda e nível acima do melhor anterior', () => {
     expect(survivorNewRecords(summary({ survivedMs: 300_000, wave: 10, level: 20 }), { ms: 0, wave: 0, level: 0 })).toEqual([]);
     expect(survivorNewRecords(summary({ survivedMs: 300_000, wave: 10, level: 20 }), { ms: 240_000, wave: 12, level: 18 }))

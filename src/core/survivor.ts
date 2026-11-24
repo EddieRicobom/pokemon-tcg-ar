@@ -4,6 +4,7 @@ import { statsOfDex } from './survivor-stats';
 import { rollSurvivorAlpha, survivorAlphaRng, survivorAlphaXpValue } from './survivor-alpha';
 import type { Rng } from './battle';
 import { attackProfile, BASIC_ATTACK_DAMAGE_FACTOR, moveWith, type AttackProfile, type MoveCategory, type SurvivorMove } from './survivor-moves';
+import { typesOfDex } from './species-filter';
 import { applyStoredAttackStats, createSurvivorAttackSlots, loadSurvivorAttack, otherSurvivorAttack, survivorAttacksSimultaneous, survivorPlayerAttacks, type SurvivorAttackFields, type SurvivorAttackIndex } from './survivor-attack-slots';
 import { destinyLinkRule, HELD_ITEM_BY_ID, HELD_OFFER_PREFIX, heldChargePosition, heldItemText, heldMods, isHeldItemId, mirrorOrbiters, rollHeldOffer, timeBubbleRule } from './survivor-held';
 import type { HeldItemId } from './survivor-held';
@@ -44,11 +45,11 @@ export * from './survivor-types';
 export { SURVIVOR_SIMULTANEOUS_ATTACKS_MS, survivorPlayerAttacks, type SurvivorAttackIndex } from './survivor-attack-slots';
 import { createBonkObstacles } from './survivor-bonk';
 import {
-  ADAPTIVE_START, adaptiveTarget, applyLevelBonus, damageRanking, emptyRunStats, LEVEL_BONUS_TEXT, recordDamage, sampleTimeline, stepAdaptive,
+  ADAPTIVE_START, adaptiveTarget, applyLevelBonus, damageRanking, damageTakenRanking, emptyRunStats, LEVEL_BONUS_TEXT, recordDamage, recordDamageTaken, sampleTimeline, stepAdaptive,
   SURVIVOR_THIEF_DEX, SURVIVOR_THIEF_EVERY_MS, SURVIVOR_THIEF_FIRST_MS, SURVIVOR_THIEF_LIFE_MS, SURVIVOR_THIEF_SPEED, thiefFleeTarget, thiefReward,
 } from './survivor-extras';
 import { ARENA_H, ARENA_W, DIGITAL_DANGER_COOLDOWN_MS, DIGITAL_DANGER_MAX, DIGITAL_DANGER_UNLOCK_MS, DIGITAL_DANGER_VISIBLE_RADIUS, MAGNET_PICKUP_RADIUS_CAP, MAX_DIGITAL_POKEBALLS_PER_RUN, MAX_SURVIVOR_SUPPORTS, PICKUP_RADIUS, PLAYER_RADIUS, SPAWN_MARGIN, SURVIVOR_FIELD_EVENT_BEACON_MS, SURVIVOR_FIELD_EVENT_EVERY_MS, SURVIVOR_FIELD_EVENT_FIRST_MS, SURVIVOR_FIELD_EVENT_HUNT_MS, SURVIVOR_FIELD_EVENT_REACH_RADIUS, SURVIVOR_LOVE_CANDY_MS, SURVIVOR_OMEGA_SHARD_MS, SURVIVOR_SHADOW_BALL_EVERY_MS, SURVIVOR_SHADOW_BALL_FIRST_MS, SURVIVOR_SHADOW_BALL_MAX_PER_RUN, SURVIVOR_SHADOW_CUTSCENE_MS, SURVIVOR_SPAWN_DISTANCE, SURVIVOR_SUPPORT_EVOLUTION_OFFER_CHANCE, SURVIVOR_SUPPORT_RARE_OFFER_CHANCE, SURVIVOR_TRUST_STONE_MS, SURVIVOR_UPGRADE_RARITIES, SURVIVOR_FAST_TRAINER_COIN_SCALE, survivorMilestoneMs } from './survivor-types';
-import type { SurvivorSummary, SurvivorChest, SurvivorGravityWell, SurvivorHeldStrike, SurvivorTimeBubble, SurvivorFinalHit, SurvivorHitSource, SurvivorEnemy, SurvivorEnemyArchetype, SurvivorEnemyGrade, SurvivorEvent, SurvivorEvolutionOption, SurvivorInput, SurvivorPlayer, SurvivorProjectile, SurvivorState, SurvivorSupport, SurvivorSupportCandidate, SurvivorSupportRole, SurvivorTypeAffinity, SurvivorUpgrade, SurvivorUpgradeOption, SurvivorUpgradeRarity } from './survivor-types';
+import type { SurvivorSummary, SurvivorBossAttack, SurvivorBossAttackKind, SurvivorChest, SurvivorGravityWell, SurvivorHeldStrike, SurvivorTimeBubble, SurvivorFinalHit, SurvivorHitSource, SurvivorEnemy, SurvivorEnemyArchetype, SurvivorEnemyGrade, SurvivorEvent, SurvivorEvolutionOption, SurvivorInput, SurvivorPlayer, SurvivorProjectile, SurvivorState, SurvivorSupport, SurvivorSupportCandidate, SurvivorSupportRole, SurvivorTypeAffinity, SurvivorUpgrade, SurvivorUpgradeOption, SurvivorUpgradeRarity } from './survivor-types';
 import { cadenceCanImprove, CHARGE_FOCUS_RATE_ID, CHARGE_RUSH_LENGTH_ID, SURVIVOR_ATTACK_DAMAGE_CAP, SURVIVOR_UPGRADES, SURVIVOR_RARITY_ORDER, round1 } from './survivor-upgrades';
 import { cancelTeleportHold, createSurvivorCharge, distanceToSegment, FOCUS_CHARGE_PER_SEC, FOCUS_HIT_CHARGE, FOCUS_SHOT_PIERCE, FOCUS_SHOT_SIZE_MULTIPLIER, FOCUS_SHOT_SPEED_MULTIPLIER, FOCUS_SLOW_MULTIPLIER, focusBeam, TELEPORT_MAX_RANGE, RAPID_BURST_MIN_CYCLE_MS, RAPID_BURST_SHOT_INTERVAL_MS, RAPID_BURST_SHOTS, RAPID_BURST_SPREAD, RUSH_REFERENCE_SPEED, stepChargeMeter, teleportReach } from './survivor-charge';
 import type { ChargeStyle } from './survivor-charge';
@@ -367,6 +368,8 @@ export function createSurvivorState(seed: number, options: CreateSurvivorOptions
     spawnAccumMs: 0,
     // O relógio do rápido corre 2×; alongar as janelas mantém a pressão por segundo real próxima da corrida normal.
     nextBossAtMs: BALANCE.firstBossMs * (fast ? FAST_TIME_SCALE : 1),
+    bossAttack: null,
+    nextBossAttackAtMs: 0,
     kindCount: Math.max(1, Math.floor(options.kindCount)),
     over: false,
     nextTrainerAtMs: TRAINER_FIRST_MS,
@@ -578,6 +581,7 @@ function spawnEnemy(
       specialTimerMs: shadow ? 1200 : 1800,
       ...(options?.dexId !== undefined ? { dexId: options.dexId } : {}),
     });
+    state.nextBossAttackAtMs = Math.max(state.nextBossAttackAtMs ?? 0, state.elapsedMs + BOSS_ATTACK_FIRST_MS);
     return id;
   }
   const baseHp = (BALANCE.enemyHpBase + Math.floor(t / BALANCE.enemyHpEverySec) * BALANCE.enemyHpStep + state.wave * BALANCE.enemyHpPerWave)
@@ -618,6 +622,7 @@ function spawnEnemy(
     ...(archetype === 'suporte' ? { supportRole: supportRoleFor(id) } : {}),
     ...(options?.dexId !== undefined ? { dexId: options.dexId } : {}),
   });
+  if (grade === 'chefao') state.nextBossAttackAtMs = Math.max(state.nextBossAttackAtMs ?? 0, state.elapsedMs + BOSS_ATTACK_FIRST_MS);
   return id;
 }
 
@@ -1171,6 +1176,12 @@ function evolveAttack(attack: SurvivorAttackFields, old: AttackProfile | null, n
 const EFFECT_MS = { burn: 2000, slow: 1500, stun: 400, bossStun: 150 } as const;
 /** Raio da explosão do Pokémon explosivo ao cair (só atinge o jogador). */
 const EXPLOSION_RADIUS = 70;
+/** Efeitos dos tiros inimigos no jogador: curtos e com counterplay (o HUD mostra o tempo restante). */
+const HOSTILE_BURN_MS = 3000;
+const HOSTILE_BURN_MAX_HP_PER_SEC = 0.012;
+const HOSTILE_SLOW_MS = 1800;
+const HOSTILE_SLOW_MULTIPLIER = 0.65;
+const HOSTILE_STUN_MS = 340;
 /** Um inimigo só pode ser atordoado de novo 5 s depois do último atordoamento (evita travar a arena com golpes de área). */
 export const STUN_COOLDOWN_MS = 5_000;
 
@@ -3202,6 +3213,20 @@ export function survivorDefenseReduction(player: Pick<SurvivorPlayer, 'dexId' | 
   return defense / (200 + defense);
 }
 
+/** Aplica o efeito do tiro inimigo só quando o dano entrou: escudo/invulnerabilidade continuam limpando o golpe. */
+function applyHostileStatus(state: SurvivorState, effect: 'burn' | 'slow' | 'stun' | undefined): void {
+  if (!effect) return;
+  const p = state.player;
+  if (effect === 'burn') {
+    p.burnMs = Math.max(p.burnMs ?? 0, HOSTILE_BURN_MS);
+    p.burnDps = Math.max(p.burnDps ?? 0, Math.max(1, p.maxHp * HOSTILE_BURN_MAX_HP_PER_SEC));
+  } else if (effect === 'slow') {
+    p.slowMs = Math.max(p.slowMs ?? 0, HOSTILE_SLOW_MS);
+  } else {
+    p.stunMs = Math.max(p.stunMs ?? 0, HOSTILE_STUN_MS);
+  }
+}
+
 function damagePlayer(state: SurvivorState, damage: number, kind: SurvivorFinalHit['kind'], source: SurvivorHitSource): void {
   const p = state.player;
   const reduction = survivorDefenseReduction(p, kind);
@@ -3209,6 +3234,8 @@ function damagePlayer(state: SurvivorState, damage: number, kind: SurvivorFinalH
   const projectileGuard = kind === 'projétil' ? (p.upgradeLevels['projectile-guard'] ?? 0) * 0.12 : 0;
   const effectiveDamage = damage > 0 ? Math.max(1, Math.ceil(damage * (1 - (reduction ?? 0)) * (1 - Math.min(0.5, contactGuard + projectileGuard)) * 1.2 ** (state.blackChestCurses ?? 0))) : 0;
   state.lastHit = { ...source, kind, damage: effectiveDamage, hpBefore: p.hp };
+  state.lastDirectHitAtMs = state.elapsedMs;
+  if (state.runStats) recordDamageTaken(state.runStats, kind, effectiveDamage);
   p.hp = Math.max(0, p.hp - effectiveDamage);
   gainSupreme(state, (effectiveDamage / Math.max(1, p.maxHp)) * SUPREME_GAIN.damageTakenPerBar);
   if (effectiveDamage > 0 && source.digitalThreat) p.healBlockMs = 8000;
@@ -3221,6 +3248,113 @@ function damagePlayer(state: SurvivorState, damage: number, kind: SurvivorFinalH
         enemy.hitFlashMs = 90;
       }
     }
+  }
+}
+
+/** Ritmo e geometria dos ataques-assinatura dos chefes. Tudo é telegrafado antes de ferir. */
+const BOSS_ATTACK_FIRST_MS = 5000;
+const BOSS_ATTACK_EVERY_MS = 9500;
+const BOSS_ATTACK_TELEGRAPH_MS = 1200;
+const BOSS_ATTACK_ACTIVE_MS = 520;
+
+/** Água/gelo vira tsunami; pedra vira pedregulho; planta vira vinhas; o resto, onda de choque. */
+function bossAttackKindFor(dexId: number | undefined): SurvivorBossAttackKind {
+  const types = new Set(typesOfDex(dexId));
+  if (types.has('water') || types.has('ice')) return 'tsunami';
+  if (types.has('rock') || types.has('ground') || types.has('steel')) return 'boulders';
+  if (types.has('grass') || types.has('bug') || types.has('fairy')) return 'vines';
+  return 'shockwave';
+}
+
+function startBossAttack(state: SurvivorState, events: SurvivorEvent[], boss: SurvivorEnemy): void {
+  const p = state.player;
+  const angle = Math.atan2(p.y - boss.y, p.x - boss.x);
+  const kind = bossAttackKindFor(boss.dexId);
+  const attack: SurvivorBossAttack = {
+    kind, phase: 'telegraph', timerMs: BOSS_ATTACK_TELEGRAPH_MS, totalMs: BOSS_ATTACK_TELEGRAPH_MS,
+    bossId: boss.id, x: boss.x, y: boss.y, angle, length: 0, halfWidth: 0, radius: 0, circles: [], hit: false,
+  };
+  if (kind === 'tsunami') {
+    attack.length = Math.max(620, Math.min(1180, Math.hypot(p.x - boss.x, p.y - boss.y) + 360));
+    attack.halfWidth = 62 + Math.min(24, boss.radius * 0.5);
+  } else if (kind === 'boulders') {
+    const sideX = Math.cos(angle + Math.PI / 2) * 86;
+    const sideY = Math.sin(angle + Math.PI / 2) * 86;
+    attack.circles = [
+      { x: p.x, y: p.y, radius: 52 },
+      { x: p.x + sideX, y: p.y + sideY, radius: 48 },
+      { x: p.x - sideX, y: p.y - sideY, radius: 48 },
+    ];
+  } else if (kind === 'vines') {
+    const sideX = Math.cos(angle + Math.PI / 2) * 78;
+    const sideY = Math.sin(angle + Math.PI / 2) * 78;
+    attack.circles = [
+      { x: p.x, y: p.y, radius: 45 },
+      { x: p.x + sideX, y: p.y + sideY, radius: 42 },
+      { x: p.x - sideX, y: p.y - sideY, radius: 42 },
+    ];
+  } else {
+    attack.radius = 160 + Math.min(30, boss.radius * 0.5);
+  }
+  state.bossAttack = attack;
+  events.push({ type: 'bossAttack', kind, bossId: boss.id });
+}
+
+function insideBossAttack(attack: SurvivorBossAttack, p: SurvivorPlayer): boolean {
+  if (attack.kind === 'tsunami') {
+    const endX = attack.x + Math.cos(attack.angle) * attack.length;
+    const endY = attack.y + Math.sin(attack.angle) * attack.length;
+    return distanceToSegment(p.x, p.y, attack.x, attack.y, endX, endY) <= attack.halfWidth + PLAYER_RADIUS;
+  }
+  if (attack.kind === 'shockwave') return Math.hypot(p.x - attack.x, p.y - attack.y) <= attack.radius + PLAYER_RADIUS;
+  return attack.circles.some((circle) => Math.hypot(p.x - circle.x, p.y - circle.y) <= circle.radius + PLAYER_RADIUS);
+}
+
+/** Avança o ataque do chefe: telegrafa, aplica o dano uma vez e some. */
+function stepBossAttack(state: SurvivorState, events: SurvivorEvent[], dtMs: number, airborne: boolean): void {
+  if (state.special.selected === 'stasis' && state.special.activeMs > 0) return;
+  const p = state.player;
+  let attack = state.bossAttack ?? null;
+  if (!attack) {
+    const bosses = state.enemies.filter((enemy) => enemy.hp > 0 && (enemy.boss || enemy.grade === 'chefao' || enemy.shadowBoss));
+    if (bosses.length === 0) {
+      state.nextBossAttackAtMs = state.elapsedMs + 3000;
+      return;
+    }
+    if (state.elapsedMs < (state.nextBossAttackAtMs ?? 0)) return;
+    const boss = bosses.reduce((best, enemy) => (Math.hypot(enemy.x - p.x, enemy.y - p.y) < Math.hypot(best.x - p.x, best.y - p.y) ? enemy : best), bosses[0]!);
+    startBossAttack(state, events, boss);
+    return;
+  }
+  const boss = state.enemies.find((enemy) => enemy.id === attack!.bossId && enemy.hp > 0);
+  if (!boss) {
+    state.bossAttack = null;
+    state.nextBossAttackAtMs = state.elapsedMs + 4000;
+    return;
+  }
+  attack.timerMs -= dtMs;
+  if (attack.phase === 'telegraph' && attack.timerMs <= 0) {
+    if (!attack.hit && !airborne && insideBossAttack(attack, p)) {
+      attack.hit = true;
+      if (specialProtects(state)) {
+        breakSurvivorShield(state);
+      } else if (p.invulnMs <= 0) {
+        const multiplier = attack.kind === 'tsunami' ? 0.55 : attack.kind === 'boulders' ? 0.65 : attack.kind === 'vines' ? 0.5 : 0.55;
+        const incoming = Math.ceil(boss.damage * multiplier * survivorDifficultyEnemyMultiplier(p.difficultyStacks ?? 0));
+        damagePlayer(state, incoming, attack.kind === 'tsunami' ? 'projétil' : 'explosão', hitSource(boss));
+        if (attack.kind === 'tsunami') p.slowMs = Math.max(p.slowMs ?? 0, 2200);
+        if (attack.kind === 'vines') p.stunMs = Math.max(p.stunMs ?? 0, 320);
+        p.invulnMs = hitInvulnerabilityMs(p);
+      }
+    }
+    attack.phase = 'active';
+    attack.timerMs = BOSS_ATTACK_ACTIVE_MS;
+    attack.totalMs = BOSS_ATTACK_ACTIVE_MS;
+    return;
+  }
+  if (attack.phase === 'active' && attack.timerMs <= 0) {
+    state.bossAttack = null;
+    state.nextBossAttackAtMs = state.elapsedMs + BOSS_ATTACK_EVERY_MS;
   }
 }
 
@@ -3493,12 +3627,12 @@ function fieldEventPoint(state: SurvivorState): { x: number; y: number } {
 }
 
 /** Gráficos do resumo: as fontes de dano e a linha do tempo, fechada com o momento do fim. */
-function runStatsSummary(state: SurvivorState): Partial<Pick<SurvivorSummary, 'damageBySource' | 'timeline' | 'thievesCaught' | 'adaptive'>> {
+function runStatsSummary(state: SurvivorState): Partial<Pick<SurvivorSummary, 'damageBySource' | 'damageTaken' | 'timeline' | 'thievesCaught' | 'adaptive'>> {
   const stats = state.runStats;
   if (!stats) return {};
   const last = stats.timeline[stats.timeline.length - 1];
   const timeline = last && last.ms < state.elapsedMs ? [...stats.timeline, { ms: state.elapsedMs, kills: state.kills, level: state.player.level }] : [...stats.timeline];
-  return { damageBySource: damageRanking(stats), timeline, thievesCaught: stats.thievesCaught, ...(state.adaptive ? { adaptive: Math.round(state.adaptive.value * 100) / 100 } : {}) };
+  return { damageBySource: damageRanking(stats), damageTaken: damageTakenRanking(stats), timeline, thievesCaught: stats.thievesCaught, ...(state.adaptive ? { adaptive: Math.round(state.adaptive.value * 100) / 100 } : {}) };
 }
 
 /** O ladrão de tesouro aparece de tempos em tempos, longe o bastante para exigir ir atrás. */
@@ -3681,17 +3815,19 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
   const holdingFocus = p.move.category === 'foco' && survivorChargeHeld(input, slots?.active, true)
     || simultaneous && slots.stored.move.category === 'foco' && survivorChargeHeld(input, otherAttack, false);
   const focusSlow = holdingFocus ? FOCUS_SLOW_MULTIPLIER : 1;
+  const statusStunned = (p.stunMs ?? 0) > 0;
+  const statusSlow = (p.slowMs ?? 0) > 0 ? HOSTILE_SLOW_MULTIPLIER : 1;
   const beforeMoveX = p.x;
   const beforeMoveY = p.y;
   const len = Math.hypot(input.dx, input.dy);
-  if (len > 0.001 && !(state.special.selected === 'dash' && state.special.activeMs > 0)) {
+  if (len > 0.001 && !statusStunned && !(state.special.selected === 'dash' && state.special.activeMs > 0)) {
     const ux = input.dx / len;
     const uy = input.dy / len;
     const terrainSpeed = survivorBiomeMovementMultiplier(state.elapsedMs, p.x, p.y);
     const runningTrail = (p.trailActiveMs ?? 0) > 0 || simultaneous && (slots.stored.trailActiveMs ?? 0) > 0;
     const artifactSpeed = (p.artifactSpeedMs > 0 ? BALANCE.artifactSpeedMultiplier : 1) * (1 + (p.lunchSpeedBonus ?? 0)) * (runningTrail ? TRAIL_SPEED_MULTIPLIER : 1);
-    p.x = clamp(p.x + ux * p.speed * artifactSpeed * terrainSpeed * focusSlow * dt, PLAYER_RADIUS, ARENA_W - PLAYER_RADIUS);
-    p.y = clamp(p.y + uy * p.speed * artifactSpeed * terrainSpeed * focusSlow * dt, PLAYER_RADIUS, ARENA_H - PLAYER_RADIUS);
+    p.x = clamp(p.x + ux * p.speed * artifactSpeed * terrainSpeed * focusSlow * statusSlow * dt, PLAYER_RADIUS, ARENA_W - PLAYER_RADIUS);
+    p.y = clamp(p.y + uy * p.speed * artifactSpeed * terrainSpeed * focusSlow * statusSlow * dt, PLAYER_RADIUS, ARENA_H - PLAYER_RADIUS);
     if (Math.abs(ux) > 0.01) p.facing = ux < 0 ? -1 : 1;
     p.aimAngle = Math.atan2(uy, ux);
   }
@@ -3718,6 +3854,19 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
   }
   if (p.invulnMs > 0) p.invulnMs = Math.max(0, p.invulnMs - dtMs);
   if ((p.regenPerSec ?? 0) > 0 && p.hp > 0) healSurvivor(p, (p.regenPerSec ?? 0) * dt);
+  // Efeitos dos tiros inimigos: a queimadura fere aos poucos, a lentidão dura mais um pouco e o atordoamento é curto.
+  if ((p.burnMs ?? 0) > 0) {
+    const burning = Math.min(p.burnMs!, dtMs);
+    const burn = Math.max(0, (p.burnDps ?? 0) * burning / 1000);
+    p.burnMs = Math.max(0, p.burnMs! - dtMs);
+    if (burn > 0) {
+      p.hp = Math.max(0, p.hp - burn);
+      if (state.runStats) recordDamageTaken(state.runStats, 'queimadura', burn);
+    }
+    if (p.burnMs === 0) p.burnDps = 0;
+  }
+  if ((p.slowMs ?? 0) > 0) p.slowMs = Math.max(0, p.slowMs! - dtMs);
+  if ((p.stunMs ?? 0) > 0) p.stunMs = Math.max(0, p.stunMs! - dtMs);
   stepLunch(state, dt);
 
   // Nascimento de inimigos (onda cresce com o tempo) e do chefe periódico.
@@ -3838,6 +3987,9 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
 
   removeEscapedSwarm(state);
 
+  // Ataque-assinatura do chefe: telegrafado na posição atual e resolvido depois do movimento dos inimigos.
+  stepBossAttack(state, events, dtMs, input.airborne === true);
+
   // Projéteis hostis têm alcance, dano e quantidade limitados; cada um some ao tocar o jogador.
   // No Relógio parado eles ficam suspensos no ar, sem andar nem ferir: o tempo parou para tudo que é inimigo.
   const hostileShotsFrozen = state.special.selected === 'stasis' && state.special.activeMs > 0;
@@ -3856,6 +4008,7 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
       if (p.invulnMs <= 0 && !specialProtects(state)) {
         const incoming = Math.ceil((hasUpgrade(p, 'steel-plate') ? proj.damage * 0.88 : proj.damage) * enemyDifficulty * closeRangeDamageMultiplier(state) * (p.artifactShieldMs > 0 ? 0.65 : 1));
         damagePlayer(state, incoming, 'projétil', proj.source ?? { boss: false, grade: proj.grade ?? 'comum' });
+        applyHostileStatus(state, proj.effect);
         p.invulnMs = hitInvulnerabilityMs(p);
       }
       return false;
