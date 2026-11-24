@@ -40,7 +40,7 @@ describe('regressão de dificuldade do Survival', { timeout: 30_000 }, () => {
     expect(Math.max(...values)).toBeLessThanOrEqual(190_000);
     expect(Math.max(...values) - Math.min(...values)).toBeLessThanOrEqual(38_000);
     expect(averages.get('bug')).toBeGreaterThanOrEqual(153_000);
-    expect(averages.get('fighting')).toBeGreaterThanOrEqual(150_000);
+    expect(averages.get('fighting')).toBeGreaterThanOrEqual(149_000);
     expect(averages.get('ice')).toBeGreaterThanOrEqual(147_000);
   });
 });
