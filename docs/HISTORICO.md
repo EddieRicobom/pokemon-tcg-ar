@@ -5,6 +5,19 @@ O estado atual, as fases, as pendências e os riscos continuam no [plano](../IMP
 datadas (com o que foi e o que não foi validado em cada uma). A regra de validação do plano vale também para estas entradas:
 🔶 significa que **nada foi visto num celular real**.
 
+## Interface compacta e teste de sobreposição (24/11/2026)
+
+- A casca ficou mais compacta sem perder alvos de toque: `--nav-height` de 68 para 62 px, paddings e gaps menores, marca e título discretos, barra de abas opaca (o conteúdo não aparece mais por trás dos rótulos), pílulas de modo mais baixas, cartões com 13 px de padding e títulos menores. O espaço inferior continua reservando a barra fixa, e o rodapé escapa dela no fim da rolagem.
+- Os avisos de recompensa desceram para baixo do cabeçalho; antes podiam cobrir a marca e o menu.
+- Novo `e2e/ui-layout.spec.ts`, rodando com `npm run test:layout` depois do build: 14 testes em 360×640, 390×844 e 430×932 nas telas Escanear, Cartas, Treinador e Diagnóstico, mais dois casos de avisos e paisagem. Ele mede o layout real do Chromium (não o happy-dom) para garantir itens da casca sem sobreposição, zero vazamento horizontal, fundo opaco nas abas, rodapé livre no fim da rolagem, aviso abaixo do cabeçalho e controles universais acima das abas e do rodapé em paisagem.
+- 🔶 Typecheck, 339 arquivos / 3397 testes, build e os 14 testes de layout passaram. Não mede GPU, teclado virtual nem toque em celular real.
+
+## Torre: trilha 8-bit e troca de geração com filtro (24/11/2026)
+
+- A trilha da Torre ganhou um botão **8-bit** (ligado por padrão, salvo junto das preferências de música). O `MusicPlayer` aplica quantização de amplitude em 40 degraus e saturação leve, com filtro passa-baixa em 7,2 kHz; o mesmo crossfade continua valendo com ou sem o tratamento.
+- A troca de faixas agora usa uma varredura de filtro além do cruzamento de volume: a trilha que sai fecha os agudos e a que entra abre, mascarando diferenças de tonalidade entre os temas das gerações. A Vila também usa a varredura quando troca de trilha; o 8-bit fica desligado lá.
+- 🔶 Typecheck, testes do player/preferências e build passaram. Não ouvi em aparelho real nem medi fones/celular; a curva de quantização e o corte de 7,2 kHz são ajustáveis em `src/app/music-player.ts`.
+
 ## Torre: tileset mais variado na trilha e nas poças (24/11/2026)
 
 - Cada tipo de chão da Torre passou a ter quatro ladrilhos-base de 64 px, sorteados por bloco alinhado ao mundo; os canvas ficam em cache por tipo/variante e o sorteio é determinístico, então a repetição do piso caiu sem custo por quadro.
