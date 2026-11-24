@@ -3,8 +3,9 @@ import { SURVIVOR_BIOMES, survivorBiomeZonesOf } from '../core/survivor-biomes';
 import type { SurvivorBiomeZoneKind } from '../core/survivor-biomes';
 import type { SurvivorVegetation, SurvivorVegetationPlan, SurvivorVegetationSector } from '../core/survivor-vegetation';
 import { ATLAS_SOURCES, packAtlas } from './atlas-spec';
+import { EDGE } from '../box/ground-art';
 import { quarterCell } from './ground-tiles';
-import { SURVIVOR_FLOOR_PALETTES, SURVIVOR_FLOWER_COLORS, floorHash, recolorGrassBase, survivorDecorTile, survivorFloorTexture, tintFoliage } from './survivor-floor-art';
+import { FLOOR_TEXTURE_SIZE, FLOOR_TEXTURE_VARIANTS, SURVIVOR_FLOOR_PALETTES, SURVIVOR_FLOWER_COLORS, floorHash, recolorGrassBase, survivorDecorTile, survivorFloorTexture, tintFoliage } from './survivor-floor-art';
 import type { FlowerColors, FoliageTint, SurvivorDecorKind, SurvivorFloorKind } from './survivor-floor-art';
 
 /** Areia das trilhas de Kanto e Johto: o mesmo bloco `sand-grass`, em bege queimado ou amarelo de duna. */
@@ -186,6 +187,48 @@ export function trailHalfWidth(width: number): number {
 
 /** Quantos blocos a mancha orgânica de uma zona pode passar do retângulo da mecânica (que ela sempre cobre inteiro). */
 export const ZONE_SPILL = 4;
+
+export interface SurvivorTrailMark {
+  /** Mato invadindo a borda, cascalho solto ou rachadura no piso. */
+  kind: 'blade' | 'gravel' | 'crack';
+  /** Pixel dentro da célula (0 a 15). */
+  x: number;
+  y: number;
+  /** 0 claro, 1 sombra, 2 escuro (papéis da paleta do chão). */
+  tone: number;
+  /** Lado de onde vem o mato (EDGE); 0 quando não é lâmina. */
+  side: number;
+}
+
+/**
+ * Marcas estáticas de uma célula de trilha: a grama que invade a borda, cascalho e rachaduras. Puro e determinístico
+ * para o detalhe não ferver entre chunks nem entre partidas. `edges` usa `EDGE`: lados em que a trilha termina.
+ */
+export function survivorTrailMarks(index: number, c: number, r: number, edges: number): SurvivorTrailMark[] {
+  const out: SurvivorTrailMark[] = [];
+  const base = index * 977 + c * 61 + r * 131;
+  for (const [bit, side] of [[EDGE.north, 0], [EDGE.east, 1], [EDGE.south, 2], [EDGE.west, 3]] as const) {
+    if (!(edges & bit) || floorHash(base, side, 1) > 0.62) continue;
+    const count = 1 + (floorHash(base, side, 2) > 0.5 ? 1 : 0);
+    for (let i = 0; i < count; i++) {
+      const along = 2 + Math.floor(floorHash(base, side, 3 + i) * 12);
+      out.push({
+        kind: 'blade',
+        x: side === 0 || side === 2 ? along : side === 1 ? 15 : 0,
+        y: side === 0 ? 0 : side === 2 ? 15 : along,
+        tone: Math.floor(floorHash(base, side, 8 + i) * 3),
+        side,
+      });
+    }
+  }
+  const gravel = floorHash(base, 21);
+  if (gravel < 0.55) {
+    out.push({ kind: 'gravel', x: 2 + Math.floor(floorHash(base, 22) * 12), y: 2 + Math.floor(floorHash(base, 23) * 12), tone: gravel < 0.28 ? 0 : 1, side: 0 });
+    if (gravel < 0.24) out.push({ kind: 'gravel', x: 1 + Math.floor(floorHash(base, 24) * 14), y: 1 + Math.floor(floorHash(base, 25) * 14), tone: 1, side: 0 });
+  }
+  if (floorHash(base, 31) < 0.07) out.push({ kind: 'crack', x: 3 + Math.floor(floorHash(base, 32) * 8), y: 3 + Math.floor(floorHash(base, 33) * 8), tone: 2, side: 0 });
+  return out;
+}
 
 /**
  * Planta o chão da região em blocos de 16 px: rota, zonas de bioma, florestas e moitas, todas com bordas orgânicas.
@@ -371,6 +414,18 @@ function bufferCanvas(buf: { w: number; h: number; data: Uint8Array | Uint8Clamp
   canvas.width = buf.w;
   canvas.height = buf.h;
   canvas.getContext('2d')!.putImageData(new ImageData(new Uint8ClampedArray(buf.data), buf.w, buf.h), 0, 0);
+  return canvas;
+}
+
+/** Ladrilhos-base viram canvas uma vez por tipo/variante; cada chunk só cria o `CanvasPattern` em cima deles. */
+const floorTextureCanvases = new Map<string, HTMLCanvasElement>();
+function floorTextureCanvas(floor: SurvivorFloorKind, variant: number): HTMLCanvasElement {
+  const key = `${floor}:${variant}`;
+  let canvas = floorTextureCanvases.get(key);
+  if (!canvas) {
+    canvas = bufferCanvas(survivorFloorTexture(floor, variant));
+    floorTextureCanvases.set(key, canvas);
+  }
   return canvas;
 }
 
@@ -637,10 +692,23 @@ export function createSurvivorLandscape(width: number, height: number, getPlan =
       return sprite;
     };
 
-    // 1. Base: ladrilho de 64 px repetido, sem transparência e sem cor chapada por baixo aparecendo.
-    const texture = ctx.createPattern(bufferCanvas(survivorFloorTexture(floor)), 'repeat');
-    ctx.fillStyle = texture ?? hex(palette.base);
-    ctx.fillRect(bounds.x, bounds.y, bounds.w, bounds.h);
+    // 1. Base: ladrilhos de 64 px sorteados por bloco (4 variantes por chão), sem transparência e sem cor chapada
+    // por baixo aparecendo. O bloco é alinhado ao mundo, então chunks vizinhos sorteiam o mesmo ladrilho.
+    const textureSize = FLOOR_TEXTURE_SIZE;
+    const floorPatterns = Array.from({ length: FLOOR_TEXTURE_VARIANTS }, (_, variant) =>
+      ctx.createPattern(floorTextureCanvas(floor, variant), 'repeat'));
+    for (let by = Math.floor(bounds.y / textureSize); by * textureSize < bounds.y + bounds.h; by++) {
+      for (let bx = Math.floor(bounds.x / textureSize); bx * textureSize < bounds.x + bounds.w; bx++) {
+        const variant = Math.floor(floorHash(index, bx, by, 91) * FLOOR_TEXTURE_VARIANTS);
+        const x0 = Math.max(bounds.x, bx * textureSize);
+        const y0 = Math.max(bounds.y, by * textureSize);
+        const x1 = Math.min(bounds.x + bounds.w, (bx + 1) * textureSize);
+        const y1 = Math.min(bounds.y + bounds.h, (by + 1) * textureSize);
+        if (x1 <= x0 || y1 <= y0) continue;
+        ctx.fillStyle = floorPatterns[variant] ?? hex(palette.base);
+        ctx.fillRect(x0, y0, x1 - x0, y1 - y0);
+      }
+    }
 
     // Manchas largas e discretas quebram a repetição do ladrilho sem borrar a pixel art.
     // São pintadas uma vez no chunk, na grade do mundo, e a rota continua com a própria borda do atlas.
@@ -694,19 +762,48 @@ export function createSurvivorLandscape(width: number, height: number, getPlan =
     }
 
     // 3. Rota em autotile: borda, cantos de fora e de dentro presos à grade, como nas rotas dos jogos.
+    const pathAt = (c: number, r: number) => {
+      const i = at(c, r);
+      return i === null ? true : plan.path[i] === 1;
+    };
+    const toneColor = [palette.light, palette.shade, palette.deep];
+    const paintTrailMarks = (c: number, r: number) => {
+      const edges = (pathAt(c, r - 1) ? 0 : EDGE.north) | (pathAt(c + 1, r) ? 0 : EDGE.east)
+        | (pathAt(c, r + 1) ? 0 : EDGE.south) | (pathAt(c - 1, r) ? 0 : EDGE.west);
+      const px = c * T, py = r * T;
+      for (const mark of survivorTrailMarks(index, c, r, edges)) {
+        const x = px + mark.x, y = py + mark.y;
+        ctx.fillStyle = hex(toneColor[mark.tone] ?? palette.shade);
+        if (mark.kind === 'blade') {
+          // A grama cresce para dentro da trilha e a ponta pega luz.
+          ctx.globalAlpha = 0.92;
+          if (mark.side === 0) { ctx.fillRect(x, y, 1, 2); ctx.fillStyle = hex(palette.light); ctx.fillRect(x, y + 1, 1, 1); }
+          else if (mark.side === 2) { ctx.fillRect(x, y - 1, 1, 2); ctx.fillStyle = hex(palette.light); ctx.fillRect(x, y - 1, 1, 1); }
+          else if (mark.side === 3) { ctx.fillRect(x, y - 1, 1, 2); ctx.fillRect(x + 1, y, 1, 1); }
+          else { ctx.fillRect(x, y, 1, 2); ctx.fillRect(x - 1, y + 1, 1, 1); }
+        } else if (mark.kind === 'gravel') {
+          ctx.globalAlpha = 0.5;
+          ctx.fillRect(x, y, 1, 1);
+        } else {
+          ctx.globalAlpha = 0.28;
+          ctx.fillRect(x, y, 1, 1);
+          ctx.fillRect(x + 1, y + 1, 1, 1);
+          ctx.fillRect(x + 2, y + 1, 1, 1);
+        }
+        ctx.globalAlpha = 1;
+      }
+    };
     for (let r = minR; r <= maxR; r++) for (let c = minC; c <= maxC; c++) {
       if (!ownsCell(c, r)) continue;
       if (!plan.path[r * cols + c]) continue;
       if (!art) {
         ctx.fillStyle = region.path;
         ctx.fillRect(c * T, r * T, T, T);
-        continue;
+      } else {
+        // A rota segue por baixo das zonas: o terreno da zona vem depois, por cima.
+        drawAutotile(ctx, art, tiles.path, c * T, r * T, (dx, dy) => pathAt(c + dx, r + dy));
       }
-      // A rota segue por baixo das zonas: o terreno da zona vem depois, por cima.
-      drawAutotile(ctx, art, tiles.path, c * T, r * T, (dx, dy) => {
-        const i = at(c + dx, r + dy);
-        return i === null || plan.path[i] === 1;
-      });
+      paintTrailMarks(c, r);
     }
 
     // 4. Zonas de bioma viram terreno de verdade, em manchas que cobrem toda a área da mecânica.
@@ -744,6 +841,39 @@ export function createSurvivorLandscape(width: number, height: number, getPlan =
         case 'poça': {
           const wet = (dc: number, dr: number) => zoneIs(c + dc, r + dr, 'poça');
           drawWater(ctx, art, c, r, wet);
+          // Água funda: o miolo da poça escurece um tom, então a margem lê como rasa e o centro como fundo.
+          if (!edge) {
+            ctx.globalAlpha = 0.12;
+            ctx.fillStyle = '#1f4e66';
+            ctx.fillRect(x, y, T, T);
+            ctx.globalAlpha = 1;
+          }
+          // Espuma clara logo dentro da margem: a poça ganha uma borda viva em vez de só o contorno escuro.
+          if (edge) {
+            ctx.globalAlpha = 0.5;
+            ctx.fillStyle = hex(palette.glint);
+            if (!wet(0, -1)) ctx.fillRect(x + 2, y + 1, T - 4, 1);
+            if (!wet(0, 1)) ctx.fillRect(x + 2, y + T - 2, T - 4, 1);
+            if (!wet(-1, 0)) ctx.fillRect(x + 1, y + 2, 1, T - 4);
+            if (!wet(1, 0)) ctx.fillRect(x + T - 2, y + 2, 1, T - 4);
+            ctx.globalAlpha = 1;
+          } else if (floorHash(index, c, r, 58) < 0.16) {
+            // Vitórias-régias no miolo, com uma folha menor ao lado.
+            const lx = x + 4 + Math.floor(floorHash(index, c, r, 59) * 6);
+            const ly = y + 4 + Math.floor(floorHash(index, c, r, 60) * 6);
+            ctx.fillStyle = '#2f6e44';
+            ctx.fillRect(lx + 1, ly, 4, 3);
+            ctx.fillStyle = '#4f9a58';
+            ctx.fillRect(lx, ly + 1, 4, 2);
+            ctx.fillStyle = '#74bc70';
+            ctx.fillRect(lx + 1, ly + 1, 2, 1);
+            if (floorHash(index, c, r, 61) < 0.5) {
+              ctx.fillStyle = '#2f6e44';
+              ctx.fillRect(lx + 9, ly + 7, 2, 2);
+              ctx.fillStyle = '#5aa862';
+              ctx.fillRect(lx + 9, ly + 7, 1, 1);
+            }
+          }
           if (!edge && x >= bounds.x && x < bounds.x + bounds.w && y >= bounds.y && y < bounds.y + bounds.h) result.water[r]!.push(c);
           break;
         }
@@ -778,6 +908,61 @@ export function createSurvivorLandscape(width: number, height: number, getPlan =
         case 'olival':
           ctx.drawImage(decor((c + r) % 2 ? 'clover' : 'tuft', variant), x, y);
           break;
+      }
+    }
+
+    // 4b. Margem úmida: a terra em volta da poça escurece 2 px, então a água parece assentar no terreno.
+    for (let r = minR; r <= maxR; r++) for (let c = minC; c <= maxC; c++) {
+      if (!ownsCell(c, r)) continue;
+      const i = r * cols + c;
+      if (zones[i] === 'poça') continue;
+      const n = zoneIs(c, r - 1, 'poça'), s = zoneIs(c, r + 1, 'poça'), w = zoneIs(c - 1, r, 'poça'), e = zoneIs(c + 1, r, 'poça');
+      if (!n && !s && !w && !e) continue;
+      const x = c * T, y = r * T;
+      ctx.globalAlpha = 0.16;
+      ctx.fillStyle = hex(palette.deep);
+      if (n) ctx.fillRect(x, y, T, 2);
+      if (s) ctx.fillRect(x, y + T - 2, T, 2);
+      if (w) ctx.fillRect(x, y, 2, T);
+      if (e) ctx.fillRect(x + T - 2, y, 2, T);
+      ctx.globalAlpha = 1;
+    }
+
+    // 4c. Juncos na margem: quebram a linha reta da água e dão escala ao capim.
+    const reed = (rx: number, baseY: number, height: number, cattail: boolean) => {
+      ctx.fillStyle = '#4f7f46';
+      ctx.fillRect(rx, baseY - height, 1, height);
+      ctx.fillStyle = '#86b062';
+      ctx.fillRect(rx, baseY - height, 1, 1);
+      if (cattail) {
+        ctx.fillStyle = '#7a5a30';
+        ctx.fillRect(rx, baseY - height - 1, 1, 2);
+      }
+    };
+    for (let r = minR; r <= maxR; r++) for (let c = minC; c <= maxC; c++) {
+      if (!ownsCell(c, r)) continue;
+      const i = r * cols + c;
+      if (zones[i] === 'poça' || plan.path[i]) continue;
+      const n = zoneIs(c, r - 1, 'poça'), s = zoneIs(c, r + 1, 'poça'), w = zoneIs(c - 1, r, 'poça'), e = zoneIs(c + 1, r, 'poça');
+      if (!n && !s && !w && !e) continue;
+      const x = c * T, y = r * T;
+      const sides = [[n, 0], [s, 2], [w, 3], [e, 1]] as const;
+      for (const [has, side] of sides) {
+        if (!has || floorHash(index, c, r, 62 + side) > 0.34) continue;
+        const along = 3 + Math.floor(floorHash(index, c, r, 66 + side) * 10);
+        if (side === 0) {
+          reed(x + along, y + 2, 3, floorHash(index, c, r, 70) < 0.4);
+          reed(x + along + 2, y + 3, 2, false);
+        } else if (side === 2) {
+          reed(x + along, y + T, 3, floorHash(index, c, r, 71) < 0.4);
+          reed(x + along + 2, y + T - 1, 2, false);
+        } else if (side === 3) {
+          reed(x + 1, y + along, 3, floorHash(index, c, r, 72) < 0.4);
+          reed(x + 3, y + along + 3, 2, false);
+        } else {
+          reed(x + T - 2, y + along, 3, floorHash(index, c, r, 73) < 0.4);
+          reed(x + T - 4, y + along + 3, 2, false);
+        }
       }
     }
 

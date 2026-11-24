@@ -5,8 +5,9 @@ import { SURVIVOR_BIOMES, survivorBiomeZonesOf } from '../core/survivor-biomes';
 import { SURVIVOR_REGIONS, REGION_DURATION_MS, survivorRegionAt } from '../core/survivor-regions';
 import { SURVIVOR_LANDSCAPE_TILE_H, SURVIVOR_LANDSCAPE_TILE_W } from '../core/survivor-types';
 import { ATLAS_SOURCES, packAtlas } from './atlas-spec';
+import { EDGE } from '../box/ground-art';
 import { SURVIVOR_FLOOR_PALETTES, floorTone } from './survivor-floor-art';
-import { FLOOR_CELL, SURVIVOR_LANDSCAPE_CHUNK_SIZE, SURVIVOR_REGION_SCENES, SURVIVOR_REGION_TILESETS, SURVIVOR_REGION_ROUTES, ZONE_SPILL, planSurvivorFloor, routePolyline, survivorLandscapeChunkPaintBounds, survivorLandscapeChunks, trailHalfWidth } from './survivor-landscape';
+import { FLOOR_CELL, SURVIVOR_LANDSCAPE_CHUNK_SIZE, SURVIVOR_REGION_SCENES, SURVIVOR_REGION_TILESETS, SURVIVOR_REGION_ROUTES, ZONE_SPILL, planSurvivorFloor, routePolyline, survivorLandscapeChunkPaintBounds, survivorLandscapeChunks, survivorTrailMarks, trailHalfWidth } from './survivor-landscape';
 
 describe('tilesets regionais da Torre', () => {
   it('separa a paisagem em chunks visíveis, sem pedir o setor inteiro à câmera', () => {
@@ -221,5 +222,39 @@ describe('chão da Torre em blocos de 16 px', () => {
     expect(Array.from(a.cells)).toEqual(Array.from(b.cells));
     expect(Array.from(a.solid)).toEqual(Array.from(b.solid));
     expect(Array.from(a.cells)).not.toEqual(Array.from(planSurvivorFloor(5, SURVIVOR_LANDSCAPE_TILE_W, SURVIVOR_LANDSCAPE_TILE_H).cells));
+  });
+});
+
+describe('marcas da trilha', () => {
+  it('solta franja de grama só nos lados com chão e mantém tudo dentro do bloco', () => {
+    const marks = survivorTrailMarks(3, 12, 8, EDGE.north | EDGE.west);
+    expect(survivorTrailMarks(3, 12, 8, EDGE.north | EDGE.west)).toEqual(marks);
+    for (const mark of marks) {
+      expect(['blade', 'gravel', 'crack']).toContain(mark.kind);
+      expect(mark.x).toBeGreaterThanOrEqual(0);
+      expect(mark.x).toBeLessThan(16);
+      expect(mark.y).toBeGreaterThanOrEqual(0);
+      expect(mark.y).toBeLessThan(16);
+      expect(mark.tone).toBeGreaterThanOrEqual(0);
+      expect(mark.tone).toBeLessThanOrEqual(2);
+      if (mark.kind === 'blade') expect([0, 3]).toContain(mark.side);
+    }
+    const blades = marks.filter((mark) => mark.kind === 'blade');
+    expect(blades.every((mark) => (mark.side === 0 && mark.y === 0) || (mark.side === 3 && mark.x === 0))).toBe(true);
+    expect(survivorTrailMarks(3, 12, 8, 0).some((mark) => mark.kind === 'blade')).toBe(false);
+  });
+
+  it('varia por célula e cobre trilhas inteiras com cascalho e rachaduras ocasionais', () => {
+    const kinds = new Set<string>();
+    const sides = new Set<number>();
+    for (let c = 0; c < 24; c++) for (let r = 0; r < 24; r++) {
+      for (const mark of survivorTrailMarks(7, c, r, EDGE.north | EDGE.east | EDGE.south | EDGE.west)) {
+        kinds.add(mark.kind);
+        if (mark.kind === 'blade') sides.add(mark.side);
+      }
+    }
+    expect(kinds.has('gravel')).toBe(true);
+    expect(kinds.has('blade')).toBe(true);
+    expect(sides.size).toBe(4);
   });
 });
