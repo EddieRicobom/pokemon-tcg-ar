@@ -5030,6 +5030,30 @@ body.no-scroll .reward-toasts {
   background: linear-gradient(180deg, #1b2036, #12162a);
 }
 
+/* Câmera da Vila: faixa compacta acima dos controles, com o morador seguido e o feed de momentos reais. */
+.village-observer {
+  position: fixed; left: 50%; bottom: calc(96px + env(safe-area-inset-bottom)); transform: translateX(-50%);
+  z-index: 40; width: min(430px, calc(100vw - 16px)); display: grid; gap: 4px; padding: 7px 9px;
+  border: 1px solid #4a5f86; border-radius: 11px; background: #101624ea; color: #eef4ff;
+  box-shadow: 0 6px 24px rgb(0 0 0 / 45%); font-size: .72rem;
+}
+.village-observer-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.village-observer-head > div:first-child { display: grid; gap: 1px; min-width: 0; }
+.village-observer-kicker { color: #ffd76a; font-size: .58rem; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; }
+.village-observer-head strong { font-size: .86rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.village-observer-head small { color: #b8c7df; font-size: .66rem; }
+.village-observer-actions { display: flex; gap: 4px; flex: none; }
+.village-observer-actions button, .village-observer-feed button {
+  min-height: 30px; padding: 3px 8px; border: 1px solid #6f86aa; border-radius: 7px;
+  background: #1c2740; color: #eef4ff; font: inherit; font-size: .68rem; font-weight: 700;
+}
+.village-observer-now { margin: 0; color: #d8e7ff; }
+.village-observer-feed summary { cursor: pointer; color: #ffd76a; font-weight: 800; }
+.village-observer-feed ul { display: grid; gap: 3px; max-height: 24vh; margin: 4px 0 0; padding: 0; overflow: auto; list-style: none; }
+.village-observer-feed li { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.village-observer-feed li button { flex: 1; min-width: 0; overflow: hidden; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
+.village-observer-feed li small { flex: none; max-width: 44%; overflow: hidden; color: #aebbd1; text-overflow: ellipsis; white-space: nowrap; }
+
 .village-control-cluster {
   display: flex;
   align-items: center;

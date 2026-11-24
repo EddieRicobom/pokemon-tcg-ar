@@ -346,7 +346,7 @@ const menuGroups = computed<{ title: string; desc?: string; tiles: MenuTile[] }[
   },
   {
     title: 'Lugares da Vila',
-    tiles: [{ icon: '📬', label: 'Correio', hint: mailUnread.value > 0 ? `${mailUnread.value} nova(s)` : 'cartas e momentos', badge: mailUnread.value || undefined, run: openMail }, placeTile('arcade', '🕹️', 'Fliperama'), placeTile('kart', '🏁', 'Pista de Kart'), placeTile('pinball', '🎱', 'Pinball'), placeTile('arena', '⚔️', 'Arena'), placeTile('torre', '🗼', 'Torre')],
+    tiles: [{ icon: '🎥', label: 'Câmera da Vila', hint: 'assista à rotina, às conversas e às fofocas', run: () => startObserving() }, { icon: '📬', label: 'Correio', hint: mailUnread.value > 0 ? `${mailUnread.value} nova(s)` : 'cartas e momentos', badge: mailUnread.value || undefined, run: openMail }, placeTile('arcade', '🕹️', 'Fliperama'), placeTile('kart', '🏁', 'Pista de Kart'), placeTile('pinball', '🎱', 'Pinball'), placeTile('arena', '⚔️', 'Arena'), placeTile('torre', '🗼', 'Torre')],
   },
   {
     title: 'Fora da Vila',
@@ -386,6 +386,9 @@ const mailQuery = ref('');
 const visibleMail = computed(() => filterMail(state.mail.inbox, state.mail.archive, mailView.value, mailQuery.value));
 /** O morador em destaque no minimapa enquanto uma conversa ou momento está acontecendo. */
 const minimapSpeakerId = ref<string | null>(null);
+const observingId = ref<string | null>(null);
+const observerStatus = ref('');
+const activeSceneTitle = ref<string | null>(null);
 /** Texto curto para a rota atual, sem transformar o minimapa em outro menu. */
 const minimapRoute = ref('');
 let dialogFocusReturn: HTMLElement | null = null;
@@ -2512,9 +2515,9 @@ let pendingChoice: { scene: Scene; ids: string[] } | null = null;
 /** O momento que está sendo encenado agora e ainda não foi gravado (se você sair no meio, ele é gravado do mesmo jeito). */
 let activeScene: { scene: Scene; ids: string[] } | null = null;
 /** Intervalo entre momentos: de 80 a 170 s (era de 25 a 60 s), para a Vila respirar entre um e outro. */
-const SCENE_GAP_MIN = 80000;
-const SCENE_GAP_VAR = 90000;
-let nextSceneAt = Date.now() + 20000;
+const SCENE_GAP_MIN = 55000;
+const SCENE_GAP_VAR = 65000;
+let nextSceneAt = Date.now() + 15000;
 let sceneTimer: ReturnType<typeof setInterval> | null = null;
 let nextAmbientSoundAt = Date.now() + 18000;
 
@@ -2557,6 +2560,7 @@ function decide(i: number | null): void {
 
 function finishScene(scene: Scene, ids: string[]): void {
   activeScene = null;
+  activeSceneTitle.value = null;
   const choice = sceneChoice(scene);
   if (!choice || !game?.playerNear(ids, 12)) {
     afterResolve(resolveScene(state, scene, null, Date.now()), ids);
@@ -2585,15 +2589,33 @@ function tickScenes(): void {
   if (Date.now() < nextSceneAt && !cafeOpportunity) return;
   if (cafeOpportunity) nextCafeSceneAt = Date.now() + 60000;
   nextSceneAt = Date.now() + (SCENE_GAP_MIN + Math.random() * SCENE_GAP_VAR) * effects().quietFactor;
-  // Só entre os Pokémon que estão por perto, para você não perder o espetáculo.
+  // A vida acontece em qualquer canto: escolhe um morador livre como âncora e junta quem está perto dele.
+  // Assim a cena não teleporta gente do outro lado da Vila e a câmera da Vila pode acompanhar de perto.
   const useCafe = cafeOpportunity && Math.random() < .65;
-  const near = actorList().filter((a) => (useCafe ? cafeIds.includes(a.id) : game!.playerNear([a.id], 14)) && !game!.sceneBusy(a.id));
+  const freeIds = mons.value.map((mon) => mon.id).filter((id) => !game!.sceneBusy(id));
+  let candidateIds: string[] = [];
+  if (useCafe) candidateIds = cafeIds.filter((id) => freeIds.includes(id));
+  else {
+    const anchors = [...freeIds].sort(() => Math.random() - .5);
+    for (const anchor of anchors) {
+      const cluster = game.nearbyResidentIdsOf(anchor, freeIds, 10);
+      if (cluster.length >= 2) { candidateIds = cluster; break; }
+      if (candidateIds.length === 0 && cluster.length === 1) candidateIds = cluster;
+    }
+  }
+  if (candidateIds.length === 0) return;
+  const near = actorList().filter((a) => candidateIds.includes(a.id));
   const env = makeEnv(state, refreshDay(), villageHour(), game.weatherKind, profile.name);
   env.cafeGuests = cafeIds;
   const scene = pickMoment(near, state, env, Math.random);
   if (!scene) return;
   const ids = scene.cast.map((a) => a.id);
   activeScene = { scene, ids };
+  activeSceneTitle.value = `${scene.tpl.emoji} ${scene.tpl.title}`;
+  if (observingId.value) {
+    observingId.value = ids[0] ?? observingId.value;
+    game.setObserve(observingId.value);
+  }
   minimapSpeakerId.value = ids[0] ?? null;
   if (!game.playScene(ids, scene.lines, () => finishScene(scene, ids))) {
     activeScene = null;
@@ -2625,6 +2647,7 @@ function settleScenes(): void {
   const playing = activeScene;
   pendingChoice = null;
   activeScene = null;
+  activeSceneTitle.value = null;
   if (choice) {
     dialog.value = null;
     resolveScene(state, choice.scene, null, Date.now());
@@ -3425,6 +3448,50 @@ let chatterFirstTimer: ReturnType<typeof setTimeout> | null = null;
 let chatterReplyTimer: ReturnType<typeof setTimeout> | null = null;
 let chatterSeed = 97;
 
+/** Liga a câmera da Vila: segue um morador, congela o jogador e mostra a rotina/feed. */
+function startObserving(id?: string): void {
+  const list = mons.value;
+  if (list.length === 0 || !game) return;
+  const present = list.filter((mon) => game!.hasResident(mon.id));
+  if (present.length === 0) {
+    say('Os moradores ainda estão chegando à Vila. Tente de novo em instantes.', 3200);
+    return;
+  }
+  const target = id && present.some((mon) => mon.id === id)
+    ? id
+    : game.sceneSpeakerId && present.some((mon) => mon.id === game!.sceneSpeakerId)
+      ? game.sceneSpeakerId!
+      : (game.nearbyResidentIds(present.map((mon) => mon.id))[0] ?? present[Math.floor(Math.random() * present.length)]!.id);
+  observingId.value = target;
+  game.setObserve(target);
+  observerStatus.value = game.residentStatus(target);
+  sheet.value = null;
+}
+
+function stopObserving(): void {
+  observingId.value = null;
+  observerStatus.value = '';
+  game?.setObserve(null);
+}
+
+function nextObserved(): void {
+  const list = mons.value.filter((mon) => game?.hasResident(mon.id));
+  if (list.length === 0) return;
+  const index = Math.max(0, list.findIndex((mon) => mon.id === observingId.value));
+  const next = list[(index + 1) % list.length]!;
+  observingId.value = next.id;
+  game?.setObserve(next.id);
+  observerStatus.value = game?.residentStatus(next.id) ?? '';
+}
+
+watch(observingId, (id) => {
+  if (!id) return;
+  game?.setObserve(id);
+  observerStatus.value = game?.residentStatus(id) ?? '';
+});
+watch(sheet, (next) => { if (next) stopObserving(); });
+if (import.meta.env.DEV) (window as unknown as { villageObserve?: () => unknown }).villageObserve = () => ({ id: observingId.value, game: game?.observing ?? null, status: observingId.value ? game?.residentStatus(observingId.value) : null });
+
 /** Moradores puxam assunto sozinhos, com uma resposta curta de outro. Nunca cria momento nem recompensa. */
 function ambientChatter(): void {
   if (document.hidden || loading.value || sheet.value || dialog.value || cutsceneOpen.value) return;
@@ -3597,6 +3664,7 @@ onMounted(async () => {
     // Toque em algo que ficou ao alcance sem você dar um passo (o morador chegou perto), ou alvo que deixou de existir.
     checkTapInteraction();
     refreshLegendNearby();
+    if (observingId.value) observerStatus.value = game?.residentStatus(observingId.value) ?? '';
     if (!document.hidden && visual.sound && !dialog.value && !sheet.value && !legendaryScene.value && !hoOhWishScene.value && !cutsceneOpen.value && Date.now() >= nextAmbientSoundAt) {
       nextAmbientSoundAt = Date.now() + 18000 + Math.random() * 26000;
       const hour = new Date().getHours();
@@ -4371,6 +4439,29 @@ onBeforeUnmount(() => {
     </div>
 
     <div v-if="legendNearby.length && !sheet && !dialog && !legendaryScene && !hoOhWishScene && !welcome && !loading && !recapScene && !cutsceneOpen && !quizOpen && !quiz" class="village-legend-clue" role="region" aria-label="Pista lendária"><small>🔎 {{ legendNearbyLabel }} · {{ legendNearby.length === 1 ? `pista ${legendNearby[0]!.step + 1}/2` : 'pistas aqui' }}</small><span>{{ legendNearby[0]!.place.name }}</span><div><button type="button" @click="investigateLegendClue">Investigar pista</button></div></div>
+    <aside v-if="observingId && !sheet && !dialog && !loading && !recapScene && !cutsceneOpen && !welcome" class="village-observer" aria-label="Câmera da Vila">
+      <div class="village-observer-head">
+        <div>
+          <span class="village-observer-kicker">🎥 Câmera da Vila</span>
+          <strong>{{ nameOf(observingId) }}</strong>
+          <small>{{ observerStatus || 'na Vila' }}</small>
+        </div>
+        <div class="village-observer-actions">
+          <button type="button" @click="nextObserved">Próximo</button>
+          <button type="button" @click="stopObserving">Sair</button>
+        </div>
+      </div>
+      <p v-if="activeSceneTitle" class="village-observer-now">Agora: {{ activeSceneTitle }}</p>
+      <details v-if="state.diary.length" class="village-observer-feed">
+        <summary>Acontece na Vila</summary>
+        <ul>
+          <li v-for="moment in state.diary.slice(-3).reverse()" :key="moment.id">
+            <button type="button" @click="startObserving(moment.cast[0]?.id)">{{ moment.emoji }} {{ moment.title }}</button>
+            <small>{{ moment.cast.map((actor) => actor.name).join(' · ') }}</small>
+          </li>
+        </ul>
+      </details>
+    </aside>
     <div v-show="!loading && !recapScene && !cutsceneOpen && !welcome && !legendaryScene" class="village-pad" @contextmenu.prevent>
       <p class="village-move-hint">Arraste para andar · toque para ir<span> · setas/WASD</span></p>
       <p class="village-arrow-hint">Setas/controle navegam · A confirma · B volta</p>
