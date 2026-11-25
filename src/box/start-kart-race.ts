@@ -1,11 +1,28 @@
 import { pokemonSpriteUrl, pokemonStaticSpriteUrls } from '../ar/sprite-url';
 import { TYPE_COLORS } from '../core/pokemon-data';
-import { activateKartAbility, createKartRace, kartPlacementOrder, KART_CUP_ROUNDS, stepKartRace, TRACK_HALF_WIDTH, trackPoint, trackTangent, type KartInput, type KartRaceState } from '../core/kart-race';
+import { activateKartAbility, createKartRace, kartPlacementOrder, KART_CUP_ROUNDS, stepKartRace, TRACK_HALF_WIDTH, trackPoint, trackTangent, useKartItem, type KartInput, type KartRaceState } from '../core/kart-race';
+import type { Object3D } from 'three';
 
-export interface KartFinish { position: number; elapsedMs: number; total: number; completed: boolean; order: number[]; laps?: number[] }
+export interface KartStanding { id: number; place: number; finishedMs: number | null; hits: number }
+export interface KartFinish {
+  position: number;
+  elapsedMs: number;
+  total: number;
+  completed: boolean;
+  order: number[];
+  laps?: number[];
+  /** Acertos de item causados pelo jogador. */
+  hits?: number;
+  /** Melhor volta do jogador, em ms. */
+  bestLapMs?: number;
+  /** Classificação completa, inclusive quem não terminou. */
+  standings?: KartStanding[];
+}
 export interface KartRaceHandle {
   setInput(input: KartInput): void;
   useAbility(): boolean;
+  /** Usa o item da mão (casca, concha, turbo...). */
+  useItem(): boolean;
   dispose(): void;
 }
 
@@ -20,7 +37,7 @@ export async function startKartRace(
   themeIndex = 0,
 ): Promise<KartRaceHandle> {
   const THREE = await import('three');
-  const state = createKartRace(opponentDexIds.length, [playerDexId, ...opponentDexIds], rivalId);
+  const state = createKartRace(opponentDexIds.length, [playerDexId, ...opponentDexIds], rivalId, { items: true, seed: Date.now(), countdown: 3 });
   const palette = [
     { sky: '#8ccfed', ground: '#67a75d' },
     { sky: '#ecc593', ground: '#a19a64' },
@@ -167,7 +184,106 @@ export async function startKartRace(
   const archBanner = new THREE.Mesh(new THREE.BoxGeometry(22, 0.45, 1.45), new THREE.MeshLambertMaterial({ color: KART_CUP_ROUNDS[themeIndex]?.accent ?? '#cf554e' }));
   archBanner.position.set(0, 7.25, 0);
   archGroup.add(archBanner);
+  // Semáforo da largada: três luzes que mudam com a contagem.
+  const startLightMaterials = [-3, 0, 3].map(() => new THREE.MeshBasicMaterial({ color: '#e64b45' }));
+  startLightMaterials.forEach((material, index) => {
+    const light = new THREE.Mesh(new THREE.SphereGeometry(0.55, 10, 8), material);
+    light.position.set(index === 0 ? -2.8 : index === 1 ? 0 : 2.8, 6.35, 0.8);
+    archGroup.add(light);
+  });
   scene.add(archGroup);
+
+  // Arquibancadas simples: base, torcida colorida e bandeiras. Instâncias mantêm o custo baixo.
+  const crowdCount = 84;
+  const crowd = new THREE.InstancedMesh(new THREE.BoxGeometry(0.55, 0.75, 0.45), new THREE.MeshLambertMaterial(), crowdCount);
+  const crowdColors = ['#e8565d', '#4799e5', '#e9bc47', '#9c6dda', '#49b69d', '#f2efe6'];
+  const crowdColor = new THREE.Color();
+  let crowdIndex = 0;
+  for (const [standIndex, angle] of [0.1, 0.66, 1.22, 3.9].entries()) {
+    const point = trackPoint(angle);
+    const { x: tx, z: tz } = trackTangent(angle);
+    const length = Math.hypot(tx, tz);
+    const nx = tz / length;
+    const nz = -tx / length;
+    const group = new THREE.Group();
+    group.position.set(point.x + nx * 17, 0, point.z + nz * 17);
+    group.rotation.y = Math.atan2(tx, tz);
+    const base = new THREE.Mesh(new THREE.BoxGeometry(13, 1.6, 4.2), new THREE.MeshLambertMaterial({ color: standIndex % 2 ? '#59606b' : '#6b5a4a' }));
+    base.position.y = 0.8;
+    group.add(base);
+    const roof = new THREE.Mesh(new THREE.BoxGeometry(13.8, 0.35, 4.8), new THREE.MeshLambertMaterial({ color: '#d8d2c2' }));
+    roof.position.set(0, 4.5, 0);
+    group.add(roof);
+    for (const x of [-5.6, 5.6]) {
+      const post = new THREE.Mesh(new THREE.BoxGeometry(0.35, 4.5, 0.35), new THREE.MeshLambertMaterial({ color: '#8b929c' }));
+      post.position.set(x, 2.25, 1.8);
+      group.add(post);
+    }
+    for (const row of [0, 1, 2]) {
+      for (const seat of [-5.4, -4.2, -3, -1.8, -0.6, 0.6, 1.8, 3, 4.2, 5.4]) {
+        if (crowdIndex >= crowdCount) break;
+        dummy.position.set(seat + (row % 2) * 0.3, 1.95 + row * 0.72, 0.8 - row * 0.55);
+        dummy.rotation.set(0, 0, 0);
+        dummy.scale.setScalar(1);
+        dummy.updateMatrix();
+        crowd.setMatrixAt(crowdIndex, dummy.matrix);
+        crowd.setColorAt(crowdIndex, crowdColor.set(crowdColors[(crowdIndex + standIndex) % crowdColors.length]!));
+        crowdIndex++;
+      }
+    }
+    scene.add(group);
+  }
+  crowd.count = crowdIndex;
+  scene.add(crowd);
+
+  // Nuvens e montanhas distantes dão profundidade sem sombras e sem partículas.
+  const cloudMaterial = new THREE.MeshLambertMaterial({ color: '#ffffff' });
+  for (let i = 0; i < 14; i++) {
+    const cloud = new THREE.Mesh(new THREE.SphereGeometry(3.5 + (i % 3), 7, 6), cloudMaterial);
+    const angle = i / 14 * Math.PI * 2;
+    cloud.position.set(Math.cos(angle) * (60 + (i % 4) * 12), 24 + (i % 3) * 4, Math.sin(angle) * (70 + (i % 5) * 10));
+    cloud.scale.set(2.2, 0.55, 1.2);
+    scene.add(cloud);
+  }
+  const mountainMaterial = [new THREE.MeshLambertMaterial({ color: '#5b7f73' }), new THREE.MeshLambertMaterial({ color: '#4d6e6b' })];
+  for (let i = 0; i < 10; i++) {
+    const angle = i / 10 * Math.PI * 2 + 0.2;
+    const mountain = new THREE.Mesh(new THREE.ConeGeometry(16 + (i % 3) * 5, 28 + (i % 4) * 7, 5), mountainMaterial[i % 2]!);
+    mountain.position.set(Math.cos(angle) * 125, 12, Math.sin(angle) * 135);
+    scene.add(mountain);
+  }
+
+  // Caixas de item: cubo girando com anel, visíveis enquanto disponíveis.
+  const itemBoxGeometry = new THREE.BoxGeometry(1.05, 1.05, 1.05);
+  const itemBoxMaterials = ['#f7c948', '#ff8bc2', '#77d0ff'].map((color) => new THREE.MeshBasicMaterial({ color }));
+  const itemBoxInnerMaterial = new THREE.MeshBasicMaterial({ color: '#fff5c9' });
+  const itemRingGeometry = new THREE.TorusGeometry(1.02, 0.11, 6, 18);
+  const itemRingMaterial = new THREE.MeshBasicMaterial({ color: '#fff3b0', transparent: true, opacity: 0.85 });
+  const itemBoxMeshes = state.boxes.map((box, index) => {
+    const group = new THREE.Group();
+    const cube = new THREE.Mesh(itemBoxGeometry, itemBoxMaterials[index % itemBoxMaterials.length]!);
+    const inner = new THREE.Mesh(new THREE.BoxGeometry(0.58, 0.58, 0.58), itemBoxInnerMaterial);
+    const ring = new THREE.Mesh(itemRingGeometry, itemRingMaterial);
+    ring.rotation.x = Math.PI / 2;
+    group.add(cube, inner, ring);
+    group.position.set(box.x, 1.2, box.z);
+    scene.add(group);
+    return group;
+  });
+
+  // Perigos e projéteis são sincronizados por id; materiais e geometrias são compartilhados.
+  const bananaGeometry = new THREE.TorusGeometry(0.48, 0.18, 5, 9, Math.PI * 1.4);
+  const bananaMaterial = new THREE.MeshLambertMaterial({ color: '#f2d13b' });
+  const oilGeometry = new THREE.CircleGeometry(1.7, 20);
+  const oilMaterial = new THREE.MeshBasicMaterial({ color: '#2f2638', transparent: true, opacity: 0.82 });
+  const shellGeometry = new THREE.SphereGeometry(0.55, 10, 8);
+  const shellMaterial = new THREE.MeshBasicMaterial({ color: '#f06b55' });
+  const shellRingGeometry = new THREE.TorusGeometry(0.8, 0.1, 5, 12);
+  const shellRingMaterial = new THREE.MeshBasicMaterial({ color: '#ffe6a3', transparent: true, opacity: 0.8 });
+  const hazardMeshes = new Map<number, Object3D>();
+  const projectileMeshes = new Map<number, Object3D>();
+  const hitShakeUntil: number[] = state.cars.map(() => 0);
+  const lastSpin: number[] = state.cars.map(() => 0);
 
   const fallbackColors = ['#e8565d', '#4799e5', '#e9bc47', '#9c6dda', '#49b69d'];
   const spriteHeights: number[] = [];
@@ -312,16 +428,90 @@ export async function startKartRace(
     state.cars.forEach((car, id) => {
       const group = kartGroups[id]!;
       group.position.set(car.x, 0, car.z);
-      group.rotation.y = car.heading;
+      const spinning = car.spinUntil > state.elapsed;
+      group.rotation.y = car.heading + (spinning ? (car.spinUntil - state.elapsed) * 15 : 0);
+      group.rotation.z = spinning ? Math.sin(now / 60) * 0.16 : 0;
+      if (car.spinUntil > lastSpin[id]!) {
+        lastSpin[id] = car.spinUntil;
+        hitShakeUntil[id] = now + 320;
+      }
       const ring = effectRings[id]!;
-      const activeColor = car.shieldUntil > state.elapsed ? '#7bd7f4' : car.slowUntil > state.elapsed ? '#bb83d8' : car.boostUntil > state.elapsed ? '#f9d568' : null;
+      const driftColor = car.driftCharge > 0.15 ? '#ffb347' : null;
+      const activeColor = car.shieldUntil > state.elapsed ? '#7bd7f4' : car.slowUntil > state.elapsed ? '#bb83d8' : car.boostUntil > state.elapsed ? '#f9d568' : driftColor;
       ring.visible = activeColor !== null;
       if (activeColor) (ring.material as InstanceType<typeof THREE.MeshBasicMaterial>).color.set(activeColor);
     });
+    // Caixas de item: flutuam e giram enquanto estão disponíveis.
+    const seconds = now / 1000;
+    state.boxes.forEach((box, index) => {
+      const mesh = itemBoxMeshes[index]!;
+      const ready = box.readyAt <= state.elapsed;
+      mesh.visible = ready;
+      if (!ready) return;
+      mesh.position.y = 1.2 + Math.sin(seconds * 2.1 + index) * 0.16;
+      mesh.rotation.y = seconds * 1.5 + index;
+      const inner = mesh.children[1];
+      if (inner) inner.rotation.y = -seconds * 2.2;
+    });
+    // Perigos e conchas: cria uma malha por id e remove quando o motor apaga.
+    const liveHazards = new Set<number>();
+    for (const hazard of state.hazards) {
+      liveHazards.add(hazard.id);
+      let mesh = hazardMeshes.get(hazard.id);
+      if (!mesh) {
+        mesh = hazard.kind === 'oil'
+          ? new THREE.Mesh(oilGeometry, oilMaterial)
+          : new THREE.Mesh(bananaGeometry, bananaMaterial);
+        if (hazard.kind === 'oil') mesh.rotation.x = -Math.PI / 2;
+        else mesh.rotation.x = Math.PI / 2;
+        scene.add(mesh);
+        hazardMeshes.set(hazard.id, mesh);
+      }
+      mesh.position.set(hazard.x, hazard.kind === 'oil' ? 0.04 : 0.22, hazard.z);
+      if (hazard.kind === 'banana') mesh.rotation.z = seconds * 1.8;
+    }
+    for (const [id, mesh] of hazardMeshes) {
+      if (liveHazards.has(id)) continue;
+      scene.remove(mesh);
+      hazardMeshes.delete(id);
+    }
+    const liveProjectiles = new Set<number>();
+    for (const shot of state.projectiles) {
+      liveProjectiles.add(shot.id);
+      let mesh = projectileMeshes.get(shot.id);
+      if (!mesh) {
+        const group = new THREE.Group();
+        group.add(new THREE.Mesh(shellGeometry, shellMaterial));
+        const ring = new THREE.Mesh(shellRingGeometry, shellRingMaterial);
+        ring.rotation.x = Math.PI / 2;
+        group.add(ring);
+        scene.add(group);
+        mesh = group;
+        projectileMeshes.set(shot.id, group);
+      }
+      mesh.position.set(shot.x, 0.55, shot.z);
+      mesh.rotation.y = shot.angle;
+    }
+    for (const [id, mesh] of projectileMeshes) {
+      if (liveProjectiles.has(id)) continue;
+      scene.remove(mesh);
+      projectileMeshes.delete(id);
+    }
+    // Semáforo: vermelho durante a contagem, verde na largada.
+    const green = state.countdown <= 0;
+    for (const material of startLightMaterials) material.color.set(green ? '#63d471' : '#e64b45');
     const player = state.cars[0]!;
     const behind = 9;
     const cameraTarget = new THREE.Vector3(player.x - Math.sin(player.heading) * behind, 6.5, player.z - Math.cos(player.heading) * behind);
     camera.position.lerp(cameraTarget, Math.min(1, dt * 7));
+    const boosting = player.boostUntil > state.elapsed;
+    camera.fov += ((boosting ? 70 : 62) - camera.fov) * Math.min(1, dt * 4);
+    camera.updateProjectionMatrix();
+    const shake = Math.max(0, hitShakeUntil[0]! - now) / 320;
+    if (shake > 0) {
+      camera.position.x += (Math.random() - 0.5) * shake * 0.45;
+      camera.position.y += (Math.random() - 0.5) * shake * 0.3;
+    }
     camera.lookAt(player.x + Math.sin(player.heading) * 10, 1.6, player.z + Math.cos(player.heading) * 10);
     renderer.render(scene, camera);
     state.cars.forEach((car, id) => {
@@ -349,7 +539,22 @@ export async function startKartRace(
       finished = true;
       const completed = player.finishedAt !== null;
       const position = completed ? 1 + state.cars.slice(1).filter((car) => car.finishedAt !== null && car.finishedAt < player.finishedAt!).length : state.cars.length;
-      onFinish({ position, elapsedMs: Math.round((player.finishedAt ?? state.elapsed) * 1000), total: state.cars.length, completed, order: kartPlacementOrder(state), laps: lapTimes.slice(0, state.laps) });
+      const order = kartPlacementOrder(state);
+      const standings = order.map((id, index) => {
+        const car = state.cars[id]!;
+        return { id, place: index + 1, finishedMs: car.finishedAt === null ? null : Math.round(car.finishedAt * 1000), hits: car.hits };
+      });
+      onFinish({
+        position,
+        elapsedMs: Math.round((player.finishedAt ?? state.elapsed) * 1000),
+        total: state.cars.length,
+        completed,
+        order,
+        laps: lapTimes.slice(0, state.laps),
+        hits: player.hits,
+        ...(lapTimes.length ? { bestLapMs: Math.min(...lapTimes) } : {}),
+        standings,
+      });
     }
     frame = requestAnimationFrame(loop);
   };
@@ -357,6 +562,7 @@ export async function startKartRace(
   return {
     setInput(value) { input = value; },
     useAbility() { return !disposed && !finished && activateKartAbility(state, 0); },
+    useItem() { return !disposed && !finished && useKartItem(state, 0); },
     dispose() {
       disposed = true;
       cancelAnimationFrame(frame);
@@ -369,6 +575,8 @@ export async function startKartRace(
           materials.forEach((material) => material.dispose());
         }
       });
+      // Perigos e conchas já removidos da cena não passam pelo traverse: estes recursos são compartilhados.
+      [bananaGeometry, bananaMaterial, oilGeometry, oilMaterial, shellGeometry, shellMaterial, shellRingGeometry, shellRingMaterial].forEach((asset) => asset.dispose());
       renderer.dispose();
       renderer.domElement.remove();
       spriteLayer.remove();

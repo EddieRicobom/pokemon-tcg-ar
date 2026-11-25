@@ -4,6 +4,14 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). 
 
 ## [Não lançado]
 
+### Kart: itens, combate e recuperação (2026-11-25)
+
+- Sete itens de pista (Turbo, Casca, Escudo, Óleo, Concha, Raio e Cometa), com caixas que voltam, uso pelo jogador (Q) e pelos NPCs, ataques que fazem rodar, escudo que bloqueia e placar de acertos.
+- **Corrida de recuperação**: a chance de item épico vai de 4% para o líder a 24% para o último do grid; concha, raio e cometa crescem de forma monotônica com a posição. Tabela e leitura em `docs/KART.md`.
+- Derrapagem com mini-turbo, contagem de 3 s com semáforo, classificação completa, melhor volta, revanche rápida e celebração da Copa.
+- Visual: arquibancadas com torcida, nuvens, montanhas, caixas flutuantes coloridas, armadilhas e conchas no mundo, giro no impacto, tremor de câmera, FOV no impulso, linhas de velocidade, flash de dano, HUD de item com sorteio e minimapa com caixas/projéteis.
+- Simulador `scripts/kart-sim.eval.ts`: sem itens o líder vence 100%; com itens, 59%; do fundo do grid, 1% com itens e 5% com itens + derrapagem. Robô, não gente; celular real não medido.
+
 ### Torre: medição do PvP, revanche e acessibilidade (2026-11-25)
 
 - Novo simulador do PvP (`scripts/survivor-pvp-sim.eval.ts`): usa o motor real da arena com robôs simétricos e mede viés de lado, vitória pela nota da equipe, duração e desempenho por forma de golpe. Achado: nos espelhos o lado 0 venceu 85% com robôs ativos (73% das decididas sem passo lateral; 35% parado contra 5% do lado 1 e 60% de empates), indicando vantagem do lado 0, ainda não investigada.

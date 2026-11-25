@@ -193,8 +193,24 @@ describe('Kart Racer', () => {
     expect(race.cars[2]!.lap).toBe(0);
   });
 
-  it('só contabiliza volta ao atravessar os quatro setores em ordem', () => {
-    const race = createKartRace(0);
+  it('derrapagem carrega no freio em curva e solta em mini-turbo', () => {
+    const race = createKartRace(0, [25]);
+    const car = race.cars[0]!;
+    car.speed = 20;
+    for (let i = 0; i < 8; i++) stepKartRace(race, { throttle: 1, steer: 1, brake: true }, 0.05);
+    expect(car.driftCharge).toBeGreaterThan(0.25);
+    const before = race.elapsed;
+    stepKartRace(race, { throttle: 1, steer: 1, brake: false }, 0.05);
+    expect(car.boostUntil).toBeGreaterThan(before);
+
+    const straight = createKartRace(0, [25]);
+    straight.cars[0]!.speed = 20;
+    for (let i = 0; i < 20; i++) stepKartRace(straight, { throttle: 0, steer: 0, brake: true }, 0.05);
+    expect(straight.cars[0]!.driftCharge).toBe(0);
+    expect(straight.cars[0]!.boostUntil).toBe(0);
+  });
+
+  it('só contabiliza volta ao atravessar os quatro setores em ordem', () => {    const race = createKartRace(0);
     const car = race.cars[0]!;
     car.speed = 5;
     for (const sector of [1, 2, 3, 0]) {
