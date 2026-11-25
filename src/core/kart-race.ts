@@ -1,5 +1,6 @@
 /** Física e regras puras do Kart Racer. Distâncias em unidades de pista, tempo em segundos. */
 import { TYPE_LABELS_PT, type PokemonType } from './pokemon-data';
+import { KART_ITEMS, rollKartItem, type KartItemId } from './kart-items';
 import { typesOfDex } from './species-filter';
 import type { BaseStats } from './survivor-moves';
 import { statsOfDex } from './survivor-stats';
@@ -11,6 +12,13 @@ const TAU = Math.PI * 2;
 const KART_RADIUS = 1.5;
 const ROAD_LIMIT = TRACK_HALF_WIDTH - KART_RADIUS;
 const BARRIER_LIMIT = TRACK_HALF_WIDTH + 3.5 - KART_RADIUS;
+/** Uma caixa de item por ângulo; voltam nove segundos depois de alguém pegar. */
+export const KART_ITEM_BOX_ANGLES = [0.08, 0.26, 0.44, 0.62, 0.8, 0.96] as const;
+const ITEM_BOX_RADIUS = 3.6;
+const ITEM_BOX_RESPAWN = 9;
+const SHELL_HIT_RADIUS = 2.5;
+const BANANA_HIT_RADIUS = 2.1;
+const OIL_HIT_RADIUS = 3.1;
 
 export interface KartInput { throttle: number; steer: number; brake: boolean }
 export type KartAbilityKind = 'boost' | 'pulse' | 'shield';
@@ -42,6 +50,16 @@ export interface KartCar {
   boostUntil: number;
   slowUntil: number;
   shieldUntil: number;
+  /** Item na mão (um por vez). */
+  item: KartItemId | null;
+  /** Derrapagem causada por casca/concha/raio: sem controle até este instante. */
+  spinUntil: number;
+  /** Quando o NPC pode usar o item que pegou (o jogador usa na hora). */
+  itemReadyAt: number;
+  /** Acertos causados em outros karts (placar de itens). */
+  hits: number;
+  /** Carga da derrapagem (freio + curva em velocidade); soltar vira mini-turbo. */
+  driftCharge: number;
   x: number;
   z: number;
   heading: number;
@@ -50,7 +68,75 @@ export interface KartCar {
   checkpoint: number;
   finishedAt: number | null;
 }
-export interface KartRaceState { cars: KartCar[]; elapsed: number; laps: number; rivalId: number | null }
+
+export interface KartItemBox {
+  id: number;
+  angle: number;
+  x: number;
+  z: number;
+  /** Só volta a dar item depois deste instante. */
+  readyAt: number;
+}
+
+export interface KartHazard {
+  id: number;
+  kind: 'banana' | 'oil';
+  owner: number;
+  x: number;
+  z: number;
+  until: number;
+}
+
+export interface KartProjectile {
+  id: number;
+  kind: 'shell';
+  owner: number;
+  /** Id do alvo; -1 voa reto. */
+  target: number;
+  x: number;
+  z: number;
+  angle: number;
+  speed: number;
+  until: number;
+}
+
+export type KartItemEventKind = 'pickup' | 'use' | 'hit' | 'blocked';
+export interface KartItemEvent {
+  seq: number;
+  kind: KartItemEventKind;
+  /** Quem pegou/usou ou quem causou o acerto. */
+  car: number;
+  item: KartItemId;
+  /** Quem levou o acerto (quando houver). */
+  target?: number;
+}
+
+export interface KartRaceOptions {
+  /** Liga itens, caixas e ataques. Padrão: desligado (os testes e as corridas antigas continuam iguais). */
+  items?: boolean;
+  /** Semente do sorteio de itens; a mesma semente repete a corrida. */
+  seed?: number;
+  /** Contagem antes da largada, em segundos. `elapsed` só começa depois dela. */
+  countdown?: number;
+}
+
+export interface KartRaceState {
+  cars: KartCar[];
+  elapsed: number;
+  laps: number;
+  rivalId: number | null;
+  itemsEnabled: boolean;
+  boxes: KartItemBox[];
+  hazards: KartHazard[];
+  projectiles: KartProjectile[];
+  itemEvents: KartItemEvent[];
+  lastItemEvent: KartItemEvent | null;
+  itemEventSeq: number;
+  itemSeed: number;
+  nextItemId: number;
+  /** Segundos restantes da contagem; 0 = corrida andando. */
+  countdown: number;
+}
 
 export const KART_CUP_ROUNDS = [
   { title: 'Abertura da Copa', opponents: [7, 158, 255], accent: '#71cda9' },
@@ -170,7 +256,8 @@ function nearestTrack(x: number, z: number): { angle: number; distance: number }
 export function trackAngle(x: number, z: number): number { return nearestTrack(x, z).angle; }
 export function trackDistance(x: number, z: number): number { return nearestTrack(x, z).distance; }
 
-export function createKartRace(opponents = 3, dexIds: readonly number[] = [], rivalId: number | null = null): KartRaceState {
+export function createKartRace(opponents = 3, dexIds: readonly number[] = [], rivalId: number | null = null, options: KartRaceOptions = {}): KartRaceState {
+  const itemsEnabled = options.items === true;
   const cars: KartCar[] = Array.from({ length: opponents + 1 }, (_, id) => {
     const angle = -0.25 * Math.floor(id / 2);
     const point = trackPoint(angle);
@@ -186,6 +273,11 @@ export function createKartRace(opponents = 3, dexIds: readonly number[] = [], ri
       boostUntil: 0,
       slowUntil: 0,
       shieldUntil: 0,
+      item: null,
+      spinUntil: 0,
+      itemReadyAt: 0,
+      hits: 0,
+      driftCharge: 0,
       x: point.x + tangentZ / tangentLength * laneOffset,
       z: point.z - tangentX / tangentLength * laneOffset,
       heading: Math.atan2(tangentX, tangentZ),
@@ -195,7 +287,193 @@ export function createKartRace(opponents = 3, dexIds: readonly number[] = [], ri
       finishedAt: null,
     };
   });
-  return { cars, elapsed: 0, laps: KART_LAPS, rivalId };
+  return {
+    cars,
+    elapsed: 0,
+    laps: KART_LAPS,
+    rivalId,
+    itemsEnabled,
+    boxes: itemsEnabled ? KART_ITEM_BOX_ANGLES.map((angle, index) => {
+      const point = trackPoint(angle);
+      return { id: index + 1, angle, x: point.x, z: point.z, readyAt: 0 };
+    }) : [],
+    hazards: [],
+    projectiles: [],
+    itemEvents: [],
+    lastItemEvent: null,
+    itemEventSeq: 0,
+    itemSeed: (options.seed ?? 1) >>> 0,
+    nextItemId: 100,
+    countdown: Math.max(0, options.countdown ?? 0),
+  };
+}
+
+/** Gira a semente e devolve um número em [0, 1). Repetível entre corridas com a mesma semente. */
+function nextItemRandom(state: KartRaceState): number {
+  state.itemSeed = (Math.imul(state.itemSeed, 1664525) + 1013904223) >>> 0;
+  return state.itemSeed / 4294967296;
+}
+
+function pushItemEvent(state: KartRaceState, kind: KartItemEventKind, car: number, item: KartItemId, target?: number): void {
+  const event: KartItemEvent = { seq: ++state.itemEventSeq, kind, car, item, ...(target === undefined ? {} : { target }) };
+  state.lastItemEvent = event;
+  state.itemEvents.push(event);
+  if (state.itemEvents.length > 24) state.itemEvents.splice(0, state.itemEvents.length - 24);
+}
+
+/** Quem está imediatamente à frente (posição menor = mais à frente). */
+function targetAhead(state: KartRaceState, car: KartCar): KartCar | null {
+  const mine = kartPosition(state, car.id);
+  let best: KartCar | null = null;
+  let bestPlace = -Infinity;
+  for (const other of state.cars) {
+    if (other.id === car.id || other.finishedAt !== null) continue;
+    const place = kartPosition(state, other.id);
+    if (place < mine && place > bestPlace) {
+      best = other;
+      bestPlace = place;
+    }
+  }
+  return best;
+}
+
+function applyItemHit(state: KartRaceState, target: KartCar, source: number, kind: 'banana' | 'oil' | 'shell' | 'bolt'): void {
+  const item = kind;
+  if (target.shieldUntil > state.elapsed) {
+    pushItemEvent(state, 'blocked', source, item, target.id);
+    return;
+  }
+  if (kind !== 'oil') {
+    target.spinUntil = Math.max(target.spinUntil, state.elapsed + (kind === 'bolt' ? 1.2 : 1.05));
+    target.speed *= 0.35;
+  }
+  const slow = kind === 'bolt' ? KART_ITEMS.bolt.duration : kind === 'oil' ? 1.9 : 1.5;
+  target.slowUntil = Math.max(target.slowUntil, state.elapsed + slow);
+  const attacker = state.cars[source];
+  if (attacker && attacker.id !== target.id) attacker.hits++;
+  pushItemEvent(state, 'hit', source, item, target.id);
+}
+
+/**
+ * Usa o item na mão. O jogador chama pelo botão; o NPC usa sozinho depois de um atraso.
+ * Devolve false se não havia item, se o kart está rodando ou se a corrida já terminou.
+ */
+export function useKartItem(state: KartRaceState, id: number): boolean {
+  const car = state.cars[id];
+  if (!car || !state.itemsEnabled || !car.item || car.finishedAt !== null || car.spinUntil > state.elapsed) return false;
+  const item = car.item;
+  car.item = null;
+  car.itemReadyAt = Number.POSITIVE_INFINITY;
+  pushItemEvent(state, 'use', id, item);
+  if (item === 'turbo') {
+    car.boostUntil = Math.max(car.boostUntil, state.elapsed + KART_ITEMS.turbo.duration);
+    car.speed = Math.min(car.speed + 4, (car.profile?.performance.topSpeed ?? 32) + 7);
+  } else if (item === 'shield') {
+    car.shieldUntil = Math.max(car.shieldUntil, state.elapsed + KART_ITEMS.shield.duration);
+  } else if (item === 'comet') {
+    car.boostUntil = Math.max(car.boostUntil, state.elapsed + KART_ITEMS.comet.duration);
+    car.shieldUntil = Math.max(car.shieldUntil, state.elapsed + 1.3);
+    car.speed = Math.min(car.speed + 6, (car.profile?.performance.topSpeed ?? 32) + 8);
+  } else if (item === 'banana' || item === 'oil') {
+    state.hazards.push({
+      id: state.nextItemId++, kind: item, owner: id,
+      x: car.x - Math.sin(car.heading) * 3.4,
+      z: car.z - Math.cos(car.heading) * 3.4,
+      until: state.elapsed + KART_ITEMS[item].duration,
+    });
+  } else if (item === 'shell') {
+    const target = targetAhead(state, car);
+    state.projectiles.push({
+      id: state.nextItemId++, kind: 'shell', owner: id, target: target?.id ?? -1,
+      x: car.x + Math.sin(car.heading) * 2.2,
+      z: car.z + Math.cos(car.heading) * 2.2,
+      angle: target ? Math.atan2(target.x - car.x, target.z - car.z) : car.heading,
+      speed: 30,
+      until: state.elapsed + KART_ITEMS.shell.duration,
+    });
+  } else if (item === 'bolt') {
+    const mine = kartPosition(state, id);
+    for (const other of state.cars) {
+      if (other.id === id || other.finishedAt !== null) continue;
+      if (kartPosition(state, other.id) < mine) applyItemHit(state, other, id, 'bolt');
+    }
+  }
+  return true;
+}
+
+function updateItemBoxes(state: KartRaceState): void {
+  for (const box of state.boxes) {
+    if (box.readyAt > state.elapsed) continue;
+    let pick: KartCar | null = null;
+    let pickDistance = ITEM_BOX_RADIUS;
+    for (const car of state.cars) {
+      if (car.finishedAt !== null || car.item) continue;
+      const distance = Math.hypot(car.x - box.x, car.z - box.z);
+      if (distance <= pickDistance) {
+        pick = car;
+        pickDistance = distance;
+      }
+    }
+    if (!pick) continue;
+    const position = kartPosition(state, pick.id);
+    pick.item = rollKartItem(() => nextItemRandom(state), position, state.cars.length);
+    pick.itemReadyAt = state.elapsed + (pick.id === 0 ? 0 : 1.6 + nextItemRandom(state) * 2.6);
+    box.readyAt = state.elapsed + ITEM_BOX_RESPAWN;
+    pushItemEvent(state, 'pickup', pick.id, pick.item);
+  }
+}
+
+function maybeUseNpcItem(state: KartRaceState, car: KartCar): void {
+  if (car.id === 0 || !car.item || car.finishedAt !== null || car.spinUntil > state.elapsed) return;
+  if (state.elapsed < 5 || state.elapsed < car.itemReadyAt) return;
+  useKartItem(state, car.id);
+}
+
+function updateProjectiles(state: KartRaceState, dt: number): void {
+  for (let index = state.projectiles.length - 1; index >= 0; index--) {
+    const shot = state.projectiles[index]!;
+    const target = shot.target >= 0 ? state.cars[shot.target] : null;
+    if (target && target.finishedAt === null) shot.angle = Math.atan2(target.x - shot.x, target.z - shot.z);
+    shot.x += Math.sin(shot.angle) * shot.speed * dt;
+    shot.z += Math.cos(shot.angle) * shot.speed * dt;
+    let hit: KartCar | null = null;
+    for (const car of state.cars) {
+      if (car.id === shot.owner || car.finishedAt !== null) continue;
+      if (Math.hypot(car.x - shot.x, car.z - shot.z) <= SHELL_HIT_RADIUS) {
+        hit = car;
+        break;
+      }
+    }
+    if (hit) {
+      applyItemHit(state, hit, shot.owner, 'shell');
+      state.projectiles.splice(index, 1);
+      continue;
+    }
+    if (state.elapsed > shot.until) state.projectiles.splice(index, 1);
+  }
+}
+
+function updateHazards(state: KartRaceState): void {
+  for (let index = state.hazards.length - 1; index >= 0; index--) {
+    const hazard = state.hazards[index]!;
+    if (state.elapsed > hazard.until) {
+      state.hazards.splice(index, 1);
+      continue;
+    }
+    const radius = hazard.kind === 'oil' ? OIL_HIT_RADIUS : BANANA_HIT_RADIUS;
+    let hit: KartCar | null = null;
+    for (const car of state.cars) {
+      if (car.id === hazard.owner || car.finishedAt !== null) continue;
+      if (Math.hypot(car.x - hazard.x, car.z - hazard.z) <= radius) {
+        hit = car;
+        break;
+      }
+    }
+    if (hit) {
+      applyItemHit(state, hit, hazard.owner, hazard.kind);
+      state.hazards.splice(index, 1);
+    }
+  }
 }
 
 export function activateKartAbility(state: KartRaceState, id: number): boolean {
@@ -256,16 +534,29 @@ export function opponentInput(car: KartCar, id: number, rival = false): KartInpu
 function advanceCar(car: KartCar, input: KartInput, dt: number, elapsed: number, laps: number): void {
   if (car.finishedAt !== null) return;
   const performance = car.profile?.performance ?? NEUTRAL_PERFORMANCE;
-  const throttle = Math.max(-1, Math.min(1, input.throttle));
+  const spinning = car.spinUntil > elapsed;
+  const throttle = spinning ? 0 : Math.max(-1, Math.min(1, input.throttle));
   const offroad = Math.max(0, Math.min(1, (trackDistance(car.x, car.z) - ROAD_LIMIT) / 4));
   const boosted = car.boostUntil > elapsed;
   const slowed = car.slowUntil > elapsed && car.shieldUntil <= elapsed;
+  // Derrapagem: freio + curva em velocidade carrega um mini-turbo; soltar o freio libera.
+  const drifting = !spinning && input.brake && Math.abs(input.steer) > 0.25 && car.speed > 12;
+  if (drifting) {
+    car.driftCharge = Math.min(1, car.driftCharge + dt * 0.9);
+  } else {
+    if (!spinning && !input.brake && car.driftCharge > 0.05) {
+      car.boostUntil = Math.max(car.boostUntil, elapsed + 0.3 + car.driftCharge * 0.9);
+      car.speed = Math.min(car.speed + 1.5 + car.driftCharge * 2, (performance.topSpeed + 7));
+    }
+    car.driftCharge = Math.max(0, car.driftCharge - dt * 1.6);
+  }
   car.speed += (throttle >= 0 ? (performance.acceleration - 9 * offroad / performance.offroadGrip) * (boosted ? 1.55 : 1) : 14) * throttle * dt;
-  const drag = 3.2 + 9 * offroad / performance.offroadGrip + (input.brake ? performance.braking : 0) + (slowed ? 3 : 0);
+  const drag = 3.2 + 9 * offroad / performance.offroadGrip + (input.brake && !drifting ? performance.braking : 0) + (slowed ? 3 : 0) + (spinning ? 9 : 0);
   car.speed = Math.sign(car.speed) * Math.max(0, Math.abs(car.speed) - drag * dt);
   car.speed = Math.max(-10, Math.min((performance.topSpeed + (boosted ? 7 : 0) - 14 * offroad / performance.offroadGrip) * (slowed ? 0.68 : 1), car.speed));
   const grip = offroad > 0 ? performance.offroadGrip : performance.roadGrip;
-  car.heading -= Math.max(-1, Math.min(1, input.steer)) * performance.handling * grip * dt * Math.min(1, Math.abs(car.speed) / 7) * Math.sign(car.speed || 1);
+  const steer = spinning ? 0 : Math.max(-1, Math.min(1, input.steer));
+  car.heading -= steer * performance.handling * (drifting ? 1.12 : 1) * grip * dt * Math.min(1, Math.abs(car.speed) / 7) * Math.sign(car.speed || 1);
   car.x += Math.sin(car.heading) * car.speed * dt;
   car.z += Math.cos(car.heading) * car.speed * dt;
   // O acostamento é transitável. Atrito e velocidade máxima no gramado dão
@@ -303,7 +594,12 @@ function resolveBarrier(car: KartCar): void {
 export function stepKartRace(state: KartRaceState, input: KartInput, deltaSeconds: number): void {
   const dt = Math.max(0, Math.min(0.05, deltaSeconds));
   if (dt === 0) return;
+  if (state.countdown > 0) {
+    state.countdown = Math.max(0, state.countdown - dt);
+    return;
+  }
   state.elapsed += dt;
+  if (state.itemsEnabled) updateItemBoxes(state);
   state.cars.forEach((car, id) => {
     if (id > 0 && state.elapsed > 4 && car.ability && state.elapsed >= car.abilityReadyAt) {
       const player = state.cars[0]!;
@@ -312,6 +608,7 @@ export function stepKartRace(state: KartRaceState, input: KartInput, deltaSecond
         activateKartAbility(state, id);
       }
     }
+    if (id > 0) maybeUseNpcItem(state, car);
     advanceCar(car, id === 0 ? input : opponentInput(car, id, id === state.rivalId), dt, state.elapsed, state.laps);
   });
   for (let i = 0; i < state.cars.length; i++) {
@@ -334,6 +631,10 @@ export function stepKartRace(state: KartRaceState, input: KartInput, deltaSecond
       resolveBarrier(a);
       resolveBarrier(b);
     }
+  }
+  if (state.itemsEnabled) {
+    updateProjectiles(state, dt);
+    updateHazards(state);
   }
 }
 
