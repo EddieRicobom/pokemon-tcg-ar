@@ -7167,10 +7167,10 @@ body:has(.survivor-summary) .universal-controls { opacity: 0; pointer-events: no
 .survivor-feedback-details > summary { cursor: pointer; padding: 6px 0; color: #dcecff; font-weight: 800; }
 /* O resumo é um card escuro: textos auxiliares e recordes precisam da paleta clara da Torre. */
 .survivor-summary .note { color: var(--sv-muted); }
-.survivor-dex-record { color: #cfd8ff; font-size: .78rem; }
-.survivor-dex-record.is-new { color: #ffe066; font-weight: 700; }
-.survivor-death-note { color: #ffd9c7; }
-.survivor-pick-record { display: block; margin-top: 2px; color: #ffe9a8; font-size: .62rem; font-weight: 800; letter-spacing: .02em; }
+.survivor-summary .survivor-dex-record { color: #cfd8ff; font-size: .78rem; }
+.survivor-summary .survivor-dex-record.is-new { color: #ffe066; font-weight: 700; }
+.survivor-summary .survivor-death-note { color: #ffd9c7; }
+.survivor-overlay .survivor-pick-btn small.survivor-pick-record { display: block; margin-top: 2px; color: #ffe9a8; font-size: .62rem; font-weight: 800; letter-spacing: .02em; }
 .survivor-summary-more[open] > summary,
 .survivor-feedback-details[open] > summary { color: #fffbe9; }
 

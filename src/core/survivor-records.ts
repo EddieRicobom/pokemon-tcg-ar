@@ -93,9 +93,9 @@ export function normalizeDexRecords(raw: unknown): SurvivorDexRecords {
     if (count >= MAX_DEX_RECORDS) break;
     if (!/^\d{1,4}$/.test(key) || !value || typeof value !== 'object') continue;
     const row = value as Partial<SurvivorDexRecord>;
-    const ms = Math.max(0, Math.floor(Number(row.ms) || 0));
-    const wave = Math.max(0, Math.floor(Number(row.wave) || 0));
-    const level = Math.max(0, Math.floor(Number(row.level) || 0));
+    const ms = safeInt(Number(row.ms));
+    const wave = safeInt(Number(row.wave));
+    const level = safeInt(Number(row.level));
     if (ms <= 0 && wave <= 0 && level <= 0) continue;
     out[key] = { ms, wave, level };
     count++;
