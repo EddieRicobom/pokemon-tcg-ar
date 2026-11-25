@@ -911,7 +911,7 @@ const bossBar = computed(() => {
 const bossAttackWarning = computed(() => {
   const attack = state.value?.bossAttack;
   if (!attack || attack.phase !== 'telegraph') return null;
-  return attack.kind === 'tsunami' ? '🌊 Tsunami!' : attack.kind === 'boulders' ? '🪨 Pedras!' : attack.kind === 'vines' ? '🌿 Vinhas!' : '💥 Onda de choque!';
+  return attack.kind === 'tsunami' ? '🌊 Tsunami!' : attack.kind === 'boulders' ? '🪨 Pedras!' : attack.kind === 'vines' ? '🌿 Vinhas!' : attack.kind === 'lasers' ? '⚡ Lasers girando!' : attack.kind === 'stars' ? '🌟 Estrelas!' : '💥 Onda de choque!';
 });
 /** Números do menu de pausa: dano, média por segundo e o que está em campo. */
 const runNumbers = computed(() => (state.value ? survivorRunNumbers(state.value) : null));
@@ -4961,7 +4961,7 @@ onBeforeUnmount(() => {
             <span><b>{{ bossBar.name }}</b><small>{{ bossBar.hp }}/{{ bossBar.maxHp }}</small></span>
             <i><b :style="{ width: `${bossBar.pct}%` }" /></i>
           </div>
-          <div v-if="bossAttackWarning" class="survivor-boss-warning" role="status" aria-live="assertive">{{ bossAttackWarning }} <small>saia da área marcada</small></div>
+          <div v-if="bossAttackWarning" class="survivor-boss-warning" role="status" aria-live="assertive">{{ bossAttackWarning }} <small>{{ state?.bossAttack?.kind === 'lasers' ? 'ande no vão entre os raios' : 'saia da área marcada' }}</small></div>
           <section v-if="hudExpanded" id="survivor-info-panel" class="survivor-info-panel" aria-label="Menu da Torre: pausa, informações e opções" @pointerdown.stop>
             <div v-if="!summary && !pendingUpgrade && !evolving && !specialModalOpen" class="survivor-info-actions">
               <button type="button" class="chip survivor-pause-btn" :aria-pressed="paused" @click.stop="togglePause">{{ paused ? '▶ Retomar' : '⏸ Pausar' }}</button>

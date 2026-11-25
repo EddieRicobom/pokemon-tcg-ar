@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createSurvivorState, stepSurvivor } from './survivor';
-import type { SurvivorEnemy, SurvivorState } from './survivor-types';
+import type { SurvivorBossAttack, SurvivorEnemy, SurvivorState } from './survivor-types';
 
 function quiet(state: SurvivorState): SurvivorState {
   state.nextBossAtMs = Number.POSITIVE_INFINITY;
@@ -90,6 +90,39 @@ describe('ataques-assinatura dos chefes', () => {
       expect(s.bossAttack?.phase).toBe('telegraph');
       expect(s.bossAttack?.bossId).toBe(900);
     }
+  });
+
+  it('Arceus alterna lasers girando, onda dourada e estrelas', () => {
+    const s = quiet(createSurvivorState(90, { kindCount: 1 }));
+    s.player.invulnMs = 1e9;
+    s.enemies = [{ ...boss(s, 493), arceus: true }];
+    s.nextBossAttackAtMs = 0;
+    stepSurvivor(s, { dx: 0, dy: 0 }, 16);
+    expect(s.bossAttack).toMatchObject({ kind: 'lasers', phase: 'telegraph', beams: 3 });
+
+    stepSurvivor(s, { dx: 0, dy: 0 }, 1600);
+    expect(s.bossAttack?.phase).toBe('active');
+    const beforeRotation = s.bossAttack?.rotation ?? 0;
+    stepSurvivor(s, { dx: 0, dy: 0 }, 500);
+    expect(s.bossAttack?.rotation ?? 0).toBeGreaterThan(beforeRotation);
+
+    const attack = s.bossAttack!;
+    const beamAngle = attack.angle + (attack.rotation ?? 0);
+    s.player.x = attack.x + Math.cos(beamAngle) * 300;
+    s.player.y = attack.y + Math.sin(beamAngle) * 300;
+    s.player.hp = s.player.maxHp = 1000;
+    s.player.invulnMs = 0;
+    attack.hitCooldownMs = 0;
+    stepSurvivor(s, { dx: 0, dy: 0 }, 16);
+    expect(s.player.hp).toBeLessThan(1000);
+
+    s.bossAttack = null; s.nextBossAttackAtMs = 0;
+    stepSurvivor(s, { dx: 0, dy: 0 }, 16);
+    expect((s.bossAttack as SurvivorBossAttack | null)?.kind).toBe('shockwave');
+    s.bossAttack = null; s.nextBossAttackAtMs = 0;
+    stepSurvivor(s, { dx: 0, dy: 0 }, 16);
+    expect((s.bossAttack as SurvivorBossAttack | null)?.kind).toBe('stars');
+    expect((s.bossAttack as SurvivorBossAttack | null)?.circles).toHaveLength(5);
   });
 
   it('o tsunami fere quem fica na faixa e erra quem sai dela', () => {

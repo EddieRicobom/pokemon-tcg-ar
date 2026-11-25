@@ -342,7 +342,7 @@ export interface SurvivorFinalHit extends SurvivorHitSource {
 }
 
 /** Ataques-assinatura dos chefes: sempre telegrafados e com uma saída clara. */
-export type SurvivorBossAttackKind = 'tsunami' | 'boulders' | 'vines' | 'shockwave';
+export type SurvivorBossAttackKind = 'tsunami' | 'boulders' | 'vines' | 'shockwave' | 'lasers' | 'stars';
 
 export interface SurvivorBossAttackCircle { x: number; y: number; radius: number }
 
@@ -361,6 +361,11 @@ export interface SurvivorBossAttack {
   halfWidth: number;
   radius: number;
   circles: SurvivorBossAttackCircle[];
+  /** Lasers do Arceus: quantidade de raios e giro acumulado em radianos. */
+  beams?: number;
+  rotation?: number;
+  /** Intervalo entre dois acertos dos lasers enquanto o jogador continua dentro. */
+  hitCooldownMs?: number;
   /** O dano já foi aplicado neste ataque (uma vez só). */
   hit: boolean;
 }
@@ -578,6 +583,8 @@ export interface SurvivorState {
     phase: 'idle' | 'arrival' | 'battle' | 'defeated';
     arrivalMs: number;
   };
+  /** Quantos ataques o Arceus já iniciou, para alternar lasers, onda e estrelas. */
+  arceusAttacks?: number;
   /** Encontro opcional a partir dos 13 min: a cutscene pausa a Torre antes do lendário entrar. */
   shadowEncounter: {
     phase: 'idle' | 'available' | 'arrival' | 'battle';
