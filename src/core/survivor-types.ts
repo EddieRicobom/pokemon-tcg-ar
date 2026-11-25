@@ -289,6 +289,8 @@ export interface SurvivorEnemy {
   maxHp: number;
   speed: number;
   damage: number;
+  /** Fração do dano direto do jogador ignorada por armadura (0 a 0,8). Queimadura e espinhos ignoram. */
+  damageReduction?: number;
   radius: number;
   /** Ms restantes do "flash" de ter sido atingido (só para o desenho). */
   hitFlashMs: number;

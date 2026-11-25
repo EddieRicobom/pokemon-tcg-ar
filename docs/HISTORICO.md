@@ -5,6 +5,15 @@ O estado atual, as fases, as pendências e os riscos continuam no [plano](../IMP
 datadas (com o que foi e o que não foi validado em cada uma). A regra de validação do plano vale também para estas entradas:
 🔶 significa que **nada foi visto num celular real**.
 
+## Torre: late com menos densidade, mais vida e armadura nos chefes (25/11/2026)
+
+- **Densidade:** depois dos 10 min o intervalo entre inimigos comuns cresce **15% por minuto** (2,5× aos 20 min, 8,5× aos 60 min). A horda não some, mas para de encher a tela.
+- **Vida comum:** ganhou um termo quadrático depois dos 10 min: ~348 aos 20 min (antes 198), ~888 aos 30 min e ~4.308 aos 60 min.
+- **Chefes:** a vida base subiu de 220/55 para **440/110** por onda, com mais **5% por minuto depois dos 10 min**. Na prática, o chefe dos 20 min tem ~7.425 de vida contra 2.475 antes.
+- **Armadura (`damageReduction`):** chefes periódicos 50%, Arceus 65%, Sombrios 55%, chefões 40% e elites 20%. Reduz só dano direto; queimadura, veneno e espinhos continuam entrando. A barra do chefe mostra `🛡 N%`.
+- **Chefões/elites:** multiplicador de vida subiu de 7×/5× para **16×/6,5×**; o time final de 6 chefões fica bem mais longo.
+- 🔶 Typecheck, 68 arquivos / 727 testes do Survival, suíte completa (347 arquivos / 3446 testes), build e os 14 testes de layout passaram. Ainda precisa de playtest humano para calibrar o tempo de luta dos chefes; não testado em celular real.
+
 ## Torre: XP do late game muito mais caro (25/11/2026)
 
 - **Curva de XP:** `xpForLevel` continua linear até o nível 20 (início e evoluções no mesmo ritmo) e ganha um termo quadrático a partir do 21. O custo do próximo nível sai de ~460 no nível 56 para ~1.626 (3,5×), e de ~572 no nível 70 para ~2.822 (4,9×). O objetivo é acabar com a enxurrada de níveis no fim da corrida sem mexer no começo.

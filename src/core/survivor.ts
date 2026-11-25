@@ -100,9 +100,12 @@ export const BALANCE = {
   xpLateQuadratic: 0.9,
   /** Orbes soltam 65% da XP anterior; o resto fracionário é carregado para o próximo orbe. */
   xpOrbMultiplier: 0.65,
-  /** Chefes periódicos: ameaças raras, mas com vida suficiente para exigir reposicionamento e coleta sob pressão. */
-  bossHpBase: 220,
-  bossHpPerWave: 55,
+  /** Chefes periódicos: poucos, mas com vida para exigir reposicionamento e coleta sob pressão. */
+  bossHpBase: 440,
+  bossHpPerWave: 110,
+  /** Depois dos 10 min a vida dos chefes cresce de novo a cada minuto. */
+  bossHpLateFromMin: 10,
+  bossHpLatePerMin: 0.05,
   /** Arceus: superboss do Perigo Digital, bem acima de um chefe periódico. */
   arceusHpMultiplier: 8,
   arceusDamageMultiplier: 2,
@@ -114,11 +117,22 @@ export const BALANCE = {
   shadowBossHpMultiplier: 4.5,
   shadowBossDamageMultiplier: 2.2,
   shadowBossSpeed: 88,
+  /** Armadura dos marcos: reduz só dano direto; queimadura, veneno e espinhos continuam entrando. */
+  bossDamageReduction: 0.5,
+  arceusDamageReduction: 0.65,
+  shadowBossDamageReduction: 0.55,
+  chefaoDamageReduction: 0.4,
+  eliteDamageReduction: 0.2,
   enemyHpBase: 16,
   /** Vida extra a cada `enemyHpEverySec` segundos; a simulação agora usa os golpes reais das espécies. */
   enemyHpStep: 2.5,
   enemyHpEverySec: 30,
   enemyHpPerWave: 2,
+  /** Depois dos 10 min a vida comum ganha um termo quadrático e a densidade cai. */
+  enemyHpLateFromMin: 10,
+  enemyHpLateQuadratic: 1.5,
+  spawnLateFromMin: 10,
+  spawnLateIntervalPerMin: 0.15,
   enemyDamageBase: 6,
   enemyDamageStep: 1,
   enemyDamageEverySec: 40,
@@ -476,8 +490,10 @@ function spawnIntervalMs(state: SurvivorState): number {
   const early = Math.max(0, 1 - state.elapsedMs / BALANCE.earlyGameMs);
   // No começo, metade do intervalo dobra os encontros; o bônus desaparece no primeiro minuto.
   const initialDensity = Math.max(0, 1 - state.elapsedMs / 60_000);
+  // Depois dos 10 min a horda para de crescer em número: o espaço fica para elites, chefes e leitura da arena.
+  const lateDensity = 1 + Math.max(0, t / 60 - BALANCE.spawnLateFromMin) * BALANCE.spawnLateIntervalPerMin;
   const interval = base * (1 + BALANCE.earlySpawnIntervalBonus * early) * BALANCE.spawnRateMultiplier / survivorDifficultyDensityMultiplier(state.player.difficultyStacks ?? 0)
-    / Math.sqrt(state.adaptive?.value ?? 1) * (1 - 0.5 * initialDensity);
+    / Math.sqrt(state.adaptive?.value ?? 1) * (1 - 0.5 * initialDensity) * lateDensity;
   return interval;
 }
 
@@ -577,7 +593,8 @@ function spawnEnemy(
     const shadow = options?.shadowBoss === true;
     const arceus = options?.arceus === true;
     const hpMultiplier = arceus ? BALANCE.arceusHpMultiplier : shadow ? BALANCE.shadowBossHpMultiplier : 1;
-    const hp = Math.round((BALANCE.bossHpBase + state.wave * BALANCE.bossHpPerWave) * state.infiniteScale * hpMultiplier);
+    const bossLate = 1 + Math.max(0, t / 60 - BALANCE.bossHpLateFromMin) * BALANCE.bossHpLatePerMin;
+    const hp = Math.round((BALANCE.bossHpBase + state.wave * BALANCE.bossHpPerWave) * bossLate * state.infiniteScale * hpMultiplier);
     const id = state.nextId++;
     addEnemy(state, events, {
       id,
@@ -592,6 +609,7 @@ function spawnEnemy(
       maxHp: hp,
       speed: arceus ? BALANCE.arceusSpeed : shadow ? BALANCE.shadowBossSpeed : BALANCE.bossSpeed,
       damage: Math.round((BALANCE.bossDamageBase + state.wave * BALANCE.bossDamagePerWave) * state.infiniteScale * (arceus ? BALANCE.arceusDamageMultiplier : shadow ? BALANCE.shadowBossDamageMultiplier : 1)),
+      damageReduction: arceus ? BALANCE.arceusDamageReduction : shadow ? BALANCE.shadowBossDamageReduction : BALANCE.bossDamageReduction,
       radius: arceus ? 36 : shadow ? 36 : 28,
       hitFlashMs: 0,
         archetype: resolveEnemyArchetype(state, state.kindCount, true, 'comum', id),
@@ -601,13 +619,14 @@ function spawnEnemy(
     state.nextBossAttackAtMs = Math.max(state.nextBossAttackAtMs ?? 0, state.elapsedMs + BOSS_ATTACK_FIRST_MS);
     return id;
   }
-  const baseHp = (BALANCE.enemyHpBase + Math.floor(t / BALANCE.enemyHpEverySec) * BALANCE.enemyHpStep + state.wave * BALANCE.enemyHpPerWave)
+  const lateMinutes = Math.max(0, t / 60 - BALANCE.enemyHpLateFromMin);
+  const baseHp = (BALANCE.enemyHpBase + Math.floor(t / BALANCE.enemyHpEverySec) * BALANCE.enemyHpStep + state.wave * BALANCE.enemyHpPerWave + lateMinutes * lateMinutes * BALANCE.enemyHpLateQuadratic)
     * earlyCurve(state.elapsedMs, BALANCE.earlyEnemyHpMultiplier);
   const baseDmg = (BALANCE.enemyDamageBase + Math.floor(t / BALANCE.enemyDamageEverySec) * BALANCE.enemyDamageStep)
     * earlyCurve(state.elapsedMs, BALANCE.earlyEnemyDamageMultiplier);
   // Treinadores (elite) têm +5× HP e +2× dano; o chefão (do time dos 6) ainda mais pesado.
   const trainerMul = grade === 'comum' ? 1 : BALANCE.trainerStatMultiplier;
-  const hpMul = (grade === 'chefao' ? 7 : grade === 'elite' ? 5 : 1) * trainerMul;
+  const hpMul = (grade === 'chefao' ? 16 : grade === 'elite' ? 6.5 : 1) * trainerMul;
   const dmgMul = (grade === 'chefao' ? 2.5 : grade === 'elite' ? 2 : 1) * trainerMul;
   const speed = (grade === 'comum'
     ? BALANCE.enemySpeedBase + state.rng() * BALANCE.enemySpeedRandom
@@ -632,6 +651,7 @@ function spawnEnemy(
     maxHp: hp,
     speed,
     damage: Math.round(baseDmg * dmgMul * state.infiniteScale * adaptive),
+    ...(grade === 'chefao' ? { damageReduction: BALANCE.chefaoDamageReduction } : grade === 'elite' ? { damageReduction: BALANCE.eliteDamageReduction } : {}),
     radius: grade === 'chefao' ? 20 : grade === 'elite' ? 16 : 13,
     hitFlashMs: 0,
     archetype,
@@ -658,6 +678,7 @@ function spawnTrainer(state: SurvivorState, count: number, final: boolean, event
         enemy.hp = enemy.maxHp;
         enemy.damage = Math.round(enemy.damage / alphaScale * 1.75) * alphaScale;
         enemy.speed *= 1.3;
+        enemy.damageReduction = Math.min(0.8, (enemy.damageReduction ?? 0) + 0.1);
       }
     }
   }
@@ -1430,6 +1451,7 @@ function applyHeldOnHit(state: SurvivorState, e: SurvivorEnemy, damage: number, 
     }
     if (mods.knockback > 0 && !e.boss && e.grade === 'comum') applyKnockback(e, from, mods.knockback);
     for (const type of mods.plates) {
+      // `damage` já veio mitigado pelo hitEnemy; aplicar de novo dobraria a armadura.
       e.hp -= damage * 0.25;
       Object.assign(e, survivorElementalStatus(type));
     }
@@ -2525,6 +2547,17 @@ function applyMoveImpact(state: SurvivorState, e: SurvivorEnemy, move: SurvivorM
 }
 
 /** Dano de um golpe num inimigo, com o efeito do tipo. `from` é de onde o golpe veio (para empurrar). */
+/** Armadura visível no HUD e aplicada só ao dano direto do jogador (queimadura/espinhos ignoram). */
+export function survivorEnemyDamageReduction(enemy: Pick<SurvivorEnemy, 'damageReduction'>): number {
+  const value = enemy.damageReduction ?? 0;
+  return Number.isFinite(value) ? Math.max(0, Math.min(0.8, value)) : 0;
+}
+
+export function mitigateSurvivorEnemyDamage(enemy: Pick<SurvivorEnemy, 'damageReduction'>, damage: number): number {
+  if (!Number.isFinite(damage) || damage <= 0) return 0;
+  return damage * (1 - survivorEnemyDamageReduction(enemy));
+}
+
 function hitEnemy(state: SurvivorState, e: SurvivorEnemy, damage: number, from: { x: number; y: number }, attackMove = state.player.move, allowFollowUp = true, distanceFromPlayer = Math.hypot(e.x - state.player.x, e.y - state.player.y), projectileHit = false): void {
   const move = attackMove;
   const p = state.player;
@@ -2566,7 +2599,7 @@ function hitEnemy(state: SurvivorState, e: SurvivorEnemy, damage: number, from: 
     * (synergy?.damageMultiplier ?? 1)
     * survivorBiomeDamageMultiplier(state.elapsedMs, from.x, from.y, move.type);
   const reducedDamage = e.protectedMs && e.protectedMs > 0 && !(move.terastal && move.type === 'steel') ? environmentalDamage * 0.75 : environmentalDamage;
-  const finalDamage = reducedDamage * finalThreatHunterMultiplier;
+  const finalDamage = mitigateSurvivorEnemyDamage(e, reducedDamage * finalThreatHunterMultiplier);
   if (critical && state.criticalHits.length < 64) state.criticalHits.push({ enemyId: e.id, x: e.x, y: e.y, damage: finalDamage, boss: e.boss || e.grade === 'chefao' || e.shadowBoss === true });
   const hpBefore = Math.max(0, e.hp);
   e.hp -= finalDamage;
@@ -2622,7 +2655,7 @@ function hitDashPath(state: SurvivorState, path: { from: { x: number; y: number 
     if (distanceToPath(enemy.x, enemy.y, path.from, path.to) > PLAYER_RADIUS + enemy.radius) continue;
     const move = state.player.move;
     const protectedTarget = (enemy.protectedMs ?? 0) > 0 && !(move.terastal && move.type === 'steel');
-    const damage = state.player.attackDamage * multiplier * terastalDamageMultiplier(move, enemy) * (protectedTarget ? 0.75 : 1);
+    const damage = mitigateSurvivorEnemyDamage(enemy, state.player.attackDamage * multiplier * terastalDamageMultiplier(move, enemy) * (protectedTarget ? 0.75 : 1));
     enemy.hp -= damage;
     enemy.hitFlashMs = 90;
     special.dashHitEnemyIds.push(enemy.id);
@@ -3296,7 +3329,7 @@ function damagePlayer(state: SurvivorState, damage: number, kind: SurvivorFinalH
     const retaliationDamage = p.attackDamage * 0.3 * retaliation;
     for (const enemy of state.enemies) {
       if (enemy.hp > 0 && Math.hypot(enemy.x - p.x, enemy.y - p.y) <= PLAYER_RADIUS + enemy.radius + 54) {
-        enemy.hp -= retaliationDamage;
+        enemy.hp -= mitigateSurvivorEnemyDamage(enemy, retaliationDamage);
         enemy.hitFlashMs = 90;
       }
     }
