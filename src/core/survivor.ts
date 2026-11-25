@@ -356,6 +356,7 @@ export function createSurvivorState(seed: number, options: CreateSurvivorOptions
     digitalDangerCooldownMs: 0,
     arceusEncounter: { phase: 'idle', arrivalMs: 0 },
     arceusAttacks: 0,
+    bossAttacks: 0,
     arceusSpecial: null,
     arceusSpecialUsed: false,
     shadowEncounter: { phase: 'idle', dexId: shadowGuardian.dexId, name: shadowGuardian.name, arrivalMs: 0 },
@@ -3284,13 +3285,21 @@ const ARCEUS_TIME_MS = 3200;
 const ARCEUS_GIRATINA_SPEED = 330;
 const ARCEUS_GIRATINA_RADIUS = 34;
 
-/** Água/gelo vira tsunami; pedra vira pedregulho; planta vira vinhas; o resto, onda de choque. */
-function bossAttackKindFor(dexId: number | undefined): SurvivorBossAttackKind {
+/** Cada família de chefe alterna três ataques telegrafados: o assinatura e duas variações. */
+const BOSS_ATTACK_POOLS = {
+  water: ['tsunami', 'cross', 'meteors'],
+  earth: ['boulders', 'meteors', 'thunder'],
+  nature: ['vines', 'thunder', 'cross'],
+  neutral: ['shockwave', 'cross', 'thunder'],
+} as const satisfies Record<string, readonly SurvivorBossAttackKind[]>;
+
+function bossAttackKindFor(dexId: number | undefined, index = 0): SurvivorBossAttackKind {
   const types = new Set(typesOfDex(dexId));
-  if (types.has('water') || types.has('ice')) return 'tsunami';
-  if (types.has('rock') || types.has('ground') || types.has('steel')) return 'boulders';
-  if (types.has('grass') || types.has('bug') || types.has('fairy')) return 'vines';
-  return 'shockwave';
+  const pool = types.has('water') || types.has('ice') ? BOSS_ATTACK_POOLS.water
+    : types.has('rock') || types.has('ground') || types.has('steel') ? BOSS_ATTACK_POOLS.earth
+      : types.has('grass') || types.has('bug') || types.has('fairy') ? BOSS_ATTACK_POOLS.nature
+        : BOSS_ATTACK_POOLS.neutral;
+  return pool[Math.abs(index) % pool.length]!;
 }
 
 function startBossAttack(state: SurvivorState, events: SurvivorEvent[], boss: SurvivorEnemy): void {
@@ -3304,7 +3313,8 @@ function startBossAttack(state: SurvivorState, events: SurvivorEvent[], boss: Su
     events.push({ type: 'arceusSpecial', phase: 'summon', dexId: SURVIVOR_GIRATINA_DEX, name: 'Giratina' });
     return;
   }
-  const kind = arceus ? ARCEUS_ATTACKS[(state.arceusAttacks ?? 0) % ARCEUS_ATTACKS.length]! : bossAttackKindFor(boss.dexId);
+  const kind = arceus ? ARCEUS_ATTACKS[(state.arceusAttacks ?? 0) % ARCEUS_ATTACKS.length]! : bossAttackKindFor(boss.dexId, state.bossAttacks ?? 0);
+  if (!arceus) state.bossAttacks = (state.bossAttacks ?? 0) + 1;
   const telegraphMs = kind === 'lasers' ? ARCEUS_LASER_TELEGRAPH_MS : BOSS_ATTACK_TELEGRAPH_MS;
   const attack: SurvivorBossAttack = {
     kind, phase: 'telegraph', timerMs: telegraphMs, totalMs: telegraphMs,
@@ -3341,6 +3351,23 @@ function startBossAttack(state: SurvivorState, events: SurvivorEvent[], boss: Su
       const starAngle = angle + (index / 5) * Math.PI * 2;
       return { x: p.x + Math.cos(starAngle) * 118, y: p.y + Math.sin(starAngle) * 118, radius: 46 };
     });
+  } else if (kind === 'cross') {
+    // Cruz de feixes retos: quatro braços, um apontando para onde o jogador estava.
+    attack.length = 1180;
+    attack.halfWidth = 26;
+    attack.segments = [0, Math.PI / 2, Math.PI, (Math.PI * 3) / 2].map((offset) => ({ angle: angle + offset, offset: 0 }));
+  } else if (kind === 'thunder') {
+    // Três faixas paralelas: a do meio passa pelo jogador; andar para o lado resolve.
+    attack.length = 1240;
+    attack.halfWidth = 32;
+    attack.segments = [-78, 0, 78].map((offset) => ({ angle, offset }));
+  } else if (kind === 'meteors') {
+    // Seis meteoros em volta do alvo, em duas órbitas, para não fechar o centro.
+    attack.circles = Array.from({ length: 6 }, (_, index) => {
+      const meteorAngle = angle + (index / 6) * Math.PI * 2;
+      const distance = index % 2 === 0 ? 96 : 178;
+      return { x: p.x + Math.cos(meteorAngle) * distance, y: p.y + Math.sin(meteorAngle) * distance, radius: 44 };
+    });
   } else {
     attack.radius = (arceus ? 190 : 160) + Math.min(30, boss.radius * 0.5);
   }
@@ -3360,6 +3387,15 @@ function insideBossAttack(attack: SurvivorBossAttack, p: SurvivorPlayer): boolea
       if (distanceToSegment(p.x, p.y, attack.x, attack.y, endX, endY) <= attack.halfWidth + PLAYER_RADIUS) return true;
     }
     return false;
+  }
+  if (attack.kind === 'cross' || attack.kind === 'thunder') {
+    return (attack.segments ?? []).some((segment) => {
+      const startX = attack.x + Math.cos(segment.angle + Math.PI / 2) * segment.offset;
+      const startY = attack.y + Math.sin(segment.angle + Math.PI / 2) * segment.offset;
+      const endX = startX + Math.cos(segment.angle) * attack.length;
+      const endY = startY + Math.sin(segment.angle) * attack.length;
+      return distanceToSegment(p.x, p.y, startX, startY, endX, endY) <= attack.halfWidth + PLAYER_RADIUS;
+    });
   }
   if (attack.kind === 'tsunami') {
     const endX = attack.x + Math.cos(attack.angle) * attack.length;
@@ -3399,11 +3435,14 @@ function stepBossAttack(state: SurvivorState, events: SurvivorEvent[], dtMs: num
       if (specialProtects(state)) {
         breakSurvivorShield(state);
       } else if (p.invulnMs <= 0) {
-        const multiplier = attack.kind === 'tsunami' ? 0.55 : attack.kind === 'boulders' ? 0.65 : attack.kind === 'vines' ? 0.5 : attack.kind === 'stars' ? 0.6 : 0.55;
+        const multiplier = attack.kind === 'tsunami' ? 0.55 : attack.kind === 'boulders' ? 0.65 : attack.kind === 'vines' ? 0.5 : attack.kind === 'stars' ? 0.6 : attack.kind === 'cross' ? 0.5 : attack.kind === 'thunder' ? 0.55 : attack.kind === 'meteors' ? 0.5 : 0.55;
+        const damageKind = attack.kind === 'tsunami' || attack.kind === 'thunder' || attack.kind === 'cross' ? 'projétil' : 'explosão';
         const incoming = Math.ceil(boss.damage * multiplier * survivorDifficultyEnemyMultiplier(p.difficultyStacks ?? 0));
-        damagePlayer(state, incoming, attack.kind === 'tsunami' ? 'projétil' : 'explosão', hitSource(boss));
+        damagePlayer(state, incoming, damageKind, hitSource(boss));
         if (attack.kind === 'tsunami') p.slowMs = Math.max(p.slowMs ?? 0, 2200);
         if (attack.kind === 'vines') p.stunMs = Math.max(p.stunMs ?? 0, 320);
+        if (attack.kind === 'thunder') p.stunMs = Math.max(p.stunMs ?? 0, 300);
+        if (attack.kind === 'meteors') p.slowMs = Math.max(p.slowMs ?? 0, 900);
         p.invulnMs = hitInvulnerabilityMs(p);
       }
     }

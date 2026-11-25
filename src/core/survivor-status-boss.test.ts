@@ -148,6 +148,27 @@ describe('ataques-assinatura dos chefes', () => {
     expect(s.arceusSpecial).toBeNull();
   });
 
+  it('chefes comuns revezam três ataques telegrafados', () => {
+    const s = quiet(createSurvivorState(55, { kindCount: 1 }));
+    s.player.invulnMs = 1e9;
+    s.player.maxHp = 1000; s.player.hp = 1000;
+    s.enemies = [{ ...boss(s, 7), hp: 1000, maxHp: 1000 }];
+    s.nextBossAttackAtMs = 0;
+    stepSurvivor(s, { dx: 0, dy: 0 }, 16);
+    expect((s.bossAttack as SurvivorBossAttack | null)?.kind).toBe('tsunami');
+    expect((s.bossAttack as SurvivorBossAttack | null)?.phase).toBe('telegraph');
+
+    s.bossAttack = null; s.nextBossAttackAtMs = 0;
+    stepSurvivor(s, { dx: 0, dy: 0 }, 16);
+    expect((s.bossAttack as SurvivorBossAttack | null)?.kind).toBe('cross');
+    expect((s.bossAttack as SurvivorBossAttack | null)?.segments).toHaveLength(4);
+
+    s.bossAttack = null; s.nextBossAttackAtMs = 0;
+    stepSurvivor(s, { dx: 0, dy: 0 }, 16);
+    expect((s.bossAttack as SurvivorBossAttack | null)?.kind).toBe('meteors');
+    expect((s.bossAttack as SurvivorBossAttack | null)?.circles).toHaveLength(6);
+  });
+
   it('o tsunami fere quem fica na faixa e erra quem sai dela', () => {
     const hit = quiet(createSurvivorState(42, { kindCount: 1 }));
     hit.enemies = [boss(hit, 7)];

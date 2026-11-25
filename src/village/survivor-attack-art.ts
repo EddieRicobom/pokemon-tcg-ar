@@ -1021,7 +1021,54 @@ export function drawBossAttack(ctx: CanvasRenderingContext2D, attack: SurvivorBo
   const pulse = 0.5 + 0.5 * Math.sin(timeMs / 130);
   const point = (x: number, y: number) => map(x, y, 0);
   ctx.save();
-  if (attack.kind === 'lasers') {
+  if (attack.kind === 'cross' || attack.kind === 'thunder') {
+    const thunder = attack.kind === 'thunder';
+    const color = thunder ? '#9fe8ff' : '#ffe066';
+    ctx.lineCap = 'round';
+    for (const segment of attack.segments ?? []) {
+      const startX = attack.x + Math.cos(segment.angle + Math.PI / 2) * segment.offset;
+      const startY = attack.y + Math.sin(segment.angle + Math.PI / 2) * segment.offset;
+      const start = point(startX, startY);
+      const end = point(startX + Math.cos(segment.angle) * attack.length, startY + Math.sin(segment.angle) * attack.length);
+      if (!start || !end) continue;
+      ctx.setLineDash(telegraph ? [9, 7] : []);
+      ctx.globalAlpha = telegraph ? 0.2 + pulse * 0.08 : 0.72;
+      ctx.strokeStyle = color;
+      ctx.lineWidth = telegraph ? 2 : 4;
+      ctx.beginPath(); ctx.moveTo(start.x, start.y); ctx.lineTo(end.x, end.y); ctx.stroke();
+      if (!telegraph) {
+        ctx.globalAlpha = 0.3;
+        ctx.lineWidth = thunder ? 14 : 18;
+        ctx.strokeStyle = color;
+        ctx.beginPath(); ctx.moveTo(start.x, start.y); ctx.lineTo(end.x, end.y); ctx.stroke();
+        ctx.globalAlpha = 0.92;
+        ctx.lineWidth = 1.5;
+        ctx.strokeStyle = '#ffffff';
+        ctx.beginPath(); ctx.moveTo(start.x, start.y); ctx.lineTo(end.x, end.y); ctx.stroke();
+      }
+      if (thunder && detailed && !telegraph) {
+        // Pequenos galhos laterais para ler como raio, sem mudar a faixa de dano.
+        ctx.setLineDash([]);
+        ctx.globalAlpha = 0.7;
+        ctx.strokeStyle = '#d8f6ff';
+        ctx.lineWidth = 1.5;
+        for (let k = 1; k <= 3; k++) {
+          const p = k / 4;
+          const bx = start.x + (end.x - start.x) * p;
+          const by = start.y + (end.y - start.y) * p;
+          ctx.beginPath(); ctx.moveTo(bx, by); ctx.lineTo(bx + 8, by - 12); ctx.stroke();
+        }
+      }
+    }
+    ctx.setLineDash([]);
+    const center = point(attack.x, attack.y);
+    if (center) {
+      ctx.globalAlpha = telegraph ? 0.45 : 0.7;
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 2.5;
+      ctx.beginPath(); ctx.arc(center.x, center.y, (24 + pulse * 5) * center.s, 0, Math.PI * 2); ctx.stroke();
+    }
+  } else if (attack.kind === 'lasers') {
     const beams = attack.beams ?? 3;
     const rotation = attack.rotation ?? 0;
     const center = point(attack.x, attack.y);
@@ -1137,15 +1184,27 @@ export function drawBossAttack(ctx: CanvasRenderingContext2D, attack: SurvivorBo
       const radius = circle.radius * scale;
       const green = attack.kind === 'vines';
       const star = attack.kind === 'stars';
-      ctx.globalAlpha = telegraph ? (green ? 0.26 + pulse * 0.06 : star ? 0.2 + pulse * 0.08 : 0.14 + pulse * 0.05) : 0.08;
-      ctx.fillStyle = green ? '#2f6b32' : star ? '#7a5a16' : '#a87848';
+      const meteor = attack.kind === 'meteors';
+      ctx.globalAlpha = telegraph ? (green ? 0.26 + pulse * 0.06 : star ? 0.2 + pulse * 0.08 : meteor ? 0.22 + pulse * 0.08 : 0.14 + pulse * 0.05) : 0.08;
+      ctx.fillStyle = green ? '#2f6b32' : star ? '#7a5a16' : meteor ? '#6b3a1e' : '#a87848';
       ctx.beginPath(); ctx.arc(center.x, center.y, radius, 0, Math.PI * 2); ctx.fill();
-      ctx.globalAlpha = telegraph ? (green ? 0.9 : star ? 0.9 : 0.7) : 0.4;
-      ctx.strokeStyle = green ? '#d8ff96' : star ? '#ffe066' : '#ffcf5a';
-      ctx.lineWidth = green || star ? 3 : 2;
+      ctx.globalAlpha = telegraph ? (green ? 0.9 : star ? 0.9 : meteor ? 0.9 : 0.7) : 0.4;
+      ctx.strokeStyle = green ? '#d8ff96' : star ? '#ffe066' : meteor ? '#ffb35c' : '#ffcf5a';
+      ctx.lineWidth = green || star || meteor ? 3 : 2;
       ctx.setLineDash([8, 6]);
       ctx.beginPath(); ctx.arc(center.x, center.y, radius, 0, Math.PI * 2); ctx.stroke();
       ctx.setLineDash([]);
+      if (meteor) {
+        ctx.globalAlpha = telegraph ? 0.8 : 0.55;
+        ctx.fillStyle = '#ffb35c';
+        ctx.beginPath(); ctx.ellipse(center.x, center.y - radius * 0.2, radius * 0.38, radius * 0.28, -0.5, 0, Math.PI * 2); ctx.fill();
+        if (telegraph && detailed) {
+          ctx.globalAlpha = 0.45;
+          ctx.strokeStyle = '#ffd7a0';
+          ctx.lineWidth = 2;
+          ctx.beginPath(); ctx.moveTo(center.x + radius * 0.2, center.y - radius * 0.5); ctx.lineTo(center.x + radius * 0.6, center.y - radius * 1.1); ctx.stroke();
+        }
+      }
       if (star) {
         ctx.globalAlpha = telegraph ? 0.9 : 0.55;
         ctx.fillStyle = '#fff3b8';

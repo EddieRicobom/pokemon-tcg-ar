@@ -345,7 +345,7 @@ export interface SurvivorFinalHit extends SurvivorHitSource {
 }
 
 /** Ataques-assinatura dos chefes: sempre telegrafados e com uma saída clara. */
-export type SurvivorBossAttackKind = 'tsunami' | 'boulders' | 'vines' | 'shockwave' | 'lasers' | 'stars';
+export type SurvivorBossAttackKind = 'tsunami' | 'boulders' | 'vines' | 'shockwave' | 'lasers' | 'stars' | 'cross' | 'thunder' | 'meteors';
 
 /** Especial único do Arceus: Giratina persegue e, ao alcançar, Palkia e Dialga param o tempo. */
 export interface SurvivorArceusSpecial {
@@ -372,6 +372,8 @@ export interface SurvivorBossAttack {
   halfWidth: number;
   radius: number;
   circles: SurvivorBossAttackCircle[];
+  /** Feixes retos (cruz e raios) com ângulo e deslocamento lateral em relação ao chefe. */
+  segments?: { angle: number; offset: number }[];
   /** Lasers do Arceus: quantidade de raios e giro acumulado em radianos. */
   beams?: number;
   rotation?: number;
@@ -596,6 +598,8 @@ export interface SurvivorState {
   };
   /** Quantos ataques o Arceus já iniciou, para alternar lasers, onda e estrelas. */
   arceusAttacks?: number;
+  /** Quantos ataques regulares os chefes já usaram, para revezar as variações telegrafadas. */
+  bossAttacks?: number;
   /** Especial do Arceus: Giratina persegue e Palkia/Dialga paralisam o jogador. */
   arceusSpecial?: SurvivorArceusSpecial | null;
   /** O especial do Arceus só pode acontecer uma vez por batalha. */

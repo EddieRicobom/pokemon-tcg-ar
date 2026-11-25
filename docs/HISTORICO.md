@@ -5,6 +5,15 @@ O estado atual, as fases, as pendências e os riscos continuam no [plano](../IMP
 datadas (com o que foi e o que não foi validado em cada uma). A regra de validação do plano vale também para estas entradas:
 🔶 significa que **nada foi visto num celular real**.
 
+## Torre: mais ataques telegrafados nos outros chefes (25/11/2026)
+
+- Cada família de chefe agora reveza **três ataques**, em vez de repetir sempre o mesmo: água/gelo (tsunami → cruz → meteoros), terra/pedra/aço (pedras → meteoros → raios), planta/inseto/fada (vinhas → raios → cruz) e os demais (onda → cruz → raios).
+- **Cruz de luz:** quatro braços retos a partir do chefe, um apontado para onde o jogador estava; o telegrafo tracejado mostra as faixas.
+- **Raios:** três faixas paralelas, com a do meio passando pelo jogador; encostar também atordoa por 0,3 s.
+- **Meteoros:** seis círculos em duas órbitas em volta do alvo, com o centro livre; encostar deixa o jogador lento por 0,9 s.
+- Todos continuam com 1,2 s de telegrafo, aviso no HUD («✚ Cruz de luz!», «⚡ Raios!», «☄️ Meteoros!») e desenho próprio no chão. O contador `bossAttacks` fica no save; Arceus mantém a sequência própria.
+- 🔶 Typecheck, 65 arquivos / 715 testes do Survival, suíte completa (344 arquivos / 3434 testes), build e os 14 testes de layout passaram. Não fiz a luta humana completa contra cada família.
+
 ## Torre: especial de Giratina, Palkia e Dialga no Arceus (25/11/2026)
 
 - Depois de três ataques normais (lasers, onda e estrelas), o Arceus usa **uma vez por batalha** o especial: invoca a sombra de **Giratina**, que sai do chão e persegue o jogador a 330 px/s por até 5,2 s.
