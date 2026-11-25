@@ -5,6 +5,12 @@ O estado atual, as fases, as pendências e os riscos continuam no [plano](../IMP
 datadas (com o que foi e o que não foi validado em cada uma). A regra de validação do plano vale também para estas entradas:
 🔶 significa que **nada foi visto num celular real**.
 
+## Torre: XP do late game muito mais caro (25/11/2026)
+
+- **Curva de XP:** `xpForLevel` continua linear até o nível 20 (início e evoluções no mesmo ritmo) e ganha um termo quadrático a partir do 21. O custo do próximo nível sai de ~460 no nível 56 para ~1.626 (3,5×), e de ~572 no nível 70 para ~2.822 (4,9×). O objetivo é acabar com a enxurrada de níveis no fim da corrida sem mexer no começo.
+- **Transparência:** a legenda do HUD na pausa explica que o custo acelera de propósito depois do nível 20.
+- 🔶 Typecheck, 68 arquivos / 725 testes do Survival, suíte completa (347 arquivos / 3444 testes), build e os 14 testes de layout passaram. O equilíbrio do late game ainda precisa de playtest humano; não testado em celular real.
+
 ## Torre: jogador sem círculos e robustez dos recordes (25/11/2026)
 
 - **Sem círculos no jogador:** removidos o anel duplo, o halo escuro e os anéis de Terastal/Mega em volta do sprite, além do aro colorido da sombra. O status (queimado/lento/atordoado) continua acima do personagem, o glifo do Terastal fica no canto e os chips do HUD seguem mostrando Terastal e Mega.

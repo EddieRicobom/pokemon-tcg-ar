@@ -95,6 +95,9 @@ export const BASIC_MOVE: SurvivorMove = { type: 'normal', name: 'Golpe', categor
 export const BALANCE = {
   xpBase: 12,
   xpPerLevel: 8,
+  /** A partir daqui o custo do nível ganha um termo quadrático: o late game não vira uma chuva de níveis. */
+  xpLateFromLevel: 20,
+  xpLateQuadratic: 0.9,
   /** Orbes soltam 65% da XP anterior; o resto fracionário é carregado para o próximo orbe. */
   xpOrbMultiplier: 0.65,
   /** Chefes periódicos: ameaças raras, mas com vida suficiente para exigir reposicionamento e coleta sob pressão. */
@@ -202,7 +205,9 @@ export function normalizeSurvivorXp(value: number): number {
 }
 
 export function xpForLevel(level: number): number {
-  return normalizeSurvivorXp(Math.round(BALANCE.xpBase + level * BALANCE.xpPerLevel));
+  // Até o nível 20 a curva continua linear (início e evoluções no mesmo ritmo); depois o custo acelera.
+  const late = Math.max(0, level - BALANCE.xpLateFromLevel);
+  return normalizeSurvivorXp(Math.round(BALANCE.xpBase + level * BALANCE.xpPerLevel + late * late * BALANCE.xpLateQuadratic));
 }
 
 export interface CreateSurvivorOptions {
