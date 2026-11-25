@@ -1021,7 +1021,41 @@ export function drawBossAttack(ctx: CanvasRenderingContext2D, attack: SurvivorBo
   const pulse = 0.5 + 0.5 * Math.sin(timeMs / 130);
   const point = (x: number, y: number) => map(x, y, 0);
   ctx.save();
-  if (attack.kind === 'tsunami') {
+  if (attack.kind === 'lasers') {
+    const beams = attack.beams ?? 3;
+    const rotation = attack.rotation ?? 0;
+    const center = point(attack.x, attack.y);
+    if (center) {
+      for (let index = 0; index < beams; index++) {
+        const beamAngle = attack.angle + rotation + (index / beams) * Math.PI * 2;
+        const end = point(attack.x + Math.cos(beamAngle) * attack.length, attack.y + Math.sin(beamAngle) * attack.length);
+        if (!end) continue;
+        const width = Math.max(2, attack.halfWidth * center.s);
+        ctx.lineCap = 'round';
+        ctx.setLineDash(telegraph ? [10, 8] : []);
+        ctx.globalAlpha = telegraph ? 0.2 + pulse * 0.08 : 0.7;
+        ctx.strokeStyle = telegraph ? '#ffe9a6' : '#fff6c4';
+        ctx.lineWidth = telegraph ? 2 : 4;
+        ctx.beginPath(); ctx.moveTo(center.x, center.y); ctx.lineTo(end.x, end.y); ctx.stroke();
+        if (!telegraph) {
+          ctx.setLineDash([]);
+          ctx.globalAlpha = 0.28;
+          ctx.strokeStyle = '#ffcf5a';
+          ctx.lineWidth = Math.max(6, width * 1.5);
+          ctx.beginPath(); ctx.moveTo(center.x, center.y); ctx.lineTo(end.x, end.y); ctx.stroke();
+          ctx.globalAlpha = 0.9;
+          ctx.strokeStyle = '#ffffff';
+          ctx.lineWidth = 1.5;
+          ctx.beginPath(); ctx.moveTo(center.x, center.y); ctx.lineTo(end.x, end.y); ctx.stroke();
+        }
+      }
+      ctx.setLineDash([]);
+      ctx.globalAlpha = telegraph ? 0.45 : 0.7;
+      ctx.strokeStyle = '#ffe066';
+      ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.arc(center.x, center.y, (28 + pulse * 6) * center.s, 0, Math.PI * 2); ctx.stroke();
+    }
+  } else if (attack.kind === 'tsunami') {
     const endX = attack.x + Math.cos(attack.angle) * attack.length;
     const endY = attack.y + Math.sin(attack.angle) * attack.length;
     const nx = -Math.sin(attack.angle) * attack.halfWidth;
@@ -1102,15 +1136,24 @@ export function drawBossAttack(ctx: CanvasRenderingContext2D, attack: SurvivorBo
       const scale = center.s;
       const radius = circle.radius * scale;
       const green = attack.kind === 'vines';
-      ctx.globalAlpha = telegraph ? (green ? 0.26 + pulse * 0.06 : 0.14 + pulse * 0.05) : 0.08;
-      ctx.fillStyle = green ? '#2f6b32' : '#a87848';
+      const star = attack.kind === 'stars';
+      ctx.globalAlpha = telegraph ? (green ? 0.26 + pulse * 0.06 : star ? 0.2 + pulse * 0.08 : 0.14 + pulse * 0.05) : 0.08;
+      ctx.fillStyle = green ? '#2f6b32' : star ? '#7a5a16' : '#a87848';
       ctx.beginPath(); ctx.arc(center.x, center.y, radius, 0, Math.PI * 2); ctx.fill();
-      ctx.globalAlpha = telegraph ? (green ? 0.9 : 0.7) : 0.4;
-      ctx.strokeStyle = green ? '#d8ff96' : '#ffcf5a';
-      ctx.lineWidth = green ? 3 : 2;
+      ctx.globalAlpha = telegraph ? (green ? 0.9 : star ? 0.9 : 0.7) : 0.4;
+      ctx.strokeStyle = green ? '#d8ff96' : star ? '#ffe066' : '#ffcf5a';
+      ctx.lineWidth = green || star ? 3 : 2;
       ctx.setLineDash([8, 6]);
       ctx.beginPath(); ctx.arc(center.x, center.y, radius, 0, Math.PI * 2); ctx.stroke();
       ctx.setLineDash([]);
+      if (star) {
+        ctx.globalAlpha = telegraph ? 0.9 : 0.55;
+        ctx.fillStyle = '#fff3b8';
+        ctx.font = `bold ${Math.max(10, Math.round(18 * scale))}px system-ui`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('✦', center.x, center.y);
+      }
       if (telegraph && detailed && green) {
         // Brotos crescendo: mais visíveis que uma rachadura fina no gramado.
         ctx.globalAlpha = 0.85;

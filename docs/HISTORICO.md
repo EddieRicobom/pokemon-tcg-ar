@@ -5,6 +5,15 @@ O estado atual, as fases, as pendências e os riscos continuam no [plano](../IMP
 datadas (com o que foi e o que não foi validado em cada uma). A regra de validação do plano vale também para estas entradas:
 🔶 significa que **nada foi visto num celular real**.
 
+## Torre: Arceus com lasers giratórios e estrelas (25/11/2026)
+
+- **Três ataques-assinatura alternados:** a cada ataque o Arceus reveza **lasers**, **onda dourada** e **chuva de estrelas** (o contador `arceusAttacks` fica no save).
+- **Lasers:** três raios compridos saem do corpo do Arceus e giram a **0,5 rad/s** por 3,6 s, depois de 1,5 s de telegrafo tracejado. Encostar custa 35% do dano do chefe, com 900 ms entre acertos — dá para atravessar o vão entre os raios andando.
+- **Onda dourada:** raio maior que a onda dos outros chefes (190 + bônus de tamanho).
+- **Estrelas:** cinco círculos dourados fecham a volta do jogador, com o centro livre; cada um estrela no chão e explode uma vez, como os pedregulhos.
+- **Leitura:** o HUD avisa «⚡ Lasers girando!», «💥 Onda de choque!» ou «🌟 Estrelas!», e as linhas/círculos usam ouro, tracejado e brilho do Arceus.
+- 🔶 Typecheck, 65 arquivos / 714 testes do Survival, suíte completa (344 arquivos / 3433 testes), build e os 14 testes de layout passaram. Conferi o desenho e a rotação no motor; não fiz a luta humana completa contra o Arceus.
+
 ## Torre: controles para destros e canhotos, Arceus no Perigo Digital e feedback (25/11/2026)
 
 - **Botões de foco removidos:** a faixa com os três botões Chefe/Cura/Fraco saiu da tela; o ataque automático continua escolhendo o alvo por distância (o `targetPriority` do motor ficou para saves/testes antigos, mas não há mais botão na interface).

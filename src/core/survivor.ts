@@ -355,6 +355,7 @@ export function createSurvivorState(seed: number, options: CreateSurvivorOptions
     digitalDanger: 0,
     digitalDangerCooldownMs: 0,
     arceusEncounter: { phase: 'idle', arrivalMs: 0 },
+    arceusAttacks: 0,
     shadowEncounter: { phase: 'idle', dexId: shadowGuardian.dexId, name: shadowGuardian.name, arrivalMs: 0 },
     nextShadowBallAtMs: survivorMilestoneMs(SURVIVOR_SHADOW_BALL_FIRST_MS, fast),
     shadowBallsSpawned: 0,
@@ -3264,6 +3265,12 @@ const BOSS_ATTACK_FIRST_MS = 5000;
 const BOSS_ATTACK_EVERY_MS = 9500;
 const BOSS_ATTACK_TELEGRAPH_MS = 1200;
 const BOSS_ATTACK_ACTIVE_MS = 520;
+/** Arceus: lasers lentos, onda dourada e chuva de estrelas, alternados a cada ataque. */
+const ARCEUS_ATTACKS: readonly SurvivorBossAttackKind[] = ['lasers', 'shockwave', 'stars'];
+const ARCEUS_LASER_TELEGRAPH_MS = 1500;
+const ARCEUS_LASER_ACTIVE_MS = 3600;
+const ARCEUS_LASER_BEAMS = 3;
+const ARCEUS_LASER_SPIN = 0.5;
 
 /** Água/gelo vira tsunami; pedra vira pedregulho; planta vira vinhas; o resto, onda de choque. */
 function bossAttackKindFor(dexId: number | undefined): SurvivorBossAttackKind {
@@ -3277,12 +3284,20 @@ function bossAttackKindFor(dexId: number | undefined): SurvivorBossAttackKind {
 function startBossAttack(state: SurvivorState, events: SurvivorEvent[], boss: SurvivorEnemy): void {
   const p = state.player;
   const angle = Math.atan2(p.y - boss.y, p.x - boss.x);
-  const kind = bossAttackKindFor(boss.dexId);
+  const arceus = boss.arceus === true;
+  const kind = arceus ? ARCEUS_ATTACKS[(state.arceusAttacks ?? 0) % ARCEUS_ATTACKS.length]! : bossAttackKindFor(boss.dexId);
+  const telegraphMs = kind === 'lasers' ? ARCEUS_LASER_TELEGRAPH_MS : BOSS_ATTACK_TELEGRAPH_MS;
   const attack: SurvivorBossAttack = {
-    kind, phase: 'telegraph', timerMs: BOSS_ATTACK_TELEGRAPH_MS, totalMs: BOSS_ATTACK_TELEGRAPH_MS,
+    kind, phase: 'telegraph', timerMs: telegraphMs, totalMs: telegraphMs,
     bossId: boss.id, x: boss.x, y: boss.y, angle, length: 0, halfWidth: 0, radius: 0, circles: [], hit: false,
   };
-  if (kind === 'tsunami') {
+  if (kind === 'lasers') {
+    attack.length = 1280;
+    attack.halfWidth = 20;
+    attack.beams = ARCEUS_LASER_BEAMS;
+    attack.rotation = 0;
+    attack.hitCooldownMs = 250;
+  } else if (kind === 'tsunami') {
     attack.length = Math.max(620, Math.min(1180, Math.hypot(p.x - boss.x, p.y - boss.y) + 360));
     attack.halfWidth = 62 + Math.min(24, boss.radius * 0.5);
   } else if (kind === 'boulders') {
@@ -3301,14 +3316,32 @@ function startBossAttack(state: SurvivorState, events: SurvivorEvent[], boss: Su
       { x: p.x + sideX, y: p.y + sideY, radius: 42 },
       { x: p.x - sideX, y: p.y - sideY, radius: 42 },
     ];
+  } else if (kind === 'stars') {
+    // Cinco estrelas em volta do alvo: o centro fica livre, as bordas fecham a saída.
+    attack.circles = Array.from({ length: 5 }, (_, index) => {
+      const starAngle = angle + (index / 5) * Math.PI * 2;
+      return { x: p.x + Math.cos(starAngle) * 118, y: p.y + Math.sin(starAngle) * 118, radius: 46 };
+    });
   } else {
-    attack.radius = 160 + Math.min(30, boss.radius * 0.5);
+    attack.radius = (arceus ? 190 : 160) + Math.min(30, boss.radius * 0.5);
   }
+  if (arceus) state.arceusAttacks = (state.arceusAttacks ?? 0) + 1;
   state.bossAttack = attack;
   events.push({ type: 'bossAttack', kind, bossId: boss.id });
 }
 
 function insideBossAttack(attack: SurvivorBossAttack, p: SurvivorPlayer): boolean {
+  if (attack.kind === 'lasers') {
+    const beams = attack.beams ?? ARCEUS_LASER_BEAMS;
+    const rotation = attack.rotation ?? 0;
+    for (let index = 0; index < beams; index++) {
+      const beamAngle = attack.angle + rotation + (index / beams) * Math.PI * 2;
+      const endX = attack.x + Math.cos(beamAngle) * attack.length;
+      const endY = attack.y + Math.sin(beamAngle) * attack.length;
+      if (distanceToSegment(p.x, p.y, attack.x, attack.y, endX, endY) <= attack.halfWidth + PLAYER_RADIUS) return true;
+    }
+    return false;
+  }
   if (attack.kind === 'tsunami') {
     const endX = attack.x + Math.cos(attack.angle) * attack.length;
     const endY = attack.y + Math.sin(attack.angle) * attack.length;
@@ -3342,12 +3375,12 @@ function stepBossAttack(state: SurvivorState, events: SurvivorEvent[], dtMs: num
   }
   attack.timerMs -= dtMs;
   if (attack.phase === 'telegraph' && attack.timerMs <= 0) {
-    if (!attack.hit && !airborne && insideBossAttack(attack, p)) {
+    if (attack.kind !== 'lasers' && !attack.hit && !airborne && insideBossAttack(attack, p)) {
       attack.hit = true;
       if (specialProtects(state)) {
         breakSurvivorShield(state);
       } else if (p.invulnMs <= 0) {
-        const multiplier = attack.kind === 'tsunami' ? 0.55 : attack.kind === 'boulders' ? 0.65 : attack.kind === 'vines' ? 0.5 : 0.55;
+        const multiplier = attack.kind === 'tsunami' ? 0.55 : attack.kind === 'boulders' ? 0.65 : attack.kind === 'vines' ? 0.5 : attack.kind === 'stars' ? 0.6 : 0.55;
         const incoming = Math.ceil(boss.damage * multiplier * survivorDifficultyEnemyMultiplier(p.difficultyStacks ?? 0));
         damagePlayer(state, incoming, attack.kind === 'tsunami' ? 'projétil' : 'explosão', hitSource(boss));
         if (attack.kind === 'tsunami') p.slowMs = Math.max(p.slowMs ?? 0, 2200);
@@ -3356,13 +3389,30 @@ function stepBossAttack(state: SurvivorState, events: SurvivorEvent[], dtMs: num
       }
     }
     attack.phase = 'active';
-    attack.timerMs = BOSS_ATTACK_ACTIVE_MS;
-    attack.totalMs = BOSS_ATTACK_ACTIVE_MS;
+    attack.timerMs = attack.kind === 'lasers' ? ARCEUS_LASER_ACTIVE_MS : BOSS_ATTACK_ACTIVE_MS;
+    attack.totalMs = attack.timerMs;
     return;
   }
-  if (attack.phase === 'active' && attack.timerMs <= 0) {
-    state.bossAttack = null;
-    state.nextBossAttackAtMs = state.elapsedMs + BOSS_ATTACK_EVERY_MS;
+  if (attack.phase === 'active') {
+    if (attack.kind === 'lasers') {
+      // Os raios giram devagar: dá para andar no vão entre eles.
+      attack.rotation = (attack.rotation ?? 0) + ARCEUS_LASER_SPIN * (dtMs / 1000);
+      attack.hitCooldownMs = Math.max(0, (attack.hitCooldownMs ?? 0) - dtMs);
+      if (attack.hitCooldownMs === 0 && !airborne && p.invulnMs <= 0 && insideBossAttack(attack, p)) {
+        if (specialProtects(state)) {
+          breakSurvivorShield(state);
+        } else {
+          const incoming = Math.ceil(boss.damage * 0.35 * survivorDifficultyEnemyMultiplier(p.difficultyStacks ?? 0));
+          damagePlayer(state, incoming, 'projétil', hitSource(boss));
+          p.invulnMs = hitInvulnerabilityMs(p);
+        }
+        attack.hitCooldownMs = 900;
+      }
+    }
+    if (attack.timerMs <= 0) {
+      state.bossAttack = null;
+      state.nextBossAttackAtMs = state.elapsedMs + BOSS_ATTACK_EVERY_MS;
+    }
   }
 }
 
