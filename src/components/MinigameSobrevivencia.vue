@@ -917,7 +917,8 @@ const bossBar = computed(() => {
 const bossAttackWarning = computed(() => {
   const attack = state.value?.bossAttack;
   if (!attack || attack.phase !== 'telegraph') return null;
-  return attack.kind === 'tsunami' ? '🌊 Tsunami!' : attack.kind === 'boulders' ? '🪨 Pedras!' : attack.kind === 'vines' ? '🌿 Vinhas!' : attack.kind === 'lasers' ? '⚡ Lasers girando!' : attack.kind === 'stars' ? '🌟 Estrelas!' : attack.kind === 'cross' ? '✚ Cruz de luz!' : attack.kind === 'thunder' ? '⚡ Raios!' : attack.kind === 'meteors' ? '☄️ Meteoros!' : '💥 Onda de choque!';
+  const name = attack.name || (attack.kind === 'tsunami' ? 'Tsunami' : attack.kind === 'boulders' ? 'Pedras' : attack.kind === 'vines' ? 'Vinhas' : attack.kind === 'lasers' ? 'Lasers girando' : attack.kind === 'stars' ? 'Estrelas' : attack.kind === 'cross' ? 'Cruz de luz' : attack.kind === 'thunder' ? 'Raios' : attack.kind === 'meteors' ? 'Meteoros' : 'Onda de choque');
+  return `${attack.theme ? `${TYPE_GLYPHS[attack.theme]} ` : ''}${name}!`;
 });
 /** Números do menu de pausa: dano, média por segundo e o que está em campo. */
 const runNumbers = computed(() => (state.value ? survivorRunNumbers(state.value) : null));

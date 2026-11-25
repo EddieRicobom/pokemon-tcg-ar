@@ -5,14 +5,13 @@ O estado atual, as fases, as pendências e os riscos continuam no [plano](../IMP
 datadas (com o que foi e o que não foi validado em cada uma). A regra de validação do plano vale também para estas entradas:
 🔶 significa que **nada foi visto num celular real**.
 
-## Torre: mais ataques telegrafados nos outros chefes (25/11/2026)
+## Torre: ataques telegrafados por tipo nos chefes (25/11/2026)
 
-- Cada família de chefe agora reveza **três ataques**, em vez de repetir sempre o mesmo: água/gelo (tsunami → cruz → meteoros), terra/pedra/aço (pedras → meteoros → raios), planta/inseto/fada (vinhas → raios → cruz) e os demais (onda → cruz → raios).
-- **Cruz de luz:** quatro braços retos a partir do chefe, um apontado para onde o jogador estava; o telegrafo tracejado mostra as faixas.
-- **Raios:** três faixas paralelas, com a do meio passando pelo jogador; encostar também atordoa por 0,3 s.
-- **Meteoros:** seis círculos em duas órbitas em volta do alvo, com o centro livre; encostar deixa o jogador lento por 0,9 s.
-- Todos continuam com 1,2 s de telegrafo, aviso no HUD («✚ Cruz de luz!», «⚡ Raios!», «☄️ Meteoros!») e desenho próprio no chão. O contador `bossAttacks` fica no save; Arceus mantém a sequência própria.
-- 🔶 Typecheck, 65 arquivos / 715 testes do Survival, suíte completa (344 arquivos / 3434 testes), build e os 14 testes de layout passaram. Não fiz a luta humana completa contra cada família.
+- Cada um dos 18 tipos agora tem a própria sequência de **três ataques telegrafados**, em vez de quatro famílias genéricas. O padrão mecânico pode repetir — o que muda é o nome, a cor e o motivo visual do tipo.
+- Exemplos: Fogo (Erupção → Pilares de fogo → Chuva de brasas), Água (Tsunami → Jatos cruzados → Bolhas pressurizadas), Elétrico (Descarga → Raios cruzados → Tempestade), Planta (Vinhas → Sementes → Chicote de folhas), Gelo (Maremoto gélido → Granizo → Estilhaços), Psíquico (Pulso psíquico → Cruz mental → Estrelas mentais), Fantasma (Maldição → Sombras → Almas penadas), Fada (Pó mágico → Estrelas → Luz), entre outros. A primeira entrada de cada tipo mantém o ataque-assinatura antigo.
+- **Mecânicas novas:** cruz de luz (quatro braços retos), raios (três faixas paralelas com atordoamento curto) e meteoros (seis círculos em duas órbitas com lentidão). Todas com 1,2 s de telegrafo e aviso no HUD com o nome do ataque.
+- **Visual por tipo:** a arte usa a cor do tipo, um glifo do elemento e pequenos motes com forma própria (chama, gota, faísca, folha, cristal, bolha, pedra, pena, anel, asa, losango, sombra, engrenagem, estrela…). O contador `bossAttacks` fica no save; Arceus mantém a sequência própria.
+- 🔶 Typecheck, 65 arquivos / 715 testes do Survival, suíte completa (344 arquivos / 3434 testes), build e os 14 testes de layout passaram. Não fiz a luta humana completa contra cada tipo.
 
 ## Torre: especial de Giratina, Palkia e Dialga no Arceus (25/11/2026)
 

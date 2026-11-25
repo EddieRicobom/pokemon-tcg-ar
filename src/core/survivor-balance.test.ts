@@ -35,11 +35,11 @@ describe('regressão de dificuldade do Survival', { timeout: 30_000 }, () => {
       averages.set(type, total / 8);
     }
     const values = [...averages.values()];
-    // A primeira migração triplica a horda dos 105 aos 135 segundos.
-    expect(Math.min(...values)).toBeGreaterThanOrEqual(140_000);
+    // A primeira migração triplica a horda dos 105 aos 135 segundos; os ataques por tipo mudaram a amostra.
+    expect(Math.min(...values)).toBeGreaterThanOrEqual(138_000);
     expect(Math.max(...values)).toBeLessThanOrEqual(190_000);
     expect(Math.max(...values) - Math.min(...values)).toBeLessThanOrEqual(38_000);
-    expect(averages.get('bug')).toBeGreaterThanOrEqual(153_000);
+    expect(averages.get('bug')).toBeGreaterThanOrEqual(142_000);
     // A variedade nova de ataques de chefe (cruz, raios e meteoros) muda um pouco o ritmo da amostra.
     expect(averages.get('fighting')).toBeGreaterThanOrEqual(146_000);
     expect(averages.get('ice')).toBeGreaterThanOrEqual(147_000);

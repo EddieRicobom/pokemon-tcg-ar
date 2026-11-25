@@ -1,4 +1,6 @@
 import type { PokemonType } from '../core/pokemon-data';
+import { TYPE_COLORS } from '../core/pokemon-data';
+import { TYPE_GLYPHS } from '../core/type-glyphs';
 import type { SurvivorFx, SurvivorPlayer } from '../core/survivor';
 import type { SurvivorBossAttack } from '../core/survivor-types';
 import { projectileTierScale, type SurvivorProjectileLook } from '../core/survivor-projectile-power';
@@ -1015,15 +1017,59 @@ export function drawHostileProjectile(ctx: CanvasRenderingContext2D, shot: Hosti
  * Telegrafo e efeito dos ataques-assinatura dos chefes. O desenho usa o mesmo `WorldToScreen` do resto da arte, então
  * serve à vista de cima e ao BONK. O dano nunca é decidido aqui: o motor já resolveu a área antes.
  */
+/** Pequenos motes do tipo em volta do chefe: cada elemento tem forma própria além da cor. */
+function drawBossTypeMotes(ctx: CanvasRenderingContext2D, theme: PokemonType, x: number, y: number, scale: number, timeMs: number): void {
+  const color = TYPE_COLORS[theme] ?? '#fff3b8';
+  ctx.save();
+  ctx.fillStyle = color;
+  ctx.strokeStyle = color;
+  for (let i = 0; i < 6; i++) {
+    const angle = timeMs / 520 + (i / 6) * Math.PI * 2;
+    const mx = x + Math.cos(angle) * 38 * scale;
+    const my = y + Math.sin(angle) * 21 * scale;
+    ctx.globalAlpha = 0.35 + 0.25 * (0.5 + 0.5 * Math.sin(timeMs / 280 + i));
+    ctx.lineWidth = 1.6;
+    if (theme === 'fire' || theme === 'dark' || theme === 'normal' || theme === 'bug') {
+      ctx.beginPath(); ctx.arc(mx, my, 2.2 * scale, 0, Math.PI * 2); ctx.fill();
+    } else if (theme === 'water' || theme === 'poison') {
+      ctx.beginPath(); ctx.ellipse(mx, my, 1.9 * scale, 3.2 * scale, angle, 0, Math.PI * 2); ctx.fill();
+    } else if (theme === 'electric') {
+      ctx.beginPath(); ctx.moveTo(mx - 2 * scale, my - 3 * scale); ctx.lineTo(mx + 1 * scale, my); ctx.lineTo(mx - 1 * scale, my + 3 * scale); ctx.stroke();
+    } else if (theme === 'grass') {
+      ctx.beginPath(); ctx.ellipse(mx, my, 3.4 * scale, 1.3 * scale, angle, 0, Math.PI * 2); ctx.fill();
+    } else if (theme === 'ice' || theme === 'dragon') {
+      ctx.beginPath(); ctx.moveTo(mx, my - 3.5 * scale); ctx.lineTo(mx + 2.6 * scale, my); ctx.lineTo(mx, my + 3.5 * scale); ctx.lineTo(mx - 2.6 * scale, my); ctx.closePath(); ctx.fill();
+    } else if (theme === 'ground' || theme === 'rock') {
+      ctx.fillRect(mx - 2 * scale, my - 2 * scale, 4 * scale, 4 * scale);
+    } else if (theme === 'flying') {
+      ctx.beginPath(); ctx.arc(mx, my, 4 * scale, 0.2, Math.PI - 0.2); ctx.stroke();
+    } else if (theme === 'psychic') {
+      ctx.beginPath(); ctx.arc(mx, my, 3 * scale, 0, Math.PI * 2); ctx.stroke();
+    } else if (theme === 'ghost') {
+      ctx.beginPath(); ctx.arc(mx, my, 3 * scale, 0, Math.PI * 1.4); ctx.stroke();
+    } else if (theme === 'steel') {
+      ctx.beginPath(); ctx.moveTo(mx - 3 * scale, my); ctx.lineTo(mx + 3 * scale, my); ctx.moveTo(mx, my - 3 * scale); ctx.lineTo(mx, my + 3 * scale); ctx.stroke();
+    } else if (theme === 'fighting') {
+      ctx.beginPath(); ctx.moveTo(mx, my); ctx.lineTo(mx + Math.cos(angle) * 4 * scale, my + Math.sin(angle) * 4 * scale); ctx.stroke();
+    } else {
+      // fada e demais: estrela de quatro pontas.
+      ctx.beginPath(); ctx.moveTo(mx, my - 3.5 * scale); ctx.lineTo(mx + 1.2 * scale, my); ctx.lineTo(mx, my + 3.5 * scale); ctx.lineTo(mx - 1.2 * scale, my); ctx.closePath(); ctx.fill();
+    }
+  }
+  ctx.restore();
+}
+
 export function drawBossAttack(ctx: CanvasRenderingContext2D, attack: SurvivorBossAttack, map: WorldToScreen, timeMs: number, detailed: boolean): void {
   const telegraph = attack.phase === 'telegraph';
   const t = clamp01(1 - attack.timerMs / Math.max(1, attack.totalMs));
   const pulse = 0.5 + 0.5 * Math.sin(timeMs / 130);
   const point = (x: number, y: number) => map(x, y, 0);
+  const theme = attack.theme ?? 'normal';
+  const themeColor = TYPE_COLORS[theme] ?? '#fff3b8';
   ctx.save();
   if (attack.kind === 'cross' || attack.kind === 'thunder') {
     const thunder = attack.kind === 'thunder';
-    const color = thunder ? '#9fe8ff' : '#ffe066';
+    const color = themeColor;
     ctx.lineCap = 'round';
     for (const segment of attack.segments ?? []) {
       const startX = attack.x + Math.cos(segment.angle + Math.PI / 2) * segment.offset;
@@ -1113,10 +1159,10 @@ export function drawBossAttack(ctx: CanvasRenderingContext2D, attack: SurvivorBo
     const d = point(attack.x - nx, attack.y - ny);
     if (a && b && c && d) {
       ctx.globalAlpha = telegraph ? 0.16 + pulse * 0.06 : 0.1;
-      ctx.fillStyle = '#2c8cba';
+      ctx.fillStyle = themeColor;
       ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.lineTo(c.x, c.y); ctx.lineTo(d.x, d.y); ctx.closePath(); ctx.fill();
       ctx.globalAlpha = telegraph ? 0.55 : 0.35;
-      ctx.strokeStyle = '#9fe8ff';
+      ctx.strokeStyle = themeColor;
       ctx.lineWidth = 2;
       ctx.setLineDash([9, 7]);
       ctx.stroke();
@@ -1145,12 +1191,12 @@ export function drawBossAttack(ctx: CanvasRenderingContext2D, attack: SurvivorBo
       const f2 = point(cx - nx, cy - ny);
       if (f1 && f2) {
         ctx.globalAlpha = 0.85;
-        ctx.strokeStyle = '#e8fbff';
+        ctx.strokeStyle = '#ffffff';
         ctx.lineWidth = 8;
         ctx.lineCap = 'round';
         ctx.beginPath(); ctx.moveTo(f1.x, f1.y); ctx.lineTo(f2.x, f2.y); ctx.stroke();
         ctx.globalAlpha = 0.45;
-        ctx.strokeStyle = '#7bdcff';
+        ctx.strokeStyle = themeColor;
         ctx.lineWidth = 18;
         ctx.beginPath(); ctx.moveTo(f1.x, f1.y); ctx.lineTo(f2.x, f2.y); ctx.stroke();
       }
@@ -1161,10 +1207,10 @@ export function drawBossAttack(ctx: CanvasRenderingContext2D, attack: SurvivorBo
       const scale = center.s;
       const radius = attack.radius * (telegraph ? 1 : 0.8 + t * 0.5) * scale;
       ctx.globalAlpha = telegraph ? 0.12 + pulse * 0.05 : 0.08;
-      ctx.fillStyle = '#ffb35c';
+      ctx.fillStyle = themeColor;
       ctx.beginPath(); ctx.arc(center.x, center.y, radius, 0, Math.PI * 2); ctx.fill();
       ctx.globalAlpha = telegraph ? 0.65 : 0.45;
-      ctx.strokeStyle = '#ffcf5a';
+      ctx.strokeStyle = themeColor;
       ctx.lineWidth = 2;
       ctx.setLineDash([10, 8]);
       ctx.beginPath(); ctx.arc(center.x, center.y, radius, 0, Math.PI * 2); ctx.stroke();
@@ -1186,21 +1232,21 @@ export function drawBossAttack(ctx: CanvasRenderingContext2D, attack: SurvivorBo
       const star = attack.kind === 'stars';
       const meteor = attack.kind === 'meteors';
       ctx.globalAlpha = telegraph ? (green ? 0.26 + pulse * 0.06 : star ? 0.2 + pulse * 0.08 : meteor ? 0.22 + pulse * 0.08 : 0.14 + pulse * 0.05) : 0.08;
-      ctx.fillStyle = green ? '#2f6b32' : star ? '#7a5a16' : meteor ? '#6b3a1e' : '#a87848';
+      ctx.fillStyle = themeColor;
       ctx.beginPath(); ctx.arc(center.x, center.y, radius, 0, Math.PI * 2); ctx.fill();
       ctx.globalAlpha = telegraph ? (green ? 0.9 : star ? 0.9 : meteor ? 0.9 : 0.7) : 0.4;
-      ctx.strokeStyle = green ? '#d8ff96' : star ? '#ffe066' : meteor ? '#ffb35c' : '#ffcf5a';
+      ctx.strokeStyle = themeColor;
       ctx.lineWidth = green || star || meteor ? 3 : 2;
       ctx.setLineDash([8, 6]);
       ctx.beginPath(); ctx.arc(center.x, center.y, radius, 0, Math.PI * 2); ctx.stroke();
       ctx.setLineDash([]);
       if (meteor) {
         ctx.globalAlpha = telegraph ? 0.8 : 0.55;
-        ctx.fillStyle = '#ffb35c';
+        ctx.fillStyle = themeColor;
         ctx.beginPath(); ctx.ellipse(center.x, center.y - radius * 0.2, radius * 0.38, radius * 0.28, -0.5, 0, Math.PI * 2); ctx.fill();
         if (telegraph && detailed) {
           ctx.globalAlpha = 0.45;
-          ctx.strokeStyle = '#ffd7a0';
+          ctx.strokeStyle = '#fff3d0';
           ctx.lineWidth = 2;
           ctx.beginPath(); ctx.moveTo(center.x + radius * 0.2, center.y - radius * 0.5); ctx.lineTo(center.x + radius * 0.6, center.y - radius * 1.1); ctx.stroke();
         }
@@ -1216,7 +1262,7 @@ export function drawBossAttack(ctx: CanvasRenderingContext2D, attack: SurvivorBo
       if (telegraph && detailed && green) {
         // Brotos crescendo: mais visíveis que uma rachadura fina no gramado.
         ctx.globalAlpha = 0.85;
-        ctx.strokeStyle = '#8fe86a';
+        ctx.strokeStyle = themeColor;
         ctx.lineWidth = 3.5;
         for (let k = 0; k < 5; k++) {
           const angle = (k / 5) * Math.PI * 2 + attack.angle;
@@ -1270,6 +1316,16 @@ export function drawBossAttack(ctx: CanvasRenderingContext2D, attack: SurvivorBo
         }
       }
     }
+  }
+  const emblem = point(attack.x, attack.y);
+  if (emblem) {
+    if (detailed) drawBossTypeMotes(ctx, theme, emblem.x, emblem.y, emblem.s, timeMs);
+    ctx.globalAlpha = telegraph ? 0.78 : 0.42;
+    ctx.fillStyle = themeColor;
+    ctx.font = `bold ${Math.max(12, Math.round(20 * emblem.s))}px system-ui`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(TYPE_GLYPHS[theme], emblem.x, emblem.y - 48 * emblem.s);
   }
   ctx.restore();
 }

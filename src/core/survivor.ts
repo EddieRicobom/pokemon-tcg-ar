@@ -3285,20 +3285,34 @@ const ARCEUS_TIME_MS = 3200;
 const ARCEUS_GIRATINA_SPEED = 330;
 const ARCEUS_GIRATINA_RADIUS = 34;
 
-/** Cada família de chefe alterna três ataques telegrafados: o assinatura e duas variações. */
-const BOSS_ATTACK_POOLS = {
-  water: ['tsunami', 'cross', 'meteors'],
-  earth: ['boulders', 'meteors', 'thunder'],
-  nature: ['vines', 'thunder', 'cross'],
-  neutral: ['shockwave', 'cross', 'thunder'],
-} as const satisfies Record<string, readonly SurvivorBossAttackKind[]>;
+/** Cada tipo tem a sua própria sequência de três ataques telegrafados; o padrão pode repetir, a arte não. */
+const TYPE_BOSS_ATTACKS = {
+  normal: [{ kind: 'shockwave', name: 'Onda de impacto' }, { kind: 'cross', name: 'Cruz de choque' }, { kind: 'meteors', name: 'Cometas' }],
+  fire: [{ kind: 'shockwave', name: 'Erupção' }, { kind: 'cross', name: 'Pilares de fogo' }, { kind: 'meteors', name: 'Chuva de brasas' }],
+  water: [{ kind: 'tsunami', name: 'Tsunami' }, { kind: 'cross', name: 'Jatos cruzados' }, { kind: 'meteors', name: 'Bolhas pressurizadas' }],
+  electric: [{ kind: 'thunder', name: 'Descarga' }, { kind: 'cross', name: 'Raios cruzados' }, { kind: 'shockwave', name: 'Tempestade' }],
+  grass: [{ kind: 'vines', name: 'Vinhas' }, { kind: 'meteors', name: 'Sementes' }, { kind: 'cross', name: 'Chicote de folhas' }],
+  ice: [{ kind: 'tsunami', name: 'Maremoto gélido' }, { kind: 'meteors', name: 'Granizo' }, { kind: 'cross', name: 'Estilhaços' }],
+  fighting: [{ kind: 'shockwave', name: 'Impacto' }, { kind: 'cross', name: 'Cruz de golpes' }, { kind: 'meteors', name: 'Cometas' }],
+  poison: [{ kind: 'shockwave', name: 'Poça tóxica' }, { kind: 'meteors', name: 'Chuva ácida' }, { kind: 'cross', name: 'Nuvem de veneno' }],
+  ground: [{ kind: 'boulders', name: 'Terremoto' }, { kind: 'meteors', name: 'Pedras' }, { kind: 'thunder', name: 'Fissuras' }],
+  flying: [{ kind: 'cross', name: 'Asas cortantes' }, { kind: 'thunder', name: 'Rajada' }, { kind: 'shockwave', name: 'Ciclone' }],
+  psychic: [{ kind: 'shockwave', name: 'Pulso psíquico' }, { kind: 'cross', name: 'Cruz mental' }, { kind: 'stars', name: 'Estrelas mentais' }],
+  bug: [{ kind: 'vines', name: 'Enxame' }, { kind: 'thunder', name: 'Ferrões' }, { kind: 'cross', name: 'Teia' }],
+  rock: [{ kind: 'boulders', name: 'Rochas' }, { kind: 'meteors', name: 'Meteoros' }, { kind: 'cross', name: 'Cruz de pedra' }],
+  ghost: [{ kind: 'shockwave', name: 'Maldição' }, { kind: 'cross', name: 'Sombras' }, { kind: 'stars', name: 'Almas penadas' }],
+  dragon: [{ kind: 'cross', name: 'Garras dracônicas' }, { kind: 'shockwave', name: 'Fúria' }, { kind: 'meteors', name: 'Meteoros' }],
+  dark: [{ kind: 'shockwave', name: 'Mordida' }, { kind: 'cross', name: 'Corte sombrio' }, { kind: 'meteors', name: 'Eclipse' }],
+  steel: [{ kind: 'boulders', name: 'Engrenagem' }, { kind: 'thunder', name: 'Lâminas' }, { kind: 'cross', name: 'Ímã' }],
+  fairy: [{ kind: 'vines', name: 'Pó mágico' }, { kind: 'stars', name: 'Estrelas' }, { kind: 'cross', name: 'Luz' }],
+} as const satisfies Record<PokemonType, readonly { kind: SurvivorBossAttackKind; name: string }[]>;
+const ARCEUS_ATTACK_NAMES: Partial<Record<SurvivorBossAttackKind, string>> = {
+  lasers: 'Laser do Julgamento', shockwave: 'Onda do Julgamento', stars: 'Estrelas do Julgamento',
+};
 
-function bossAttackKindFor(dexId: number | undefined, index = 0): SurvivorBossAttackKind {
-  const types = new Set(typesOfDex(dexId));
-  const pool = types.has('water') || types.has('ice') ? BOSS_ATTACK_POOLS.water
-    : types.has('rock') || types.has('ground') || types.has('steel') ? BOSS_ATTACK_POOLS.earth
-      : types.has('grass') || types.has('bug') || types.has('fairy') ? BOSS_ATTACK_POOLS.nature
-        : BOSS_ATTACK_POOLS.neutral;
+function bossAttackFor(dexId: number | undefined, index = 0): { kind: SurvivorBossAttackKind; name: string } {
+  const type = typesOfDex(dexId)[0] ?? 'normal';
+  const pool = TYPE_BOSS_ATTACKS[type];
   return pool[Math.abs(index) % pool.length]!;
 }
 
@@ -3313,11 +3327,16 @@ function startBossAttack(state: SurvivorState, events: SurvivorEvent[], boss: Su
     events.push({ type: 'arceusSpecial', phase: 'summon', dexId: SURVIVOR_GIRATINA_DEX, name: 'Giratina' });
     return;
   }
-  const kind = arceus ? ARCEUS_ATTACKS[(state.arceusAttacks ?? 0) % ARCEUS_ATTACKS.length]! : bossAttackKindFor(boss.dexId, state.bossAttacks ?? 0);
+  const arceusKind = ARCEUS_ATTACKS[(state.arceusAttacks ?? 0) % ARCEUS_ATTACKS.length]!;
+  const choice = arceus
+    ? { kind: arceusKind, name: ARCEUS_ATTACK_NAMES[arceusKind] ?? 'Julgamento' }
+    : bossAttackFor(boss.dexId, state.bossAttacks ?? 0);
+  const kind = choice.kind;
+  const theme = typesOfDex(boss.dexId)[0] ?? 'normal';
   if (!arceus) state.bossAttacks = (state.bossAttacks ?? 0) + 1;
   const telegraphMs = kind === 'lasers' ? ARCEUS_LASER_TELEGRAPH_MS : BOSS_ATTACK_TELEGRAPH_MS;
   const attack: SurvivorBossAttack = {
-    kind, phase: 'telegraph', timerMs: telegraphMs, totalMs: telegraphMs,
+    theme, name: choice.name, kind, phase: 'telegraph', timerMs: telegraphMs, totalMs: telegraphMs,
     bossId: boss.id, x: boss.x, y: boss.y, angle, length: 0, halfWidth: 0, radius: 0, circles: [], hit: false,
   };
   if (kind === 'lasers') {

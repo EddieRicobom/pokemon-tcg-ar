@@ -157,15 +157,19 @@ describe('ataques-assinatura dos chefes', () => {
     stepSurvivor(s, { dx: 0, dy: 0 }, 16);
     expect((s.bossAttack as SurvivorBossAttack | null)?.kind).toBe('tsunami');
     expect((s.bossAttack as SurvivorBossAttack | null)?.phase).toBe('telegraph');
+    expect((s.bossAttack as SurvivorBossAttack | null)?.theme).toBe('water');
+    expect((s.bossAttack as SurvivorBossAttack | null)?.name).toBe('Tsunami');
 
     s.bossAttack = null; s.nextBossAttackAtMs = 0;
     stepSurvivor(s, { dx: 0, dy: 0 }, 16);
     expect((s.bossAttack as SurvivorBossAttack | null)?.kind).toBe('cross');
+    expect((s.bossAttack as SurvivorBossAttack | null)?.name).toBe('Jatos cruzados');
     expect((s.bossAttack as SurvivorBossAttack | null)?.segments).toHaveLength(4);
 
     s.bossAttack = null; s.nextBossAttackAtMs = 0;
     stepSurvivor(s, { dx: 0, dy: 0 }, 16);
     expect((s.bossAttack as SurvivorBossAttack | null)?.kind).toBe('meteors');
+    expect((s.bossAttack as SurvivorBossAttack | null)?.name).toBe('Bolhas pressurizadas');
     expect((s.bossAttack as SurvivorBossAttack | null)?.circles).toHaveLength(6);
   });
 

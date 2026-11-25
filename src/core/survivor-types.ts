@@ -358,6 +358,10 @@ export interface SurvivorArceusSpecial {
 export interface SurvivorBossAttackCircle { x: number; y: number; radius: number }
 
 export interface SurvivorBossAttack {
+  /** Tipo do chefe que assina o ataque; a arte usa a cor e o motivo do tipo. */
+  theme: PokemonType;
+  /** Nome do ataque para o aviso do HUD (ex.: «Pilares de fogo»). */
+  name: string;
   kind: SurvivorBossAttackKind;
   phase: 'telegraph' | 'active';
   /** Tempo restante da fase atual. */
