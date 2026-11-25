@@ -5,6 +5,24 @@ O estado atual, as fases, as pendências e os riscos continuam no [plano](../IMP
 datadas (com o que foi e o que não foi validado em cada uma). A regra de validação do plano vale também para estas entradas:
 🔶 significa que **nada foi visto num celular real**.
 
+## Torre: legibilidade do HUD, do jogador e do resumo (25/11/2026)
+
+- **HUD sem sobreposição:** os avisos/toasts agora ficam na faixa inferior, longe de HP/XP. O chip virou «🎚 Desafio N%» com faixas verde/amarelo/vermelho, o tempo mostra «☠ N abates» e o stack virou «☠ Pressão N». Uma legenda «Como ler o HUD» entrou na pausa.
+- **Jogador em foco:** anel duplo de alto contraste, halo escuro que reduz o contraste dos efeitos ao redor e ícones de queimado/lento/atordoado acima do personagem.
+- **Telegrafo:** o aviso mostra o nome do ataque, o glifo do tipo e a contagem em segundos; o desenho no chão ganhou a mesma contagem no corpo do chefe.
+- **Ameaças fora da tela:** setas nas bordas para chefes, chefões, elites e Giratina.
+- **Controles:** «TROCAR GOLPE» saiu de baixo do D-pad e foi para o centro; atalho «Efeitos reduzidos» na pausa; «Salvar e sair» subiu para o topo do menu de pausa.
+- **Inimigos especiais:** elites/chefões/chefes têm micro-barra de vida e glifo do tipo; a pausa explica as barras e os avisos.
+- **Resumo:** os gráficos e fontes de dano ficam em «Detalhes da corrida», e o formulário de feedback fica recolhido em «Dar feedback (opcional)». Os números principais continuam no topo.
+- 🔶 Typecheck, 65 arquivos / 716 testes do Survival, suíte completa (344 arquivos / 3435 testes), build e os 14 testes de layout passaram. Conferi no navegador o HUD, o anel do jogador, o toast reposicionado e o «Salvar e sair» no topo da pausa; não testei todos os resumos/estados em celular real.
+
+## Torre: Desafio adaptável acima de 120% (25/11/2026)
+
+- O teto do Desafio adaptável subiu de **160% para 300%**. A conta agora também olha o **nível do Pokémon** (além das cartas e da fase), então uma build dominante continua sendo acompanhada em vez de estacionar em ~120%.
+- O chip do HUD virou **«🎚 Desafio N%»**, com cor por faixa: verde até 90%, amarelo até 120% e vermelho acima disso. O tooltip continua explicando que é a força dos inimigos comuns em relação à Torre de sempre.
+- O recuo por vida baixa (<35%) continua; o teto maior não deixa a corrida impossível de ler, mas aperta quem fica forte demais.
+- 🔶 Typecheck, 65 arquivos / 716 testes do Survival, suíte completa (344 arquivos / 3435 testes), build e os 14 testes de layout passaram. Não testei uma corrida humana longa acima de 120%.
+
 ## Torre: ataques telegrafados por tipo nos chefes (25/11/2026)
 
 - Cada um dos 18 tipos agora tem a própria sequência de **três ataques telegrafados**, em vez de quatro famílias genéricas. O padrão mecânico pode repetir — o que muda é o nome, a cor e o motivo visual do tipo.

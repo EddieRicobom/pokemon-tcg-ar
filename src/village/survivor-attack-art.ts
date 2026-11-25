@@ -1326,6 +1326,17 @@ export function drawBossAttack(ctx: CanvasRenderingContext2D, attack: SurvivorBo
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(TYPE_GLYPHS[theme], emblem.x, emblem.y - 48 * emblem.s);
+    if (telegraph) {
+      const count = `${Math.max(0, attack.timerMs / 1000).toFixed(1).replace('.', ',')}s`;
+      ctx.font = 'bold 10px system-ui';
+      const width = ctx.measureText(count).width + 12;
+      const y = emblem.y + 34 * emblem.s;
+      ctx.globalAlpha = 0.88;
+      ctx.fillStyle = '#07131be6';
+      ctx.beginPath(); ctx.roundRect(emblem.x - width / 2, y - 9, width, 18, 9); ctx.fill();
+      ctx.fillStyle = '#fff8dc';
+      ctx.fillText(count, emblem.x, y);
+    }
   }
   ctx.restore();
 }

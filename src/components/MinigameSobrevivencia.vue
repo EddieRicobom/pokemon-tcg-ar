@@ -39,6 +39,7 @@ import type { CardCompanion } from '../core/card-evolution';
 import { survivalWinners } from '../core/card-evolution';
 import { effectiveVisual, maxVisualFps, visual } from '../app/visual-settings';
 import { SURVIVOR_DIALGA_DEX, SURVIVOR_GIRATINA_DEX, SURVIVOR_PALKIA_DEX } from '../core/survivor-types';
+import { typesOfDex } from '../core/species-filter';
 import { isFrameDue } from '../core/frame-rate';
 import { cancelGameFrame, requestGameFrame } from '../app/frame-scheduler';
 import { combatMotion } from '../core/combat-motion';
@@ -918,7 +919,13 @@ const bossAttackWarning = computed(() => {
   const attack = state.value?.bossAttack;
   if (!attack || attack.phase !== 'telegraph') return null;
   const name = attack.name || (attack.kind === 'tsunami' ? 'Tsunami' : attack.kind === 'boulders' ? 'Pedras' : attack.kind === 'vines' ? 'Vinhas' : attack.kind === 'lasers' ? 'Lasers girando' : attack.kind === 'stars' ? 'Estrelas' : attack.kind === 'cross' ? 'Cruz de luz' : attack.kind === 'thunder' ? 'Raios' : attack.kind === 'meteors' ? 'Meteoros' : 'Onda de choque');
-  return `${attack.theme ? `${TYPE_GLYPHS[attack.theme]} ` : ''}${name}!`;
+  const seconds = Math.max(0, attack.timerMs / 1000).toFixed(1).replace('.', ',');
+  return `${attack.theme ? `${TYPE_GLYPHS[attack.theme]} ` : ''}${name} · ${seconds}s!`;
+});
+/** Faixa de cor do Desafio adaptável: verde fácil, amarelo normal, vermelho acima de 120%. */
+const adaptiveBand = computed(() => {
+  const value = state.value?.adaptive?.value ?? 1;
+  return value < 0.9 ? 'easy' : value <= 1.2 ? 'normal' : 'hard';
 });
 /** Números do menu de pausa: dano, média por segundo e o que está em campo. */
 const runNumbers = computed(() => (state.value ? survivorRunNumbers(state.value) : null));
@@ -2053,6 +2060,101 @@ function drawArceusGiratina(special: NonNullable<SurvivorState['arceusSpecial']>
   ctx.restore();
 }
 
+/** Anel de alto contraste + status acima do jogador: ele não some no meio dos efeitos. */
+function drawPlayerStatusAndRing(s: SurvivorState): void {
+  if (!ctx) return;
+  const p = s.player;
+  ctx.save();
+  ctx.globalAlpha = 0.9;
+  ctx.strokeStyle = '#07131b';
+  ctx.lineWidth = 4;
+  ctx.beginPath(); ctx.arc(p.x, p.y, 22, 0, Math.PI * 2); ctx.stroke();
+  ctx.strokeStyle = '#fff8dc';
+  ctx.lineWidth = 1.6;
+  ctx.setLineDash([4, 4]);
+  ctx.beginPath(); ctx.arc(p.x, p.y, 22, 0, Math.PI * 2); ctx.stroke();
+  ctx.setLineDash([]);
+  const icons = [p.burnMs ? '🔥' : '', p.slowMs ? '🧊' : '', p.stunMs ? '⚡' : ''].filter(Boolean);
+  if (icons.length) {
+    const label = icons.join(' ');
+    ctx.font = 'bold 13px system-ui';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    const w = ctx.measureText(label).width + 10;
+    ctx.globalAlpha = 0.82;
+    ctx.fillStyle = '#07131be6';
+    ctx.beginPath(); ctx.roundRect(p.x - w / 2, p.y - 52, w, 18, 9); ctx.fill();
+    ctx.globalAlpha = 1;
+    ctx.fillText(label, p.x, p.y - 43);
+  }
+  ctx.restore();
+}
+
+/** Micro-barra de vida + glifo de tipo para elites, chefões e chefes. */
+function drawEliteHealth(e: SurvivorEnemy): void {
+  if (!ctx || e.hp <= 0) return;
+  const width = Math.max(26, e.radius * 2.1);
+  const height = 4;
+  const x = e.x - width / 2;
+  const y = e.y - e.radius * 2 - 14;
+  const pct = Math.max(0, Math.min(1, e.hp / Math.max(1, e.maxHp)));
+  ctx.save();
+  ctx.globalAlpha = 0.9;
+  ctx.fillStyle = '#07131bcc';
+  ctx.beginPath(); ctx.roundRect(x - 2, y - 2, width + 4, height + 4, 3); ctx.fill();
+  ctx.fillStyle = pct < 0.3 ? '#ff5c5c' : pct < 0.6 ? '#ffb35c' : '#7fe08a';
+  ctx.fillRect(x, y, width * pct, height);
+  const type = typesOfDex(e.dexId)[0] ?? 'normal';
+  ctx.font = 'bold 10px system-ui';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(TYPE_GLYPHS[type], x + width + 5, y + height / 2 + 1);
+  ctx.restore();
+}
+
+/** Setas nas bordas para chefes, elites e Giratina fora da câmera. */
+function drawThreatArrows(s: SurvivorState, camX: number, camY: number, zoom: number, worldViewW: number, worldViewH: number, w: number, h: number, shakeX: number, shakeY: number): void {
+  if (!ctx) return;
+  const targets: { x: number; y: number; color: string; label: string }[] = [];
+  for (const e of s.enemies) {
+    if (e.hp <= 0) continue;
+    if (e.boss) targets.push({ x: e.x, y: e.y, color: '#ff9a5c', label: 'CHEFE' });
+    else if (e.grade === 'chefao') targets.push({ x: e.x, y: e.y, color: '#ff6e73', label: 'CHEFÃO' });
+    else if (e.grade === 'elite') targets.push({ x: e.x, y: e.y, color: '#ffe066', label: 'ELITE' });
+  }
+  if (s.arceusSpecial && s.arceusSpecial.phase !== 'time') targets.push({ x: s.arceusSpecial.x, y: s.arceusSpecial.y, color: '#c45cff', label: 'GIRATINA' });
+  if (!targets.length) return;
+  const cx = w / 2;
+  const cy = h / 2;
+  const marginX = 36;
+  const marginTop = 112;
+  const marginBottom = 84;
+  ctx.save();
+  for (const target of targets) {
+    const sx = cx + zoom * (target.x - (camX + worldViewW / 2)) + shakeX;
+    const sy = cy + zoom * (target.y - (camY + worldViewH / 2)) + shakeY;
+    if (sx >= marginX && sx <= w - marginX && sy >= marginTop && sy <= h - marginBottom) continue;
+    const angle = Math.atan2(sy - cy, sx - cx);
+    const ex = clamp(sx, marginX, w - marginX);
+    const ey = clamp(sy, marginTop, h - marginBottom);
+    ctx.save();
+    ctx.translate(ex, ey);
+    ctx.rotate(angle);
+    ctx.fillStyle = target.color;
+    ctx.strokeStyle = '#07131b';
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(13, 0); ctx.lineTo(-8, -9); ctx.lineTo(-4, 0); ctx.lineTo(-8, 9); ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.restore();
+    ctx.globalAlpha = 0.92;
+    ctx.fillStyle = target.color;
+    ctx.font = 'bold 9px system-ui';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(target.label, clamp(ex, marginX + 24, w - marginX - 24), clamp(ey + 17, marginTop, h - marginBottom));
+  }
+  ctx.restore();
+}
+
 function drawEnemy(e: SurvivorEnemy): void {
   if (!ctx) return;
   // Chefões dão um pequeno tranco quando o golpe conecta. O flash já existia; o deslocamento torna o impacto legível.
@@ -3105,7 +3207,10 @@ function draw(): void {
     drawCastShadows(ctx, cinemaCasters, cinemaLights, cinema);
   }
   for (const e of s.enemies) {
-    if (e.x >= left && e.x <= right && e.y >= top && e.y <= bottom) drawEnemy(e);
+    if (e.x >= left && e.x <= right && e.y >= top && e.y <= bottom) {
+      drawEnemy(e);
+      if (e.boss || e.grade === 'chefao' || e.grade === 'elite') drawEliteHealth(e);
+    }
   }
   if (s.arceusSpecial && s.arceusSpecial.phase !== 'time') drawArceusGiratina(s.arceusSpecial);
   if (!effectiveVisual.value.rotomMode && s.enemies.some((e) => e.linkId !== undefined)) drawDestinyChains(ctx, destinyGroups(s), animMs, detailed);
@@ -3122,6 +3227,15 @@ function draw(): void {
     ctx.restore();
   }
   drawFootDust(ctx, s.player.x, s.player.y);
+  // Halo escuro atrás do jogador: os projéteis e partículas ao redor perdem contraste e ele volta a ser o foco.
+  const playerHalo = ctx.createRadialGradient(s.player.x, s.player.y, 10, s.player.x, s.player.y, 38);
+  playerHalo.addColorStop(0, 'rgba(4,10,14,0)');
+  playerHalo.addColorStop(0.7, 'rgba(4,10,14,0.18)');
+  playerHalo.addColorStop(1, 'rgba(4,10,14,0.34)');
+  ctx.save();
+  ctx.fillStyle = playerHalo;
+  ctx.beginPath(); ctx.arc(s.player.x, s.player.y, 38, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
   const blink = s.player.invulnMs > 0 && Math.floor(animMs / 80) % 2 === 0;
   // Orbitais acima do Pokémon na tela passam por trás dele; os de baixo, pela frente.
   const orbiters = move.category === 'orbit' ? survivorOrbiters(s.player) : [];
@@ -3158,6 +3272,7 @@ function draw(): void {
     drawSprite(playerSprite, motion.lunge * 18 * aimX, motion.lunge * 12 * aimY - hop, s.player.facing < 0, 1, survivorSpriteDirectionFromAngle(aimAngle, s.player.facing), playerAccessory, true, s.player.terastal?.type);
     ctx.restore();
   }
+  drawPlayerStatusAndRing(s);
   orbiters.forEach((orbiter, index) => { if (orbiter.y >= s.player.y) drawElementOrbiter(ctx!, s.player, move.type, flat, index, animMs, detailed); });
   // Gemas dos itens segurados orbitam o Pokémon: cada cópia é uma gema da cor do item.
   if (!effectiveVisual.value.rotomMode) drawHeldGems(ctx, s.player.x, s.player.y, heldGems(s.player.held ?? {}).map((item) => ({ ...item, image: heldSpriteImage(item.id) })), animMs, detailed);
@@ -3400,6 +3515,7 @@ function draw(): void {
     drawLights(ctx, cinemaLights);
   }
   ctx.restore();
+  drawThreatArrows(s, camX, camY, zoom, worldViewW, worldViewH, VIEW_W, VIEW_H, cine.shakeX, cine.shakeY);
   drawWeather(ctx, VIEW_W, VIEW_H, s.elapsedMs, s.runSeed, animMs);
   drawCinemaOverlay(s, VIEW_W, VIEW_H, cine);
 }
@@ -5011,12 +5127,12 @@ onBeforeUnmount(() => {
             <span v-else-if="state.shadowEncounter.phase === 'battle'" class="chip survivor-shadow-chip" title="Lendário sombrio em combate">🔥 {{ state.shadowEncounter.name }}</span>
             <span v-if="state.shadowTrustStones > 0" class="chip survivor-shadow-chip" :title="`${state.shadowTrustStones} Pedra(s) da Confiança assegurada(s); entram no inventário ao concluir a corrida`">💠 {{ state.shadowTrustStones }} Pedra{{ state.shadowTrustStones === 1 ? '' : 's' }} assegurada{{ state.shadowTrustStones === 1 ? '' : 's' }}</span>
             <span v-if="thiefHud" class="chip survivor-thief-chip" title="Meowth ladrão: pegue antes que fuja para ganhar moedas">{{ thiefHud }}</span>
-            <span v-if="state.adaptive" class="chip survivor-adaptive-chip" :title="`Desafio adaptável: inimigos comuns com ${Math.round(state.adaptive.value * 100)}% da força de sempre`">🎚 {{ Math.round(state.adaptive.value * 100) }}%</span>
+            <span v-if="state.adaptive" class="chip survivor-adaptive-chip" :class="adaptiveBand" :title="`Desafio adaptável: inimigos comuns com ${Math.round(state.adaptive.value * 100)}% da força de sempre`">🎚 Desafio {{ Math.round(state.adaptive.value * 100) }}%</span>
             <span v-if="surgeHud" class="chip survivor-field-chip survivor-surge-chip" :class="state.surge ? `surge-${state.surge.kind}` : ''" role="status" :title="surgeHudTitle">{{ surgeHud }}</span>
             <span v-if="migrationRemainingMs > 0" class="chip survivor-field-chip" role="status" title="Taxa tripla de inimigos comuns até a troca de geração; o limite de inimigos continua valendo.">Migração · 3× inimigos · {{ Math.ceil(migrationRemainingMs / 1000) }}s</span>
             <span v-if="fieldEventHud" class="chip survivor-field-chip" :class="{ hunt: state.fieldEvent?.kind === 'hunt' }" :title="state.fieldEvent?.phase === 'hunt' ? 'A caçada já começou; derrote os dois inimigos elite marcados.' : 'Encontro opcional de campo: siga a seta antes que a baliza desapareça.'">{{ fieldEventHud }}</span>
             <span v-if="pvpRun" class="chip survivor-pvp-chip" role="status" title="PvP: esta run rende um Pokémon para a sua equipe 3x3">⚔ Run {{ pvpRun.index + 1 }}/{{ pvpRun.total }} · ⏳ {{ formatTime(Math.max(0, pvpRun.limitMs - state.elapsedMs)) }}</span>
-            <span class="chip survivor-run-stats" :title="`${state.kills} inimigos derrotados${state.fast ? ' · Ritmo acelerado' : ''}`">{{ state.fast ? '⚡ ' : '' }}⏱ {{ formatTime(state.elapsedMs) }} · ☠ {{ state.kills }}</span>
+            <span class="chip survivor-run-stats" :title="`${state.kills} inimigos derrotados${state.fast ? ' · Ritmo acelerado' : ''}`">{{ state.fast ? '⚡ ' : '' }}⏱ {{ formatTime(state.elapsedMs) }} · ☠ {{ state.kills }} abates</span>
             <span v-if="missingEnemySprites" class="chip" role="status">{{ missingEnemySprites }} sprites indisponíveis: exibidos como formas neutras</span>
             <span class="survivor-action-dock">
               <button type="button" class="chip survivor-menu-btn" :aria-label="hudExpanded ? 'Fechar menu da Torre e retomar' : 'Abrir menu da Torre: pausa, informações e opções'" :title="hudExpanded ? 'Fechar menu da Torre e retomar' : 'Abrir menu da Torre: pausa, informações e opções'" :aria-expanded="hudExpanded" aria-controls="survivor-info-panel" @pointerdown.stop @click.stop="toggleHudMenu">{{ hudExpanded ? '✕ Fechar' : '☰ Menu' }}</button>
@@ -5047,7 +5163,7 @@ onBeforeUnmount(() => {
               <strong>Corrida</strong>
               <span class="chip">🌊 Onda {{ state.wave }}</span>
               <span v-if="survivorBiomeLabel(state.elapsedMs)" class="chip" :title="survivorBiomeAt(state.elapsedMs)?.description">{{ survivorBiomeLabel(state.elapsedMs) }}</span>
-              <span v-if="(state.player.difficultyStacks ?? 0) > 0" class="chip" :title="`Dificuldade ${state.player.difficultyStacks}: +${(state.player.difficultyStacks ?? 0) * 15}% densidade e +${(state.player.difficultyStacks ?? 0) * 12}% de velocidade e dano dos inimigos`">☠ Dificuldade {{ state.player.difficultyStacks }}</span>
+              <span v-if="(state.player.difficultyStacks ?? 0) > 0" class="chip" :title="`Pressão ${state.player.difficultyStacks}: +${(state.player.difficultyStacks ?? 0) * 15}% densidade e +${(state.player.difficultyStacks ?? 0) * 12}% de velocidade e dano dos inimigos`">☠ Pressão {{ state.player.difficultyStacks }}</span>
               <span v-if="(state.player.bonusCoins ?? 0) > 0" class="chip" title="Moedas das cartas, pagas no fim da corrida">🪙 +{{ state.player.bonusCoins }} no fim</span>
             </div>
             <div class="survivor-info-section">
@@ -5116,6 +5232,7 @@ onBeforeUnmount(() => {
               <h2>{{ autoPaused ? 'Corrida pausada' : 'Jogo pausado' }}</h2>
               <p>{{ autoPaused ? 'O relógio parou quando o app saiu da frente. Nada aconteceu com a sua vida ou os inimigos.' : 'Respire e prepare sua próxima jogada.' }}</p>
             </header>
+            <button type="button" class="primary survivor-pause-save-top" @pointerdown.stop @click.stop="saveAndLeave">💾 Salvar e sair</button>
             <button type="button" class="primary survivor-pause-resume" @pointerdown.stop @click.stop="togglePause">▶ Retomar partida <small class="gamepad-hint" aria-hidden="true">Start</small></button>
             <div class="survivor-pause-content">
             <div v-if="runNumbers" class="survivor-info-section">
@@ -5132,9 +5249,23 @@ onBeforeUnmount(() => {
               <small>Guarda as próximas escolhas de nível. Os itens de baú continuam com escolha imediata.</small>
             </div>
             <MusicControls v-model:enabled="survivorAudio.enabled" v-model:volume="survivorAudio.volume" v-model:attack-sounds="survivorAudio.attackSounds" v-model:chip="survivorAudio.chip" :track="survivorMusicTitle(state?.elapsedMs ?? 0, state?.runSeed ?? 0)" :unavailable="musicUnavailable" regional @unlock="unlockMusic" />
+            <div class="survivor-info-section">
+              <button type="button" class="survivor-quick-effects" :aria-pressed="visual.rotomMode" @pointerdown.stop @click.stop="visual.rotomMode = !visual.rotomMode">Efeitos reduzidos: {{ visual.rotomMode ? 'ligado' : 'desligado' }}</button>
+              <small>Desliga partículas, luzes e o clima sem apagar cada preferência individual. Ajuda a enxergar a arena em builds cheias.</small>
+            </div>
             <p class="note">O relógio, os inimigos e os projéteis estão parados.</p>
             <p class="note">A corrida é salva automaticamente a cada 20 segundos. «Salvar e sair» guarda agora para continuar depois.</p>
             <p v-if="savedNote" class="note" role="status">{{ savedNote }}</p>
+            <details class="survivor-help survivor-hud-legend">
+              <summary>Como ler o HUD</summary>
+              <ul>
+                <li><b>🎚 Desafio N%:</b> força dos inimigos comuns em relação à Torre de sempre. Verde é mais fácil, vermelho acima de 120% é aperto.</li>
+                <li><b>⏱ tempo · ☠ abates:</b> tempo da corrida e inimigos derrotados.</li>
+                <li><b>☠ Pressão N:</b> densidade, velocidade e dano extras que a dificuldade acumulou.</li>
+                <li><b>Barras pequenas:</b> vida de elites e chefões; o glifo ao lado mostra o tipo.</li>
+                <li><b>Aviso de ataque:</b> o nome, o glifo do tipo e a contagem até o impacto; ande para fora da área marcada.</li>
+              </ul>
+            </details>
             <details class="survivor-help" :open="helpOpen" @toggle="helpOpen = ($event.target as HTMLDetailsElement).open">
               <summary>Como jogar · controles</summary>
               <ul>
@@ -5171,7 +5302,6 @@ onBeforeUnmount(() => {
             <div class="survivor-pause-actions">
             <button type="button" class="link survivor-back" @pointerdown.stop @click.stop="requestBack">← Voltar</button>
             <button type="button" class="link survivor-save" @pointerdown.stop @click.stop="saveRun">Salvar corrida</button>
-            <button type="button" class="link survivor-save" @pointerdown.stop @click.stop="saveAndLeave">Salvar e sair</button>
             <button type="button" class="link survivor-exit" @pointerdown.stop @click.stop="requestLeave">Sair da Torre</button>
             </div>
           </div>
@@ -5638,6 +5768,8 @@ onBeforeUnmount(() => {
                 <li v-for="hint in coachHints" :key="hint.id"><span aria-hidden="true">{{ hint.icon }}</span> {{ hint.text }}</li>
               </ul>
             </section>
+            <details class="survivor-summary-more">
+              <summary>Detalhes da corrida · dano, gráfico e fontes</summary>
             <section v-if="summary.damageBySource?.length" class="survivor-chart" aria-label="Dano por golpe">
               <strong>Quem causou o dano</strong>
               <ul>
@@ -5671,6 +5803,7 @@ onBeforeUnmount(() => {
                 <text x="290" y="12" text-anchor="end" class="survivor-chart-level-label">Nv {{ summary.level }}</text>
               </svg>
             </section>
+            </details>
             <p v-if="summary.thievesCaught" class="survivor-cleared" role="status">🐾 {{ summary.thievesCaught === 1 ? 'Um ladrão pego' : `${summary.thievesCaught} ladrões pegos` }} nesta corrida.</p>
             <p v-if="summary.adaptive" class="note">Desafio adaptável no fim: {{ Math.round(summary.adaptive * 100) }}% da força de sempre.</p>
             <p v-if="state && state.supreme.uses > 0" class="note">⚡ Golpes Supremos usados: {{ state.supreme.uses }}.</p>
@@ -5699,6 +5832,8 @@ onBeforeUnmount(() => {
             <p v-if="runUnlocks.length" class="survivor-cleared" role="status">Desbloqueios desta corrida: {{ runUnlocks.join(' · ') }}.</p>
             <p v-if="summary.trainersBeaten > 0 || summary.bossesBeaten > 0" class="note">Treinadores derrotados: {{ summary.trainersBeaten }}{{ summary.bossesBeaten > 0 ? ` · chefões: ${summary.bossesBeaten}` : '' }}.</p>
             <p v-if="summary.stage > 0" class="note">Evoluiu {{ summary.stage === 1 ? 'uma vez' : `${summary.stage} vezes` }} nesta corrida (como {{ avatarName }}).</p>
+             <details class="survivor-feedback-details">
+               <summary>Dar feedback (opcional)</summary>
              <section v-if="!feedbackSubmitted" class="survivor-feedback" aria-labelledby="survivor-feedback-title">
                <h3 id="survivor-feedback-title">Ajude a equilibrar a Torre</h3>
                <p class="note">Suas respostas ficam anônimas e viram um código sobre esta corrida. Não alteram o save.</p>
@@ -5722,6 +5857,7 @@ onBeforeUnmount(() => {
                <button type="button" class="primary" @click="copyFeedbackCode">{{ feedbackCopied ? 'Código copiado ✓' : 'Copiar código' }}</button>
                <p v-if="feedbackError" class="survivor-feedback-error" role="alert">{{ feedbackError }}</p>
              </section>
+             </details>
             <button type="button" class="primary" @click="playAgain">Jogar de novo</button>
             <button type="button" class="link survivor-back" @click="playAgain">← Voltar ao menu da Torre</button>
             <button type="button" class="link survivor-exit" @click="leaveNow">Sair da Torre</button>
