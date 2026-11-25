@@ -5,6 +5,17 @@ O estado atual, as fases, as pendências e os riscos continuam no [plano](../IMP
 datadas (com o que foi e o que não foi validado em cada uma). A regra de validação do plano vale também para estas entradas:
 🔶 significa que **nada foi visto num celular real**.
 
+## Torre: sinergias, recordes por Pokémon e leitura da arena (25/11/2026)
+
+- **Sinergias:** quatro cartas de combo («Ritmo de impacto», «Muralha completa», «Coleta em cadeia» e «Passo constante») só entram na oferta quando as duas peças indicadas já estão na build e aparecem com o selo «🔗 Sinergia ativa». Na Torre, famílias já repetidas perdem peso aos poucos, então a oferta abre espaço para defesa, progresso e movimento; a Arena mantém o sorteio antigo.
+- **Recordes por Pokémon:** o save do treinador ganhou `torre.bestByDex` (melhor tempo, onda e nível por espécie). A escolha de Pokémon mostra o recorde daquela espécie, o resumo celebra o avanço e três medalhas cosméticas marcam 3, 6 e 10 minutos.
+- **Terastal e Mega:** o chip do Terastal agora explica o efeito do tipo no tooltip e o personagem ganha um anel na cor do tipo com o glifo; a Mega ganha um anel tracejado roxo, além do chip existente.
+- **Efeitos:** todo projétil passou a ter núcleo claro com aro escuro; builds cheias cortam brilhos e sombras antes de cortar projéteis; dano no mesmo alvo dentro de 160 ms vira um número só (teto de 18); a pausa ganhou o atalho «Impacto: ligado/desligado».
+- **Legibilidade:** as setas de ameaça mostram a distância em metros; a pausa ganhou «Como ler o mapa».
+- **Clareza:** glossário da Torre, dicas contextuais de primeira vez (telegrafo, chefe, elite, baú negro, Terastal), linha «por que a corrida acabou» e o gráfico de dano sempre visível no resumo (dano recebido e linha do tempo continuam recolhidos).
+- **Limite:** o BONK mantém a arte própria; as dicas/recordes valem para a Torre normal e o resumo é do modo normal.
+- 🔶 Typecheck, 68 arquivos / 725 testes do Survival, suíte completa (347 arquivos / 3444 testes), build e os 14 testes de layout passaram. Conferi no navegador o recorde na escolha, o resumo sintético com gráfico e «por que acabou», o glossário/mapa na pausa e o «Salvar e sair» no topo; não testei em celular real.
+
 ## Torre: legibilidade do HUD, do jogador e do resumo (25/11/2026)
 
 - **HUD sem sobreposição:** os avisos/toasts agora ficam na faixa inferior, longe de HP/XP. O chip virou «🎚 Desafio N%» com faixas verde/amarelo/vermelho, o tempo mostra «☠ N abates» e o stack virou «☠ Pressão N». Uma legenda «Como ler o HUD» entrou na pausa.

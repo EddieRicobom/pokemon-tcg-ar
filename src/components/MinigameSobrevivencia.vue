@@ -84,7 +84,9 @@ import {
 } from '../core/survivor';
 import type { SurvivorEnemy, SurvivorEvent, SurvivorEvolutionOption, SurvivorState, SurvivorSummary, SurvivorSupportCandidate, SurvivorUpgradeOption, SurvivorUpgradeRarity } from '../core/survivor';
 import { survivorRunNumbers } from '../core/survivor-extras';
-import { survivorCoachHints, survivorNewRecords } from '../core/survivor-coach';
+import { survivorCoachHints, survivorDeathNote, survivorNewRecords } from '../core/survivor-coach';
+import { dexMedalCount, dexMedalLabel, dexRecordFor } from '../core/survivor-records';
+import type { SurvivorDexRecord } from '../core/survivor-records';
 import { shouldSurvivorAutoPause } from '../core/survivor-pause';
 import { attackProfile, moveEffectForType, moveFor, moveWith, rankedCategories, MOVE_CATEGORY_LABELS_PT, MOVE_EFFECT_LABELS_PT, profileBars, SURVIVOR_TERASTAL_EFFECTS } from '../core/survivor-moves';
 import { survivorAttackChoices, survivorAttackOf, survivorSupportMove } from '../core/survivor-loadout';
@@ -339,6 +341,40 @@ function say(text: string, ms = 3000): void {
   toast.value = text;
   if (toastTimer) clearTimeout(toastTimer);
   toastTimer = setTimeout(() => (toast.value = ''), ms);
+}
+
+/** Dicas contextuais: aparecem uma única vez na vida do save, no momento em que o conceito entra em jogo. */
+const TIPS_KEY = 'tcg-ar-torre-tips-v1';
+const TIP_TEXT: Record<string, string> = {
+  telegraph: '⚠️ Ataque marcado: o nome, o tipo e os segundos estão na tela. Saia da área antes do 0s.',
+  'black-chest': '🟣 Baú negro: dá um item forte e cobra uma penalidade permanente. Dá para ignorar e seguir.',
+  boss: '👑 Chefe: a barra grande no alto é a vida dele. Guarde o Especial e o Supremo para esta luta.',
+  elite: '◆ Elite: tem barra pequena e glifo do tipo. Limpe os comuns ao redor antes de encará-lo.',
+  terastal: '💎 Terastal: seu golpe muda de tipo por 20s. O chip mostra o tempo e o anel usa a cor do tipo.',
+};
+let seenTips: Set<string> | null = null;
+function loadSeenTips(): Set<string> {
+  if (seenTips) return seenTips;
+  try {
+    const raw = JSON.parse(localStorage.getItem(TIPS_KEY) ?? '[]') as unknown;
+    seenTips = new Set(Array.isArray(raw) ? raw.filter((id): id is string => typeof id === 'string') : []);
+  } catch { seenTips = new Set(); }
+  return seenTips;
+}
+function maybeTip(id: keyof typeof TIP_TEXT): boolean {
+  const seen = loadSeenTips();
+  if (seen.has(id) || !TIP_TEXT[id]) return false;
+  seen.add(id);
+  try { localStorage.setItem(TIPS_KEY, JSON.stringify([...seen].slice(-20))); } catch { /* armazenamento indisponível */ }
+  say(TIP_TEXT[id], 6500);
+  return true;
+}
+function maybeContextualTips(s: SurvivorState): void {
+  if (s.bossAttack && maybeTip('telegraph')) return;
+  if (s.chests?.some((chest) => chest.kind === 'black') && maybeTip('black-chest')) return;
+  if (s.enemies.some((enemy) => enemy.boss) && maybeTip('boss')) return;
+  if (s.enemies.some((enemy) => enemy.grade === 'elite') && maybeTip('elite')) return;
+  if (s.player.terastal) maybeTip('terastal');
 }
 
 /** Aviso compacto do item coletado, sem cobrir o centro da arena. */
@@ -636,6 +672,7 @@ function recordRun(s: SurvivorSummary): void {
   runBestBefore.value = trainer.value.torre.bestMs;
   runBestWave.value = trainer.value.torre.bestWave;
   runBestLevel.value = trainer.value.torre.bestLevel;
+  runDexBestBefore.value = dexRecordFor(trainer.value.torre.bestByDex, state.value?.player.dexId);
   completedRunIds.add(activeRunId);
   if (!recordCardVictories(survivalWinners(runCompanion, s), 'survival')) say(cardJourneyError.value, 9000);
   recordEvent({ type: 'minigame', game: 'sobrevivencia', won: s.kills > 0, score: survivorScore(s) });
@@ -643,9 +680,16 @@ function recordRun(s: SurvivorSummary): void {
   const runRewards = recordEvent({
     type: 'survivor', runId: activeRunId, survivedMs: s.survivedMs, trainersBeaten: s.trainersBeaten, bossesBeaten: s.bossesBeaten,
     clearedTorre: s.finalBossBeaten, infinite: s.infinite, trained: runLoadout.trained, wave: s.wave, kills: s.kills, level: s.level,
+    dexId: state.value?.player.dexId,
     completedObjectives: survivorObjectives(state.value!).filter((objective) => objective.complete).map((objective) => objective.id),
   });
   runUnlocks.value = runRewards.filter((reward) => reward.tone === 'achievement').map((reward) => reward.sub ?? reward.text);
+  const medalBefore = dexMedalCount(runDexBestBefore.value);
+  const medalAfter = dexMedalCount(dexRecordFor(trainer.value.torre.bestByDex, state.value?.player.dexId));
+  if (medalAfter > medalBefore) {
+    const minutes = medalAfter === 1 ? 3 : medalAfter === 2 ? 6 : 10;
+    runUnlocks.value = [...runUnlocks.value, `${dexMedalLabel(medalAfter)} ${speciesName(state.value?.player.dexId ?? 0) || 'Espécie'} chegou aos ${minutes} min`];
+  }
   runUnlockedInfinite.value = s.finalBossBeaten && !beforeInfinite;
   const today = dayKey(new Date());
   const last = trainer.value.torre.lastClearBonusDay;
@@ -931,7 +975,32 @@ const adaptiveBand = computed(() => {
 const runNumbers = computed(() => (state.value ? survivorRunNumbers(state.value) : null));
 /** Dicas curtas para a próxima corrida, calculadas só quando o resumo abre. */
 const coachHints = computed(() => (summary.value ? survivorCoachHints(summary.value, { bestMs: runBestBefore.value, trained: state.value?.trained }) : []));
+const deathNote = computed(() => {
+  if (!summary.value) return null;
+  const note = survivorDeathNote(summary.value);
+  const dexId = summary.value.finalHit?.dexId;
+  const species = dexId ? speciesName(dexId) : '';
+  return note && species ? `${note} (${species})` : note;
+});
 const runRecords = computed(() => (summary.value ? survivorNewRecords(summary.value, { ms: runBestBefore.value, wave: runBestWave.value, level: runBestLevel.value }) : []));
+/** Recorde atual da espécie (depois do evento de fim), para a linha do resumo. */
+const runDexBest = computed(() => {
+  const dexId = state.value?.player.dexId;
+  return dexId ? dexRecordFor(torre.value.bestByDex, dexId) : null;
+});
+const runDexImproved = computed(() => {
+  const before = runDexBestBefore.value;
+  const after = runDexBest.value;
+  if (!after) return false;
+  if (!before) return true;
+  return after.ms > before.ms || after.wave > before.wave || after.level > before.level;
+});
+function dexBestLine(dexId: number | undefined): string {
+  const record = dexRecordFor(torre.value.bestByDex, dexId);
+  if (!record) return '';
+  const medal = dexMedalLabel(dexMedalCount(record));
+  return `${medal ? `${medal} ` : ''}Melhor: ${record.ms > 0 ? formatTime(record.ms) : '—'} · onda ${record.wave} · Nv ${record.level}`;
+}
 function recordLabel(record: { id: 'tempo' | 'onda' | 'nivel'; from: number; to: number }): string {
   const from = record.id === 'tempo' ? formatTime(record.from) : String(record.from);
   const to = record.id === 'tempo' ? formatTime(record.to) : String(record.to);
@@ -1114,6 +1183,8 @@ const availableUpgradeRerolls = computed(() => state.value?.player.upgradeReroll
 const summary = ref<SurvivorSummary | null>(null);
 /** Melhor tempo antes desta corrida, para o resumo e as dicas compararem sem o recorde já atualizado. */
 const runBestBefore = ref(0);
+/** Recorde da espécie antes desta corrida, para o resumo mostrar o avanço sem confundir com o recorde geral. */
+const runDexBestBefore = ref<SurvivorDexRecord | null>(null);
 /** Melhor onda e nível antes desta corrida, para celebrar recordes no resumo. */
 const runBestWave = ref(0);
 const runBestLevel = ref(0);
@@ -1298,7 +1369,23 @@ function showDamageFeedback(): void {
 
 function showEnemyDamage(hits: readonly DamageNumber[]): void {
   if (!effectiveVisual.value.impactFx || reducedMotion || hits.length === 0) return;
-  damageNumbers.value = [...damageNumbers.value, ...hits].slice(-28);
+  // Rajadas no mesmo alvo viram um número só por um instante; o teto de 18 mantém a tela limpa sem
+  // esconder dano de chefe. Cada número continua sendo o dano real somado.
+  const merged = [...damageNumbers.value];
+  for (const hit of hits) {
+    let previous: DamageNumber | undefined;
+    for (let index = merged.length - 1; index >= 0; index--) {
+      const other = merged[index]!;
+      if (!hit.critical && !other.critical
+        && other.boss === hit.boss
+        && animMs - other.bornAt < 160
+        && Math.abs(other.x - hit.x) < 12
+        && Math.abs(other.y - hit.y) < 12) { previous = other; break; }
+    }
+    if (previous) previous.amount += hit.amount;
+    else merged.push({ ...hit });
+  }
+  damageNumbers.value = merged.slice(-18);
   if (animMs - lastHitStopAt >= 500) {
     hitStopMs = hits.some((hit) => hit.boss) ? 72 : 42;
     lastHitStopAt = animMs;
@@ -2065,6 +2152,26 @@ function drawPlayerStatusAndRing(s: SurvivorState): void {
   if (!ctx) return;
   const p = s.player;
   ctx.save();
+  // Terastal e Mega ganham um anel externo na cor certa: o sprite muda, mas o estado também precisa ser lido de longe.
+  if (p.terastal) {
+    ctx.globalAlpha = 0.85;
+    ctx.strokeStyle = moveFor([p.terastal.type], null).color;
+    ctx.lineWidth = 2.4;
+    ctx.beginPath(); ctx.arc(p.x, p.y, 27, 0, Math.PI * 2); ctx.stroke();
+    ctx.font = 'bold 12px system-ui';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = moveFor([p.terastal.type], null).color;
+    ctx.fillText(TYPE_GLYPHS[p.terastal.type], p.x + 21, p.y - 21);
+  }
+  if (p.mega?.active) {
+    ctx.globalAlpha = 0.8;
+    ctx.strokeStyle = '#d68cff';
+    ctx.lineWidth = 1.8;
+    ctx.setLineDash([2, 5]);
+    ctx.beginPath(); ctx.arc(p.x, p.y, 30, 0, Math.PI * 2); ctx.stroke();
+    ctx.setLineDash([]);
+  }
   ctx.globalAlpha = 0.9;
   ctx.strokeStyle = '#07131b';
   ctx.lineWidth = 4;
@@ -2150,7 +2257,9 @@ function drawThreatArrows(s: SurvivorState, camX: number, camY: number, zoom: nu
     ctx.font = 'bold 9px system-ui';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText(target.label, clamp(ex, marginX + 24, w - marginX - 24), clamp(ey + 17, marginTop, h - marginBottom));
+    // A distância em metros ajuda a decidir se vale ir atrás; 32 unidades do mundo ≈ 1 m na escala da arena.
+    const meters = Math.max(1, Math.round(Math.hypot(target.x - s.player.x, target.y - s.player.y) / 32));
+    ctx.fillText(`${target.label} ${meters}m`, clamp(ex, marginX + 32, w - marginX - 34), clamp(ey + 17, marginTop, h - marginBottom));
   }
   ctx.restore();
 }
@@ -3141,6 +3250,13 @@ function draw(): void {
   // Os limites caem sozinhos se o aparelho sofrer (`renderScaleCap`).
   const cinemaStrength = cinemaPower({ progressMs: survivorProgressMs({ survivedMs: s.elapsedMs, fast: s.fast }), level: s.player.level, bossOnField: s.enemies.some((e) => e.boss || e.grade === 'chefao') });
   const look = cinemaLook(cinemaStrength, renderScaleCap.value < 3);
+  // Orçamento de efeitos: em builds cheias, corta brilhos e sombras antes de cortar projéteis ou telegrafos.
+  const effectLoad = s.projectiles.length + s.hostileProjectiles.length + s.fx.length;
+  if (effectLoad > 40) {
+    const factor = Math.max(0.35, 40 / effectLoad);
+    look.glows = Math.max(1, Math.round(look.glows * factor));
+    look.shadows = Math.max(0, Math.round(look.shadows * factor));
+  }
   const cinema = cinemaOn.value && !effectiveVisual.value.rotomMode ? look : null;
   cinemaLights.length = 0;
   if (cinema) {
@@ -4240,6 +4356,7 @@ function loop(ts: number): void {
   checkPvpRun(s);
   scanEnemySightings(s);
   updateMinimap(s);
+  maybeContextualTips(s);
   pendingUpgrade.value = s.pendingUpgrade;
   if (lunchWasActive && s.player.lunch && !s.player.lunch.active) {
     lunchWasActive = false;
@@ -5109,7 +5226,7 @@ onBeforeUnmount(() => {
               <b>{{ killStreak.count }}</b> abates seguidos
             </span>
             <button v-if="canReopenUpgrade && state.deferredUpgrade" type="button" class="chip survivor-resume-upgrades" aria-keyshortcuts="U" title="Escolher melhorias guardadas · U no teclado ou L1/LB no controle" @pointerdown.stop @click.stop="reopenDeferredUpgrade">Melhorias ({{ state.upgradesOwed + 1 }})</button>
-            <span v-if="state.player.terastal" class="chip survivor-tera-chip" :aria-label="`Terastalização ${TYPE_LABELS_PT[state.player.terastal.type]}: ${Math.ceil(state.player.terastal.remainingMs / 1000)} segundos restantes`" :title="`Terastalização ${TYPE_LABELS_PT[state.player.terastal.type]}`">💎 {{ TYPE_GLYPHS[state.player.terastal.type] }} {{ TYPE_LABELS_PT[state.player.terastal.type] }} · {{ Math.ceil(state.player.terastal.remainingMs / 1000) }}s</span>
+            <span v-if="state.player.terastal" class="chip survivor-tera-chip" :aria-label="`Terastalização ${TYPE_LABELS_PT[state.player.terastal.type]}: ${SURVIVOR_TERASTAL_EFFECTS[state.player.terastal.type]} ${Math.ceil(state.player.terastal.remainingMs / 1000)} segundos restantes`" :title="`Terastalização ${TYPE_LABELS_PT[state.player.terastal.type]} — ${SURVIVOR_TERASTAL_EFFECTS[state.player.terastal.type]}`">💎 {{ TYPE_GLYPHS[state.player.terastal.type] }} {{ TYPE_LABELS_PT[state.player.terastal.type] }} · {{ Math.ceil(state.player.terastal.remainingMs / 1000) }}s</span>
             <span v-if="(state.player.healBlockMs ?? 0) > 0" class="chip survivor-heal-block" role="status">🚫 CURA BLOQUEADA · {{ Math.ceil((state.player.healBlockMs ?? 0) / 1000) }}s</span>
             <span v-if="(state.player.burnMs ?? 0) > 0" class="chip survivor-status-chip burn" role="status" aria-label="Queimando">🔥 Queimando · {{ Math.ceil((state.player.burnMs ?? 0) / 1000) }}s</span>
             <span v-if="(state.player.slowMs ?? 0) > 0" class="chip survivor-status-chip slow" role="status" aria-label="Lento">🧊 Lento · {{ Math.ceil((state.player.slowMs ?? 0) / 1000) }}s</span>
@@ -5172,6 +5289,7 @@ onBeforeUnmount(() => {
               <button type="button" class="chip" :aria-pressed="regionScenery" @click.stop="regionScenery = !regionScenery">Cenário: {{ regionScenery ? 'ligado' : 'desligado' }}</button>
               <button type="button" class="chip" :aria-pressed="cinemaOn" @click.stop="toggleCinema">Luz: {{ cinemaOn ? 'cinema' : 'simples' }}</button>
               <button type="button" class="chip" :aria-pressed="specialEffects" @click.stop="specialEffects = !specialEffects">Efeitos: {{ specialEffects ? 'completos' : 'leves' }}</button>
+              <button type="button" class="chip" :aria-pressed="visual.impactFx" @click.stop="visual.impactFx = !visual.impactFx">Impacto: {{ visual.impactFx ? 'ligado' : 'desligado' }}</button>
             </div>
             <div v-if="objectives.length" class="survivor-objectives" aria-label="Objetivos opcionais da corrida">
               <strong class="survivor-objectives-title">Objetivos</strong>
@@ -5256,6 +5374,15 @@ onBeforeUnmount(() => {
             <p class="note">O relógio, os inimigos e os projéteis estão parados.</p>
             <p class="note">A corrida é salva automaticamente a cada 20 segundos. «Salvar e sair» guarda agora para continuar depois.</p>
             <p v-if="savedNote" class="note" role="status">{{ savedNote }}</p>
+            <details class="survivor-help survivor-map-legend">
+              <summary>Como ler o mapa</summary>
+              <ul>
+                <li><b>Círculo azul:</b> você. <b>Retângulo claro:</b> o que a câmera mostra.</li>
+                <li><b>Quadrado vermelho:</b> chefe ou chefão. <b>Losango amarelo:</b> elite de treinador.</li>
+                <li><b>Estrela:</b> Pokébola ou item. <b>Quadrado roxo:</b> baú negro (pacto com penalidade).</li>
+                <li><b>Seta na borda:</b> ameaça fora da tela, com a distância em metros.</li>
+              </ul>
+            </details>
             <details class="survivor-help survivor-hud-legend">
               <summary>Como ler o HUD</summary>
               <ul>
@@ -5265,6 +5392,21 @@ onBeforeUnmount(() => {
                 <li><b>Barras pequenas:</b> vida de elites, chefões e chefes; o glifo ao lado mostra o tipo.</li>
                 <li><b>Aviso de ataque:</b> o nome, o glifo do tipo e a contagem até o impacto; ande para fora da área marcada.</li>
                 <li><b>BONK:</b> tem leitura própria; as setas de ameaça, o anel e as micro-barras são do modo normal.</li>
+              </ul>
+            </details>
+            <details class="survivor-help survivor-glossary">
+              <summary>Glossário da Torre</summary>
+              <ul>
+                <li><b>Desafio N%:</b> força dos inimigos comuns comparada à Torre padrão. Acima de 120% é aperto.</li>
+                <li><b>Pressão N:</b> camadas extras de densidade, velocidade e dano acumuladas na corrida.</li>
+                <li><b>Elite:</b> inimigo de treinador, com barra pequena e recompensa melhor.</li>
+                <li><b>Chefão:</b> luta de 3 Pokémon de treinador; <b>chefe</b> é o Pokémon gigante da onda.</li>
+                <li><b>Especial:</b> golpe de área que libera aos 3 min e recarrega sozinho.</li>
+                <li><b>Supremo:</b> medidor que enche com abates e dano; aperte quando estiver cheio.</li>
+                <li><b>Terastal:</b> troca o tipo e o efeito do golpe por 20s; <b>Mega</b> dura a corrida inteira.</li>
+                <li><b>Baú negro:</b> pacto opcional com item forte e uma penalidade permanente.</li>
+                <li><b>Perigo digital:</b> medidor que chama treinadores quando enche.</li>
+                <li><b>Corrida pura:</b> sem nada da Vila; disputa um recorde separado.</li>
               </ul>
             </details>
             <details class="survivor-help" :open="helpOpen" @toggle="helpOpen = ($event.target as HTMLDetailsElement).open">
@@ -5452,6 +5594,7 @@ onBeforeUnmount(() => {
                 <span v-else class="survivor-pick-thumb placeholder" aria-hidden="true">?</span>
                 <strong>{{ opt.name }}</strong>
                 <small>{{ opt.origin }}</small>
+                <small v-if="dexBestLine(opt.dexId)" class="survivor-pick-record">{{ dexBestLine(opt.dexId) }}</small>
                 <small class="survivor-pick-move" :style="{ '--move': opt.move.color }">{{ opt.move.icon }} {{ opt.move.name }}</small>
                 <small class="survivor-pick-kind"><AttackIcon :category="opt.move.category" :size="15" /> {{ MOVE_CATEGORY_LABELS_PT[opt.move.category] }} · {{ MOVE_EFFECT_LABELS_PT[opt.move.effect] }}</small>
                  <small class="survivor-pick-tip">{{ MOVE_CATEGORY_HINTS_PT[opt.move.category] }}</small>
@@ -5713,6 +5856,7 @@ onBeforeUnmount(() => {
                 </span>
                 <span class="survivor-upgrade-text">
                   <span v-if="isTransformerOption(u)" class="survivor-transformer-badge">✦ Transforma o golpe</span>
+                  <span v-if="u.synergy" class="survivor-synergy-badge">🔗 Sinergia ativa</span>
                   <span v-if="u.rarity" class="survivor-rarity-label" :title="`${SURVIVOR_UPGRADE_RARITIES[u.rarity].label}: ${SURVIVOR_UPGRADE_RARITIES[u.rarity].impact}`">
                     <img class="survivor-rarity-ball" :src="RARITY_BALL_IMAGE[u.rarity]" alt="" />
                     <span>{{ SURVIVOR_UPGRADE_RARITIES[u.rarity].label }}</span>
@@ -5762,6 +5906,11 @@ onBeforeUnmount(() => {
               <div><strong>{{ summary.wave }}</strong><small>Onda</small></div>
             </div>
             <p v-if="runRecords.length" class="survivor-cleared" role="status">🏅 Novo recorde: {{ runRecords.map(recordLabel).join(' · ') }}.</p>
+            <p v-if="deathNote" class="note survivor-death-note" role="status">☠ {{ deathNote }}</p>
+            <p v-if="runDexBest && state" class="note survivor-dex-record" :class="{ 'is-new': runDexImproved }" role="status">
+              {{ runDexBestBefore ? (runDexImproved ? '🏅 Novo recorde de' : '📘 Recorde de') : '📘 Primeiro registro de' }} {{ speciesName(state.player.dexId) || 'sua espécie' }}.
+              {{ dexBestLine(state.player.dexId) }}<template v-if="runDexBestBefore && runDexImproved"> · antes: {{ formatTime(runDexBestBefore.ms) }}</template>
+            </p>
             <SurvivorDiscoveries :alphas="rareDiscoveries.alphas" :terastal="rareDiscoveries.terastal" />
             <section v-if="coachHints.length" class="survivor-coach" aria-labelledby="survivor-coach-title">
               <h3 id="survivor-coach-title">Para a próxima corrida</h3>
@@ -5769,8 +5918,6 @@ onBeforeUnmount(() => {
                 <li v-for="hint in coachHints" :key="hint.id"><span aria-hidden="true">{{ hint.icon }}</span> {{ hint.text }}</li>
               </ul>
             </section>
-            <details class="survivor-summary-more">
-              <summary>Detalhes da corrida · dano, gráfico e fontes</summary>
             <section v-if="summary.damageBySource?.length" class="survivor-chart" aria-label="Dano por golpe">
               <strong>Quem causou o dano</strong>
               <ul>
@@ -5781,6 +5928,8 @@ onBeforeUnmount(() => {
                 </li>
               </ul>
             </section>
+            <details class="survivor-summary-more">
+              <summary>Detalhes · dano recebido e linha do tempo</summary>
             <section v-if="summary.damageTaken?.length" class="survivor-chart survivor-taken-chart" aria-label="Dano recebido">
               <strong>O que mais te machucou</strong>
               <ul>
@@ -5809,9 +5958,6 @@ onBeforeUnmount(() => {
             <p v-if="summary.adaptive" class="note">Desafio adaptável no fim: {{ Math.round(summary.adaptive * 100) }}% da força de sempre.</p>
             <p v-if="state && state.supreme.uses > 0" class="note">⚡ Golpes Supremos usados: {{ state.supreme.uses }}.</p>
             <p v-if="killStreak.best >= STREAK_SHOW_AT" class="note">🔥 Maior sequência: {{ killStreak.best }} abates.</p>
-            <p v-if="summary.finalHit" class="note" role="status">
-              Golpe final: {{ summary.finalHit.shadowBoss ? 'lendário sombrio' : summary.finalHit.boss || summary.finalHit.grade === 'chefao' ? 'chefão' : summary.finalHit.grade === 'elite' ? 'inimigo de treinador' : 'inimigo' }}{{ summary.finalHit.dexId ? ` (${speciesName(summary.finalHit.dexId) || `Pokémon nº ${summary.finalHit.dexId}`})` : '' }} · {{ summary.finalHit.kind }} · {{ summary.finalHit.damage }} de dano (vida antes: {{ Math.ceil(summary.finalHit.hpBefore) }}).
-            </p>
             <p v-if="state && !state.trained" class="note" role="status">🧼 Corrida pura: nada da Vila entrou. Conta no recorde puro.</p>
             <div v-else-if="state?.towerSummary?.length" class="survivor-tower-summary" role="status">
               <strong>Da Vila nesta corrida</strong>

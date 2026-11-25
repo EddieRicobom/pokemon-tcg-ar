@@ -381,15 +381,18 @@ export function drawElementProjectile(
     ctx.globalAlpha = alpha;
   }
   drawParticle(ctx, type, head.x, head.y, size * 1.6, headRotation, timeMs / 1000 + seed);
-  if (type === 'electric' || type === 'normal' || type === 'fairy' || tier >= 3) {
-    // Do nível 3 em diante todo disparo ganha um núcleo incandescente.
-    if (tier >= 3) ctx.globalCompositeOperation = 'lighter';
-    ctx.fillStyle = pal.core;
-    ctx.globalAlpha = alpha * (tier >= 3 ? 0.85 : 1);
-    ctx.beginPath(); ctx.arc(head.x, head.y, size * (0.45 + tier * 0.05), 0, TAU); ctx.fill();
-    ctx.globalCompositeOperation = 'source-over';
-    ctx.globalAlpha = alpha;
-  }
+  // Todo disparo ganha um núcleo claro com aro escuro: é o que mantém o projétil legível no capim claro,
+  // no chão escuro e no meio de partículas — a cor do tipo fica no corpo, a leitura vem do contraste.
+  if (tier >= 3) ctx.globalCompositeOperation = 'lighter';
+  ctx.fillStyle = pal.core;
+  ctx.globalAlpha = alpha * (tier >= 3 ? 0.85 : 1);
+  ctx.beginPath(); ctx.arc(head.x, head.y, size * (0.45 + tier * 0.05), 0, TAU); ctx.fill();
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.globalAlpha = alpha * 0.8;
+  ctx.strokeStyle = '#07131b';
+  ctx.lineWidth = Math.max(1, size * 0.16);
+  ctx.stroke();
+  ctx.globalAlpha = alpha;
   if (tier >= 3 && detailed) {
     // Centelhas do próprio elemento girando em volta da cabeça.
     const motes = tier - 1;

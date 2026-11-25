@@ -7026,6 +7026,7 @@ body:has(.survivor-summary) .universal-controls { opacity: 0; pointer-events: no
 .survivor-upgrade-btn.held-transformer small, .survivor-upgrade-btn.held-transformer .survivor-rarity-label, .survivor-upgrade-btn.held-transformer .survivor-upgrade-family { color: #e3d8ff; }
 .survivor-upgrade-btn.held-transformer .survivor-upgrade-icon { background: radial-gradient(circle, #ffffff 30%, #c9a6ff 75%, rgba(180,140,255,0)); box-shadow: 0 0 14px rgba(201,166,255,.9); }
 .survivor-transformer-badge { display: inline-block; margin-bottom: 3px; padding: 2px 9px; border-radius: 999px; background: linear-gradient(90deg, #ff9ad5, #b48cff, #7fd4ff); color: #160d26; font-size: .72rem; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
+.survivor-synergy-badge { display: inline-block; margin-bottom: 3px; padding: 2px 9px; border-radius: 999px; border: 1px solid #ffe066; background: #3a3113; color: #fff3b0; font-size: .7rem; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; }
 .survivor-transformer-form { display: block; margin-top: 5px; padding: 5px 7px; border-radius: 7px; background: rgba(255,255,255,.12); border-left: 3px solid #7be07b; color: #ffffff !important; }
 @keyframes survivor-transformer-glow { 0%, 100% { box-shadow: 0 0 10px rgba(180,140,255,.55); } 50% { box-shadow: 0 0 22px rgba(255,154,213,.85), 0 0 4px #ffffff; } }
 @media (prefers-reduced-motion: reduce) { .survivor-upgrade-btn.held-transformer { animation: none; box-shadow: 0 0 14px rgba(180,140,255,.7); } }
@@ -7164,6 +7165,12 @@ body:has(.survivor-summary) .universal-controls { opacity: 0; pointer-events: no
 .survivor-feedback-details { margin: 10px 0; border-top: 1px solid #d8d0b8; padding-top: 4px; text-align: left; }
 .survivor-summary-more > summary,
 .survivor-feedback-details > summary { cursor: pointer; padding: 6px 0; color: #dcecff; font-weight: 800; }
+/* O resumo é um card escuro: textos auxiliares e recordes precisam da paleta clara da Torre. */
+.survivor-summary .note { color: var(--sv-muted); }
+.survivor-dex-record { color: #cfd8ff; font-size: .78rem; }
+.survivor-dex-record.is-new { color: #ffe066; font-weight: 700; }
+.survivor-death-note { color: #ffd9c7; }
+.survivor-pick-record { display: block; margin-top: 2px; color: #ffe9a8; font-size: .62rem; font-weight: 800; letter-spacing: .02em; }
 .survivor-summary-more[open] > summary,
 .survivor-feedback-details[open] > summary { color: #fffbe9; }
 
