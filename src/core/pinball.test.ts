@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { activatePinballAbility, createPinballState, launchPinball, mergePinballDex, nudgePinball, pinballCampaignWins, pinballModeUrgent, pinballModeWindowMs, pinballObjective, pinballPartnerSkill, pinballReward, pinballSeconds, pinballStage, pinballVisibleRect, PINBALL_ABILITY_MS, PINBALL_BOSS_CORE, PINBALL_BUMPERS, PINBALL_CAMPAIGN_STAGES, PINBALL_DEX_MAX, PINBALL_FLASH_MS, PINBALL_POPUP_MS, PINBALL_SAVER_MS, PINBALL_TARGETS, PINBALL_TIME_SCALE, PINBALL_TIMER_SCALE, stepPinball } from './pinball';
+import { activatePinballAbility, createPinballState, launchPinball, mergePinballDex, nudgePinball, pinballCampaignWins, pinballComboFraction, pinballModeUrgent, pinballModeWindowMs, pinballNextBonus, pinballObjective, pinballPartnerSkill, pinballReward, pinballSeconds, pinballStage, pinballVisibleRect, PINBALL_ABILITY_MS, PINBALL_BONUS_LABELS, PINBALL_BOSS_CORE, PINBALL_BUMPERS, PINBALL_CAMPAIGN_STAGES, PINBALL_COMBO_MS, PINBALL_DEX_MAX, PINBALL_FLASH_MS, PINBALL_POPUP_MS, PINBALL_SAVER_MS, PINBALL_TARGETS, PINBALL_TIME_SCALE, PINBALL_TIMER_SCALE, stepPinball } from './pinball';
 import type { PinballState } from './pinball';
 
 function hitTarget(s: PinballState, index = 1): void {
@@ -470,6 +470,59 @@ describe('pinball da Vila', () => {
     expect(pinballCampaignWins(6)).toBe(1);
     expect(pinballCampaignWins(11)).toBe(1);
     expect(pinballCampaignWins(12)).toBe(2);
+  });
+
+  it('o bumper iluminado anuncia o próximo bônus e entrega exatamente ele', () => {
+    expect([0, 1, 2, 3, 4, 5].map(pinballNextBonus)).toEqual(['fire', 'spark', 'shield', 'fire', 'spark', 'shield']);
+    expect(pinballNextBonus(-1)).toBe('shield');
+    expect(pinballNextBonus(Number.NaN)).toBe('fire');
+    expect(PINBALL_BONUS_LABELS.fire).toContain('FOGO');
+    expect(PINBALL_BONUS_LABELS.spark).toContain('300');
+    expect(PINBALL_BONUS_LABELS.shield).toContain('PROTEÇÃO');
+
+    const s = createPinballState();
+    launchPinball(s);
+    const bumper = PINBALL_BUMPERS[3]!;
+    const hit = (): void => {
+      s.ball = { x: bumper.x, y: bumper.y, vx: 0, vy: 0 };
+      s.hitCooldown.fill(0);
+      stepPinball(s, { left: false, right: false }, 16);
+    };
+    const first = pinballNextBonus(s.bonusAwards);
+    hit();
+    expect(first).toBe('fire');
+    expect(s.bonusKind).toBe(first);
+    expect(pinballNextBonus(s.bonusAwards)).toBe('spark');
+    s.bonusSpot = 3;
+    hit();
+    expect(s.bonusKind).toBe('spark');
+    expect(pinballNextBonus(s.bonusAwards)).toBe('shield');
+  });
+
+  it('a fração do combo é estável e limitada entre 0 e 1', () => {
+    expect(pinballComboFraction(0)).toBe(0);
+    expect(pinballComboFraction(-100)).toBe(0);
+    expect(pinballComboFraction(PINBALL_COMBO_MS)).toBe(1);
+    expect(pinballComboFraction(PINBALL_COMBO_MS / 2)).toBeCloseTo(0.5, 6);
+    expect(pinballComboFraction(PINBALL_COMBO_MS * 3)).toBe(1);
+    expect(pinballComboFraction(Number.NaN)).toBe(0);
+  });
+
+  it('perder a bola limpa flashes e popups congelados', () => {
+    const s = createPinballState();
+    launchPinball(s);
+    hitBumper(s);
+    expect(s.popups.length).toBeGreaterThan(0);
+    expect(s.hitFlash.some((value) => value > 0)).toBe(true);
+    s.saverMs = 0;
+    s.balls = 1;
+    s.ball = { x: 180, y: 610, vx: 0, vy: 200 };
+    stepPinball(s, { left: false, right: false }, 16);
+    expect(s.phase).toBe('over');
+    expect(s.popups).toEqual([]);
+    expect(s.hitFlash.every((value) => value === 0)).toBe(true);
+    expect(s.slingFlashMs).toEqual([0, 0]);
+    expect(s.coreFlashMs).toBe(0);
   });
 
   it('enquadramento fixo mantém alvos, flippers e ralo visíveis', () => {

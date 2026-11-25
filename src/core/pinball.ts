@@ -77,6 +77,17 @@ const MAX_EXTRA_BALLS = 9;
 export const PINBALL_DEX_MAX = 1025;
 export type PinballBonusKind = 'fire' | 'spark';
 const BONUS_CYCLE = ['fire', 'spark', 'shield'] as const;
+export const PINBALL_BONUS_LABELS: Record<PinballBonusKind | 'shield', string> = { fire: 'FOGO ×2', spark: 'FAÍSCA +300', shield: 'PROTEÇÃO' };
+/** Próximo bônus do bumper iluminado, para o jogador poder mirar sabendo o que ganha. */
+export function pinballNextBonus(awards: number): PinballBonusKind | 'shield' {
+  const value = Number.isFinite(awards) ? Math.floor(awards) : 0;
+  return BONUS_CYCLE[((value % BONUS_CYCLE.length) + BONUS_CYCLE.length) % BONUS_CYCLE.length]!;
+}
+export const PINBALL_COMBO_MS = 2200 * TIMER;
+export function pinballComboFraction(comboMs: number): number {
+  if (!Number.isFinite(comboMs) || comboMs <= 0) return 0;
+  return Math.min(1, comboMs / PINBALL_COMBO_MS);
+}
 
 export type PinballMode = 'normal' | 'capture' | 'evolution' | 'bonus';
 export type PinballPhase = 'ready' | 'playing' | 'between' | 'over' | 'won';
@@ -302,7 +313,7 @@ export function pinballObjective(state: Pick<PinballState, 'mode' | 'stage' | 'b
     const unit = state.bossPhase === 1 ? 'alvos diferentes' : state.bossPhase === 2 ? 'no núcleo' : 'bumpers';
     return { label: phase.label.toUpperCase(), counter: `${state.progress}/${pinballMissionGoal('bonus', state.bossPhase)} ${unit}`, hint: phase.objective };
   }
-  return { label: 'MISSÃO', counter: `${state.charge}/3 toques`, hint: `Acerte alvos ou o ${info.species} para iniciar` };
+  return { label: 'MISSÃO', counter: `${state.charge}/3 toques`, hint: `Acerte alvos ou o ${info.species}` };
 }
 
 export function createPinballState(best = 0): PinballState {
@@ -495,7 +506,7 @@ function clampSpin(value: number): number {
 
 /** Bônus dos locais especiais: fogo (pontos em dobro), faísca (+300 por bumper) ou proteção (resgate). */
 function awardBonus(s: PinballState, events: PinballEvent[]): void {
-  const kind = BONUS_CYCLE[s.bonusAwards % BONUS_CYCLE.length]!;
+  const kind = pinballNextBonus(s.bonusAwards);
   s.bonusAwards += 1;
   score(s, 2000);
   if (kind === 'shield') {
@@ -663,6 +674,8 @@ function loseBall(s: PinballState, events: PinballEvent[]): void {
     return;
   }
   s.balls -= 1;
+  // Os efeitos de desenho não sobrevivem ao fim da bola: sem isso o popup/flash congela na tela de fim.
+  s.hitFlash.fill(0); s.slingFlashMs = [0, 0]; s.coreFlashMs = 0; s.popups = [];
   events.push('drain');
   if (s.balls <= 0) { s.phase = 'over'; announce(s, `Aventura encerrada na etapa ${s.stage + 1}.`); return; }
   s.phase = 'between';
@@ -763,7 +776,7 @@ export function stepPinball(s: PinballState, input: PinballInput, dtMs: number):
         s.hitFlash[i] = FLASH_MS;
         s.bumperHits += 1;
         s.combo = s.comboMs > 0 ? Math.min(5, s.combo + 1) : 1;
-        s.comboMs = 2200 * TIMER;
+        s.comboMs = PINBALL_COMBO_MS;
         let points = (i < 3 ? 150 : 90) * s.combo * (s.abilityKind === 'power' && s.abilityMs > 0 ? 2 : 1);
         if (s.bonusKind === 'fire') points *= 2;
         if (s.bonusKind === 'spark') points += 300;

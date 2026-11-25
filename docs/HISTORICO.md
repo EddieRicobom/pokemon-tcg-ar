@@ -5,6 +5,13 @@ O estado atual, as fases, as pendências e os riscos continuam no [plano](../IMP
 datadas (com o que foi e o que não foi validado em cada uma). A regra de validação do plano vale também para estas entradas:
 🔶 significa que **nada foi visto num celular real**.
 
+## Pinball: resposta de acerto, leitura honesta e marcos de campanha (25/11/2026)
+
+- **Mesa inteira e resposta ao acerto:** o enquadramento passou a ser fixo (`PINBALL_VIEW`, 1,02) e um teste garante que alvos, flippers erguidos e ralo continuam dentro da moldura — nada de seguir a bola e cortar o topo. Bumper, alvo, slingshot e núcleo piscam ao acerto, com pontos flutuantes mostrando o delta real (multiplicador e nível inclusos), som separado por tipo e subindo com o combo. A bola salva voltou para a escala 0,6, e flashes/popups são limpos quando a bola é perdida (antes congelavam na tela de fim).
+- **HUD e tempo:** `pinballObjective` é a fonte única do painel da mesa e da barra da etapa — durante o desafio o texto não manda mais «iniciar», a captura conta «capturas» e o chefe mostra a fase certa. O tempo restante tem barra na mesa e aviso vermelho nos últimos 10 s; se acaba, a etapa continua e a carga fica em 2/3 (um toque reabre) em vez de zerar. O menu pausa física e pintura, é `aria-modal` com `inert`, prende/restaura o foco e devolve os flippers; os flippers também respondem ao teclado, a live region sobrevive ao paisagem e a linha da etapa ganhou a Pokédex.
+- **Progressão honesta:** cada seis etapas a campanha fecha um marco (`pinballCampaignWins`), que vale uma vitória no Treinador e 25 moedas, com banner prioritário que não é sobrescrito pelo da etapa. A derrota passou a pagar capturas, evoluções e marcos (teto de 120 moedas), a melhor etapa aparece em base 1 e o próximo bônus do bumper iluminado é escrito no próprio ★. O combo foi para junto dos flippers; fora da partida a mesa repinta a ~14 fps e o degradê do clima é cacheado (com o menu aberto não há repintura).
+- 🔶 Pinball com 35 testes, typecheck, build e 14/14 de layout (360×640) passaram. A sensação de jogo, o enquadramento e a altura real da mesa em celular pequeno ainda precisam de playtest no aparelho.
+
 ## Torre: dano inicial do jogador 11% menor (25/11/2026)
 
 - **Corte de 11%:** `SURVIVOR_START_DAMAGE_SCALE = 0,89` é aplicado em `initialAttack`, então o dano com que a corrida começa — golpe principal, segundo golpe e o fallback sem perfil — cai 11%. As cartas continuam multiplicando sobre essa base.
