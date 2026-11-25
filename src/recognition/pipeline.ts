@@ -1,6 +1,7 @@
 import type { ArtIndex } from './art-index';
 import { traitsFromTcgdex } from '../core/card-traits';
 import type { CardTraits } from '../core/card-traits';
+import { speciesDexId } from '../core/species-name';
 import { CatalogLookup } from './catalog-index';
 import { detectCard } from './detect-card';
 import type { CardDetection } from './detect-card';
@@ -269,11 +270,30 @@ interface CachedReference {
   features: CardFeatures;
 }
 
-/** Referências guardadas na memória entre quadros (a mesma carta aparece em vários quadros seguidos). */
-const REFERENCE_MEMORY = 24;
+/**
+ * Referências guardadas na memória entre quadros (a mesma carta aparece em vários quadros seguidos).
+ * Cada referência é uma imagem 630×880 RGBA (≈2,1 MB): quem manda é o teto de bytes, não o número de entradas.
+ * Uma leitura baixa no máximo 6 candidatas (+6 variantes); guardar 24 segurava ~50 MB de RGBA no celular sem
+ * reaproveitamento — as variantes usam URLs diferentes das candidatas, então não havia acerto entre as rodadas.
+ */
+const REFERENCE_MEMORY = 8;
+const REFERENCE_MEMORY_BYTES = 16 * 1024 * 1024;
 
 function toIdentified(card: CardRecordLike): IdentifiedCard {
   return { ...card, dexId: card.dexIds[0] };
+}
+
+/**
+ * Números da Pokédex da carta: os do TCGdex; quando ele não informa (caso da coleção Delta Reign, nov/2026),
+ * o da candidata do índice e, por fim, o da espécie lida do nome impresso. A recuperação só vale para carta
+ * de Pokémon: Treinador e Energia nunca ganham número por engano.
+ */
+function dexIdsOf(card: TcgdexCard, fallback?: CandidateInfo): number[] {
+  const fromSource = Array.isArray(card.dexId) ? card.dexId.filter((n) => Number.isInteger(n) && n > 0) : [];
+  if (fromSource.length > 0) return fromSource;
+  if (card.category !== 'Pokemon') return [];
+  const recovered = fallback?.dexId ?? speciesDexId(card.name);
+  return recovered !== undefined ? [recovered] : [];
 }
 
 export function recordFromTcgdex(card: TcgdexCard, fallback?: CandidateInfo): CardRecordLike {
@@ -287,9 +307,7 @@ export function recordFromTcgdex(card: TcgdexCard, fallback?: CandidateInfo): Ca
     setOfficial: card.set.cardCount?.official ?? fallback?.setOfficial ?? 0,
     setTotal: card.set.cardCount?.total ?? fallback?.setTotal ?? 0,
     setCode: fallback?.setCode,
-    dexIds: Array.isArray(card.dexId) && card.dexId.length > 0
-      ? card.dexId.filter((n) => Number.isInteger(n) && n > 0)
-      : fallback?.dexId ? [fallback.dexId] : [],
+    dexIds: dexIdsOf(card, fallback),
     imageBase: card.image,
     ...(traitsFromTcgdex(card) ? { traits: traitsFromTcgdex(card) } : {}),
   };
@@ -320,6 +338,8 @@ type IndexedCandidate = CandidateInfo & { prior: number; viaVariant?: boolean };
 export class RecognitionPipeline {
   /** Imagens de referência já baixadas e decodificadas (LRU por endereço). */
   private readonly references = new Map<string, CachedReference>();
+  /** Soma dos bytes RGBA das imagens em `references` (para o teto de memória). */
+  private referencesBytes = 0;
   /** A última leitura achou a carta de cabeça para baixo: no próximo quadro tenta essa orientação primeiro. */
   private lastRotated = false;
 
@@ -485,7 +505,10 @@ export class RecognitionPipeline {
       indexCandidates = [...indexCandidates, ...extra];
     }
     metrics.candidates = indexCandidates.length;
-    const hasVariants = (catalog?.variantCandidates(read.bottom, read.names, new Set(), 1).length ?? 0) > 0;
+    // A sonda de variantes só serve ao caso "nada no índice": fora dele seria uma varredura inteira jogada fora.
+    const hasVariants = indexCandidates.length === 0
+      ? (catalog?.variantCandidates(read.bottom, read.names, new Set(), 1).length ?? 0) > 0
+      : false;
     if (indexCandidates.length === 0 && !hasVariants) {
       metrics.candidatesMs = Math.round(now() - t3);
       clock.skip('ranking', 'nenhuma candidata no catálogo');
@@ -565,7 +588,7 @@ export class RecognitionPipeline {
     });
   }
 
-  /** Referência pela memória (quadros anteriores) ou baixada agora; a memória guarda as `REFERENCE_MEMORY` mais recentes. */
+  /** Referência pela memória (quadros anteriores) ou baixada agora; a memória respeita `REFERENCE_MEMORY` e o teto de bytes. */
   private async reference(url: string, bytes: { value: number; hits: number }): Promise<CachedReference> {
     const hit = this.references.get(url);
     if (hit) {
@@ -578,12 +601,29 @@ export class RecognitionPipeline {
     bytes.value += loaded.bytes;
     const entry: CachedReference = { image: loaded.image, blob: loaded.blob, features: computeFeatures(loaded.image) };
     this.references.set(url, entry);
-    while (this.references.size > REFERENCE_MEMORY) {
+    this.referencesBytes += entry.image.data.byteLength;
+    this.trimReferences();
+    return entry;
+  }
+
+  /** Esquece a referência mais antiga da memória (LRU) e desconta os bytes dela. */
+  private forgetReference(url: string): void {
+    const entry = this.references.get(url);
+    if (!entry) return;
+    this.references.delete(url);
+    this.referencesBytes -= entry.image.data.byteLength;
+  }
+
+  /** Mantém a memória dentro do número de entradas e do teto de bytes; nunca descarta a última que sobrou. */
+  private trimReferences(): void {
+    while (
+      this.references.size > REFERENCE_MEMORY ||
+      (this.referencesBytes > REFERENCE_MEMORY_BYTES && this.references.size > 1)
+    ) {
       const oldest = this.references.keys().next().value;
       if (oldest === undefined) break;
-      this.references.delete(oldest);
+      this.forgetReference(oldest);
     }
-    return entry;
   }
 
   private async loadCandidates(clock: StageClock, list: IndexedCandidate[], bytes: { value: number; hits: number }): Promise<LoadedCandidate[]> {

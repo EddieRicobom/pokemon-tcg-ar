@@ -64,6 +64,19 @@ function parseLocalId(localId: string): { prefix: string; value: number } | null
   return { prefix: (match[1] ?? '').toUpperCase(), value: Number.parseInt(match[2] ?? '0', 10) };
 }
 
+/** Carta do índice com o número já parseado no construtor (evita regex em cada varredura). */
+interface CardEntry {
+  localId: string;
+  name: string;
+  ptName: string | undefined;
+  dexId: number | undefined;
+  /** Prefixo em maiúsculas; null quando o localId não é numérico (ex.: "SWSH001a"). */
+  prefix: string | null;
+  value: number;
+  /** Posição dentro do set: restaura a ordem de inserção ao mesclar buckets do Map. */
+  order: number;
+}
+
 /** Resultado da busca manual (só o que a lista mostra). */
 export interface ManualMatch {
   id: string;
@@ -82,9 +95,40 @@ export class CatalogLookup {
   readonly generatedAt: string;
   readonly cardCount: number;
 
+  /** Cartas de cada set na ordem original e índice `prefixo:valor` → cartas (também na ordem original). */
+  private readonly cardsBySet: CardEntry[][] = [];
+  private readonly numbersBySet: Map<string, CardEntry[]>[] = [];
+
   constructor(private readonly data: CatalogIndexData) {
     this.generatedAt = data.generatedAt;
-    this.cardCount = data.sets.reduce((sum, set) => sum + set.cards.length, 0);
+    let cardCount = 0;
+    for (const set of data.sets) {
+      const entries: CardEntry[] = [];
+      const byNumber = new Map<string, CardEntry[]>();
+      for (const [localId, name, ptName, dexId] of set.cards) {
+        const local = parseLocalId(localId);
+        const entry: CardEntry = {
+          localId,
+          name,
+          ptName,
+          dexId,
+          prefix: local ? local.prefix : null,
+          value: local ? local.value : 0,
+          order: entries.length,
+        };
+        entries.push(entry);
+        if (local) {
+          const key = `${local.prefix}:${local.value}`;
+          const bucket = byNumber.get(key);
+          if (bucket) bucket.push(entry);
+          else byNumber.set(key, [entry]);
+        }
+      }
+      this.cardsBySet.push(entries);
+      this.numbersBySet.push(byNumber);
+      cardCount += set.cards.length;
+    }
+    this.cardCount = cardCount;
   }
 
   get setCount(): number {
@@ -114,8 +158,11 @@ export class CatalogLookup {
     // também cartas achadas só pelo nome. Com total, um dígito mal lido é tratado pela rodada de variantes
     // (números parecidos), não aqui.
     const strictNumber = !!(number && number.total);
+    const numberPrefix = number?.prefix.toUpperCase() ?? '';
+    const setCode = bottom.setCode?.toUpperCase() ?? '';
 
-    for (const set of this.data.sets) {
+    for (let index = 0; index < this.data.sets.length; index++) {
+      const set = this.data.sets[index]!;
       let setPrior = 0;
       if (number?.total && number.total.prefix === '') {
         if (set.official === number.total.value || set.total === number.total.value) {
@@ -124,58 +171,62 @@ export class CatalogLookup {
           setPrior += 0.2;
         }
       }
-      if (bottom.setCode && set.code && set.code.toUpperCase() === bottom.setCode.toUpperCase()) setPrior += 0.2;
+      if (setCode && set.code && set.code.toUpperCase() === setCode) setPrior += 0.2;
 
-      for (const [localId, name, ptName, dexId] of set.cards) {
+      // Sem nome útil (ou com número e sem nomes), a única porta é o número: o Map do set evita varrer as cartas.
+      if (number && (strictNumber || nameKeys.length === 0)) {
+        const matched = this.numbersBySet[index]!.get(`${numberPrefix}:${number.value}`);
+        if (!matched) continue;
+        for (const card of matched) {
+          // Set certo, número certo: segue. O nome, quando existe, só reforça o prior.
+          let prior = setPrior + 0.3;
+          if (nameGuesses.length > 0) prior += this.bestSimilarity(nameGuesses, card) * 0.4;
+          result.push(this.candidateFrom(set, card, prior));
+        }
+        continue;
+      }
+      if (!number && nameKeys.length === 0) continue;
+
+      // Nome participa (busca combinada ou só nome): varredura completa, mas sem regex por carta.
+      for (const card of this.cardsBySet[index]!) {
+        const numberMatched = !!number && card.prefix === numberPrefix && card.value === number.value;
         let prior = setPrior;
-        let numberMatched = false;
-        if (number) {
-          const local = parseLocalId(localId);
-          if (local && local.value === number.value && local.prefix === number.prefix.toUpperCase()) {
-            numberMatched = true;
-            prior += 0.3;
-          }
-        }
-        if (strictNumber) {
-          // Set certo, número certo: segue. Qualquer outra coisa (número não bateu) não é candidata — o nome
-          // não resgata um número que já fechou errado; isso é papel da rodada de variantes, depois.
-          if (!numberMatched) continue;
-          if (nameGuesses.length > 0) {
-            const similarity = Math.max(
-              ...nameGuesses.map((guess) => Math.max(nameSimilarity(guess, name), ptName ? nameSimilarity(guess, ptName) : 0)),
-            );
-            prior += similarity * 0.4;
-          }
-        } else {
-          if (!numberMatched && nameKeys.length === 0) continue;
-          if (nameGuesses.length > 0) {
-            const similarity = Math.max(
-              ...nameGuesses.map((guess) => Math.max(nameSimilarity(guess, name), ptName ? nameSimilarity(guess, ptName) : 0)),
-            );
-            if (!numberMatched && similarity < 0.75) continue;
-            prior += similarity * 0.4;
-          } else if (!numberMatched) {
-            continue;
-          }
-        }
-        result.push({
-          id: `${set.id}-${localId}`,
-          setId: set.id,
-          localId,
-          name,
-          altNames: ptName ? [ptName] : undefined,
-          setOfficial: set.official,
-          setTotal: set.total,
-          setCode: set.code,
-          release: set.release,
-          ...(dexId ? { dexId } : {}),
-          prior,
-        });
+        if (numberMatched) prior += 0.3;
+        const similarity = this.bestSimilarity(nameGuesses, card);
+        if (!numberMatched && similarity < 0.75) continue;
+        prior += similarity * 0.4;
+        result.push(this.candidateFrom(set, card, prior));
       }
     }
     // Mais evidência primeiro; em empate, a coleção mais recente.
     result.sort((a, b) => b.prior - a.prior || (b.release ?? '').localeCompare(a.release ?? ''));
     return { list: result.slice(0, limit), total: result.length };
+  }
+
+  /** Monta a candidata com os mesmos campos/ordem de antes (o `dexId` só entra quando existe). */
+  private candidateFrom(set: IndexSet, card: CardEntry, prior: number): IndexCandidate {
+    return {
+      id: `${set.id}-${card.localId}`,
+      setId: set.id,
+      localId: card.localId,
+      name: card.name,
+      altNames: card.ptName ? [card.ptName] : undefined,
+      setOfficial: set.official,
+      setTotal: set.total,
+      setCode: set.code,
+      release: set.release,
+      ...(card.dexId ? { dexId: card.dexId } : {}),
+      prior,
+    };
+  }
+
+  /** Maior semelhança entre os palpites e o nome (e o alternativo) da carta — mesma conta de antes. */
+  private bestSimilarity(nameGuesses: string[], card: CardEntry): number {
+    let best = 0;
+    for (const guess of nameGuesses) {
+      best = Math.max(best, nameSimilarity(guess, card.name), card.ptName ? nameSimilarity(guess, card.ptName) : 0);
+    }
+    return best;
   }
 
   /**
@@ -194,31 +245,32 @@ export class CatalogLookup {
       for (const v of digitVariants(number.total.value)) totalValues.set(v, 1);
     }
     const result: IndexCandidate[] = [];
-    for (const set of this.data.sets) {
+    const numberPrefix = number.prefix.toUpperCase();
+    const values = [...numberValues.keys()];
+    for (let index = 0; index < this.data.sets.length; index++) {
+      const set = this.data.sets[index]!;
       let changed = 0;
       if (totalValues.size > 0) {
         const penalty = totalValues.get(set.official);
         if (penalty === undefined) continue;
         changed += penalty;
       }
-      for (const [localId, name, ptName, dexId] of set.cards) {
-        const local = parseLocalId(localId);
-        if (!local || local.prefix !== number.prefix.toUpperCase()) continue;
-        const numberPenalty = numberValues.get(local.value);
-        if (numberPenalty === undefined) continue;
-        const id = `${set.id}-${localId}`;
+      // Junta os buckets dos números procurados e devolve a ordem original das cartas no set.
+      const byNumber = this.numbersBySet[index]!;
+      const matched: CardEntry[] = [];
+      for (const value of values) {
+        const bucket = byNumber.get(`${numberPrefix}:${value}`);
+        if (bucket) matched.push(...bucket);
+      }
+      if (matched.length === 0) continue;
+      if (matched.length > 1) matched.sort((a, b) => a.order - b.order);
+      for (const card of matched) {
+        const id = `${set.id}-${card.localId}`;
         if (excludeIds.has(id)) continue;
+        const numberPenalty = numberValues.get(card.value)!;
         let prior = 0.3 - 0.1 * (changed + numberPenalty);
-        if (nameGuesses.length > 0) {
-          const similarity = Math.max(
-            ...nameGuesses.map((guess) => Math.max(nameSimilarity(guess, name), ptName ? nameSimilarity(guess, ptName) : 0)),
-          );
-          prior += similarity * 0.3;
-        }
-        result.push({
-          id, setId: set.id, localId, name, altNames: ptName ? [ptName] : undefined, setOfficial: set.official,
-          setTotal: set.total, setCode: set.code, release: set.release, ...(dexId ? { dexId } : {}), prior, viaVariant: true,
-        });
+        if (nameGuesses.length > 0) prior += this.bestSimilarity(nameGuesses, card) * 0.3;
+        result.push({ ...this.candidateFrom(set, card, prior), viaVariant: true });
       }
     }
     result.sort((a, b) => b.prior - a.prior || (b.release ?? '').localeCompare(a.release ?? ''));
@@ -284,26 +336,32 @@ export class CatalogLookup {
     return [...out];
   }
 
-  private byIdMap: Map<string, IndexCandidate> | null = null;
+  /** Índice id → (set, carta); a candidata é montada só para o id pedido (alguns por busca, não 23,7 mil objetos). */
+  private byIdLookup: Map<string, { set: IndexSet; card: CardEntry }> | null = null;
 
   /** Dados do índice de uma carta pelo id (usado para transformar um palpite visual em candidata). */
   byId(id: string): IndexCandidate | null {
-    if (!this.byIdMap) {
-      this.byIdMap = new Map();
-      for (const set of this.data.sets) {
-        for (const [localId, name, ptName, dexId] of set.cards) {
-          this.byIdMap.set(`${set.id}-${localId}`, {
-            id: `${set.id}-${localId}`, setId: set.id, localId, name, altNames: ptName ? [ptName] : undefined,
-            setOfficial: set.official, setTotal: set.total, setCode: set.code, release: set.release, ...(dexId ? { dexId } : {}), prior: 0.2,
-          });
-        }
+    if (!this.byIdLookup) {
+      this.byIdLookup = new Map();
+      for (let index = 0; index < this.data.sets.length; index++) {
+        const set = this.data.sets[index]!;
+        for (const card of this.cardsBySet[index]!) this.byIdLookup.set(`${set.id}-${card.localId}`, { set, card });
       }
     }
-    return this.byIdMap.get(id) ?? null;
+    const found = this.byIdLookup.get(id);
+    return found ? this.candidateFrom(found.set, found.card, 0.2) : null;
   }
 
+  private idSet: Set<string> | null = null;
+
   hasCard(id: string): boolean {
-    return this.data.sets.some((set) => id.startsWith(`${set.id}-`) && set.cards.some(([localId]) => `${set.id}-${localId}` === id));
+    if (!this.idSet) {
+      this.idSet = new Set();
+      for (const set of this.data.sets) {
+        for (const [localId] of set.cards) this.idSet.add(`${set.id}-${localId}`);
+      }
+    }
+    return this.idSet.has(id);
   }
 }
 

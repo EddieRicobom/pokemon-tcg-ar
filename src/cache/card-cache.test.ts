@@ -167,6 +167,24 @@ describe('preparo (Carregar)', () => {
     expect(spriteCalls).toEqual([1008]);
   });
 
+  it('carta sem dexId na fonte (Delta Reign) recupera a espécie pelo nome no preparo', async () => {
+    const cache = make();
+    const golisopod: CardRecordLike = {
+      ...pikachu, id: 'me06-011', name: 'Mega Golisopod ex', localId: '011', dexIds: [],
+      imageBase: 'https://assets.example/me06/011', traits: { category: 'Pokemon', hp: 340 },
+    };
+    await cache.recordRecognition({ card: golisopod });
+    const result = await cache.prepareCard('me06-011');
+    expect(result.card.dexIds).toEqual([768]);
+    expect(result.card.sprite).toMatchObject({ state: 'ok', key: 'https://sprites/768.gif' });
+    expect(spriteCalls).toEqual([768]);
+    // Treinador sem dexId continua sem sprite e sem número inventado.
+    await cache.recordRecognition({ card: { ...golisopod, id: 'me06-089', name: 'Aarune', traits: { category: 'Trainer' } } });
+    const trainerCard = await cache.prepareCard('me06-089');
+    expect(trainerCard.card.dexIds).toEqual([]);
+    expect(trainerCard.card.sprite.state).toBe('unavailable');
+  });
+
   it('não baixa de novo o que já está guardado', async () => {
     const cache = make();
     await cache.recordRecognition({ card: pikachu });
@@ -484,6 +502,44 @@ describe('remoção, limpeza e limites', () => {
     const cache = make({ storage: {} });
     expect((await cache.storageInfo()).cards).toBe(0);
     expect(await cache.requestPersistence()).toBeUndefined();
+  });
+
+  it('respeita o limite de bytes removendo as menos recentes', async () => {
+    const cache = make({ maxBytes: 900 });
+    await cache.recordRecognition({ card: pikachu });
+    await cache.recordRecognition({ card: pikachu2 });
+    await cache.prepareCard('base1-58'); // referência 300 B + GIF 500 B
+    await cache.prepareCard('swsh1-65'); // + referência 300 B (GIF compartilhado)
+    await cache.recordRecognition({ card: trainer }); // dispara enforceLimits: 1100 B > 900 B
+    expect((await cache.list()).map((c) => c.id)).toEqual(['base1-91', 'swsh1-65']);
+    expect(backend.files.has('https://assets.example/base1/58/low.webp')).toBe(false);
+    expect(backend.files.has('https://sprites/25.gif')).toBe(true); // ainda usado por swsh1-65
+  });
+
+  it('verifyIntegrity lê as chaves do backend uma vez, sem um match por arquivo', async () => {
+    const cache = make();
+    await cache.recordRecognition({ card: pikachu });
+    await cache.prepareCard('base1-58');
+    let keyCalls = 0;
+    let hasCalls = 0;
+    const keys = backend.keys.bind(backend);
+    const has = backend.has.bind(backend);
+    backend.keys = async () => { keyCalls++; return keys(); };
+    backend.has = async (url: string) => { hasCalls++; return has(url); };
+    expect(await cache.verifyIntegrity()).toBe(0);
+    expect(keyCalls).toBe(1);
+    expect(hasCalls).toBe(0);
+  });
+
+  it('localReferences é memoizado e se atualiza depois de uma gravação', async () => {
+    const cache = make();
+    await cache.recordRecognition({ card: pikachu, reference: syntheticCard(1) });
+    const first = await cache.localReferences();
+    expect(await cache.localReferences()).toBe(first);
+    await cache.recordRecognition({ card: pikachu2, reference: syntheticCard(1) });
+    const after = await cache.localReferences();
+    expect(after).not.toBe(first);
+    expect(after.map((r) => r.card.id).sort()).toEqual(['base1-58', 'swsh1-65']);
   });
 });
 

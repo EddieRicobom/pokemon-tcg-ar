@@ -7,6 +7,8 @@ export interface AssetBackend {
   delete(url: string): Promise<boolean>;
   has(url: string): Promise<boolean>;
   clear(): Promise<void>;
+  /** Todas as chaves guardadas de uma vez (evita um `match` por arquivo). Opcional: sem ela, use `has`. */
+  keys?(): Promise<Set<string>>;
 }
 
 export class QuotaError extends Error {
@@ -54,6 +56,25 @@ export class CacheStorageBackend implements AssetBackend {
     await caches.delete(this.name);
   }
 
+  /**
+   * As chaves do cache de uma vez. Além da URL completa, guarda a forma de caminho relativo: as chaves
+   * internas do app (ex.: alvos de AR) começam com "/" e o `Request` do Cache Storage as normaliza.
+   */
+  async keys(): Promise<Set<string>> {
+    const requests = await (await this.open()).keys();
+    const result = new Set<string>();
+    for (const request of requests) {
+      result.add(request.url);
+      try {
+        const parsed = new URL(request.url);
+        result.add(`${parsed.pathname}${parsed.search}`);
+      } catch {
+        // URL opaca: fica só a forma original.
+      }
+    }
+    return result;
+  }
+
   /** Remove caches de versões antigas do esquema. */
   static async deleteOldVersions(): Promise<void> {
     if (typeof caches === 'undefined') return;
@@ -90,6 +111,10 @@ export class MemoryBackend implements AssetBackend {
 
   async clear(): Promise<void> {
     this.files.clear();
+  }
+
+  async keys(): Promise<Set<string>> {
+    return new Set(this.files.keys());
   }
 }
 

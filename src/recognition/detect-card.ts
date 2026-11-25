@@ -357,9 +357,9 @@ function dilateMask(mask: Uint8Array, width: number, height: number, radius: num
 /** Fechamento morfológico (dilata e erode): junta pedaços separados por finas falhas (reflexos, texto claro). */
 function closeMask(mask: Uint8Array, width: number, height: number, radius: number): Uint8Array {
   const dilated = dilateMask(mask, width, height, radius);
+  // `map` já devolve Uint8Array; cópias adicionais só gastavam memória a cada nível de limiar.
   const inverted = dilated.map((v) => 1 - v);
-  const eroded = dilateMask(new Uint8Array(inverted), width, height, radius).map((v) => 1 - v);
-  return new Uint8Array(eroded);
+  return dilateMask(inverted, width, height, radius).map((v) => 1 - v);
 }
 
 /** Preenche buracos (regiões de fundo que não tocam a borda do quadro). */

@@ -24,15 +24,40 @@ export function cardFingerprint(frame: RgbaImage, quad: Quad): CardFeatures | nu
   return rectified ? computeFeatures(rectified) : null;
 }
 
+/** Diagnóstico opcional de uma confirmação (usado pelos testes; não altera o resultado). */
+export interface SameCardDiagnostics {
+  /** Quantas orientações foram de fato retificadas: 1 no caminho rápido, 2 no caminho completo. */
+  orientations: number;
+}
+
+function orientationScore(photo: CardFeatures, frame: RgbaImage, quad: Quad): number {
+  const now = cardFingerprint(frame, quad);
+  return now ? compareFeatures(photo, now).combined : 0;
+}
+
 /**
  * Quanto a carta neste quadro se parece com a da foto (0–1). Confere as duas orientações: a foto guarda a carta
  * já na orientação lida (pode ter sido de cabeça para baixo), e o contorno detectado agora vem sempre "de pé".
+ *
+ * Caminho rápido: a orientação normal é avaliada primeiro e, se já alcança `SAME_CARD_SIMILARITY`, o quadro girado
+ * nem é retificado. A decisão de quem chama não muda: o único consumidor (ScanController) decide pelo limiar e usa o
+ * número apenas para exibir a porcentagem. Acima do limiar o desfecho é "mesma carta" com ou sem a segunda
+ * orientação (numa carta de pé, o girado ficaria bem abaixo); abaixo dele as duas orientações continuam sendo
+ * avaliadas e o máximo é devolvido como antes.
  */
-export function sameCardScore(photo: CardFeatures, frame: RgbaImage, quad: Quad): number {
-  let best = 0;
-  for (const q of [quad, rotate180(quad)]) {
-    const now = cardFingerprint(frame, q);
-    if (now) best = Math.max(best, compareFeatures(photo, now).combined);
+export function sameCardScore(
+  photo: CardFeatures,
+  frame: RgbaImage,
+  quad: Quad,
+  diagnostics?: SameCardDiagnostics,
+): number {
+  const upright = orientationScore(photo, frame, quad);
+  if (upright >= SAME_CARD_SIMILARITY) {
+    if (diagnostics) diagnostics.orientations = 1;
+    return upright;
   }
-  return best;
+  // Só aqui vale pagar a segunda retificação; `rotate180` aloca apenas neste caminho.
+  const flipped = orientationScore(photo, frame, rotate180(quad));
+  if (diagnostics) diagnostics.orientations = 2;
+  return Math.max(upright, flipped);
 }

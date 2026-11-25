@@ -4,6 +4,12 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). 
 
 ## [Não lançado]
 
+### Scan: leitura mais rápida e sprite da Delta Reign (2026-11-25)
+
+- **Leitura mais rápida, mesmas decisões**: o índice do catálogo resolve número → cartas com estruturas pré-computadas (antes, cada leitura varria as 23,7 mil cartas com regex); a sonda de variantes só roda quando não há candidata; a confirmação visual não retifica mais o quadro duas vezes quando a carta já está de pé; a integridade do cache é conferida com uma leitura de chaves em vez de até 900; e a memória de referências do scan caiu de ~50 MB para no máximo 16 MB.
+- **Sprite da Delta Reign (ME06)**: o TCGdex publicou a coleção sem `dexId` em nenhuma carta, então o app não achava o sprite (e a carta passava como se não tivesse Pokémon). Quando a fonte omite o número, ele agora é recuperado do nome impresso pela lista oficial de espécies da PokéAPI (`src/core/species-name.ts`, `src/core/data/pokemon-species-names.json`), **só** para carta de Pokémon — Treinador e Energia continuam sem número. Cartas já guardadas sem sprite se recuperam na próxima abertura ou em "Recarregar".
+- Cobertura nova: equivalência do índice contra a implementação anterior, recuperação do nome (Mega, regionais, Rotom, acentos), guarda de Treinador e memoização do cache. Nada medido em celular real.
+
 ### Kart: itens, combate e recuperação (2026-11-25)
 
 - Sete itens de pista (Turbo, Casca, Escudo, Óleo, Concha, Raio e Cometa), com caixas que voltam, uso pelo jogador (Q) e pelos NPCs, ataques que fazem rodar, escudo que bloqueia e placar de acertos.

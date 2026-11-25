@@ -16,7 +16,7 @@ const scans = new Map<number, RgbaImage>([[1, syntheticCard(1)], [2, syntheticCa
 
 describe('metadados da carta', () => {
   it('preserva apenas a raridade informada pelo TCGdex', () => {
-    const raw = { id: 'base1-58', name: 'Pikachu', localId: '58', rarity: 'Rara', image: 'https://assets.example/card', dexId: [25], set: { id: 'base1', name: 'Base Set', cardCount: { official: 102, total: 102 } } };
+    const raw = { id: 'base1-58', name: 'Pikachu', localId: '58', category: 'Pokemon', rarity: 'Rara', image: 'https://assets.example/card', dexId: [25], set: { id: 'base1', name: 'Base Set', cardCount: { official: 102, total: 102 } } };
     expect(recordFromTcgdex(raw)).toMatchObject({ rarity: 'Rara', localId: '58', setName: 'Base Set' });
     const unknown = { ...raw, rarity: undefined };
     expect(recordFromTcgdex(unknown)).not.toHaveProperty('rarity');
@@ -24,6 +24,20 @@ describe('metadados da carta', () => {
     const noDex = { ...raw, dexId: undefined };
     expect(recordFromTcgdex(noDex, { id: 'x', setId: 's', localId: '1', name: 'n', setOfficial: 1, setTotal: 1, dexId: 1024 }).dexIds).toEqual([1024]);
     expect(recordFromTcgdex(raw, { id: 'x', setId: 's', localId: '1', name: 'n', setOfficial: 1, setTotal: 1, dexId: 1024 }).dexIds).toEqual(raw.dexId);
+  });
+
+  it('fonte sem dexId (Delta Reign): recupera a espécie pelo nome impresso', () => {
+    const raw = {
+      id: 'me06-011', name: 'Mega Golisopod ex', localId: '011', category: 'Pokemon', hp: 340, image: 'https://assets.example/me06/011',
+      set: { id: 'me06', name: 'Delta Reign', cardCount: { official: 103, total: 141 } },
+    };
+    expect(recordFromTcgdex(raw).dexIds).toEqual([768]);
+    // O índice manda mais que o nome quando ambos existem.
+    const fallback = { id: 'me06-011', setId: 'me06', localId: '011', name: 'Mega Golisopod ex', setOfficial: 103, setTotal: 141, dexId: 768 };
+    expect(recordFromTcgdex({ ...raw, name: 'Forma Desconhecida' }, fallback).dexIds).toEqual([768]);
+    // Treinador nunca ganha número, mesmo que o índice traga um por engano.
+    const trainer = { ...raw, name: 'Aarune', category: 'Trainer', hp: undefined };
+    expect(recordFromTcgdex(trainer, { ...fallback, dexId: 25 }).dexIds).toEqual([]);
   });
 });
 
@@ -45,7 +59,7 @@ const api: Record<string, { seed: number; body: unknown }> = {
 };
 
 function card(id: string, localId: string, name: string, setId: string, setName: string, official: number, dexId: number[]) {
-  return { id, localId, name, image: `https://assets.example/${id}`, dexId, set: { id: setId, name: setName, cardCount: { official, total: official } } };
+  return { id, localId, name, category: 'Pokemon', image: `https://assets.example/${id}`, dexId, set: { id: setId, name: setName, cardCount: { official, total: official } } };
 }
 
 function makeDeps(overrides: { ocr?: OcrEngine; offline?: boolean; catalog?: boolean; local?: PipelineDeps['localReferences'] } = {}) {
@@ -129,6 +143,20 @@ describe('RecognitionPipeline', () => {
     expect(result.status).toBe('identified');
     expect(consulted).toBe(0);
     expect(result.metrics.artCandidates).toBeUndefined();
+  });
+
+  it('com candidatas no índice, a sonda de variantes não roda (não desperdiça uma varredura por leitura)', async () => {
+    const { deps } = makeDeps();
+    let probes = 0;
+    class CountingCatalog extends CatalogLookup {
+      override variantCandidates(...args: Parameters<CatalogLookup['variantCandidates']>) {
+        probes++;
+        return super.variantCandidates(...args);
+      }
+    }
+    const result = await new RecognitionPipeline({ ...deps, catalog: new CountingCatalog(index) }).recognize(photoOf(1));
+    expect(result.status).toBe('identified');
+    expect(probes).toBe(0);
   });
 
   it('escolhe a impressão exata entre cartas com o mesmo número/total e devolve o dexId', async () => {

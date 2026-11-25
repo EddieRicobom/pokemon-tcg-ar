@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { renderScene, syntheticCard } from './__fixtures__/synthetic';
 import { cardFingerprint, SAME_CARD_SIMILARITY, sameCardScore } from './snapshot';
+import type { SameCardDiagnostics } from './snapshot';
 import type { Quad } from './types';
 
 const quad: Quad = [{ x: 200, y: 70 }, { x: 410, y: 40 }, { x: 440, y: 350 }, { x: 230, y: 330 }];
@@ -27,5 +28,34 @@ describe('foto temporária do scan', () => {
     const photoUpside = cardFingerprint(photoFrame, upside)!;
     const later = renderScene(syntheticCard(1), moved, 640, 480, { noise: 12 });
     expect(sameCardScore(photoUpside, later, moved)).toBeGreaterThanOrEqual(SAME_CARD_SIMILARITY);
+  });
+
+  it('caminho rápido: orientação normal já confirma, então a segunda não é retificada', () => {
+    const later = renderScene(syntheticCard(1), moved, 640, 480, { noise: 12 });
+    const diagnostics: SameCardDiagnostics = { orientations: 0 };
+    expect(sameCardScore(photo, later, moved, diagnostics)).toBeGreaterThanOrEqual(SAME_CARD_SIMILARITY);
+    expect(diagnostics.orientations).toBe(1);
+  });
+
+  it('equivalência: confirma de pé e de cabeça para baixo, mas não outra carta', () => {
+    const later = renderScene(syntheticCard(1), moved, 640, 480, { noise: 12 });
+    const upside: Quad = [quad[2], quad[3], quad[0], quad[1]];
+    const photoUpside = cardFingerprint(photoFrame, upside)!;
+
+    const uprightDiag: SameCardDiagnostics = { orientations: 0 };
+    expect(sameCardScore(photo, later, moved, uprightDiag)).toBeGreaterThanOrEqual(SAME_CARD_SIMILARITY);
+    expect(uprightDiag.orientations).toBe(1);
+
+    // A foto de cabeça para baixo não passa na orientação normal: aí o caminho completo é usado e devolve o máximo.
+    const upsideDiag: SameCardDiagnostics = { orientations: 0 };
+    expect(sameCardScore(photoUpside, later, moved, upsideDiag)).toBeGreaterThanOrEqual(SAME_CARD_SIMILARITY);
+    expect(upsideDiag.orientations).toBe(2);
+
+    for (const seed of [2, 3]) {
+      const other = renderScene(syntheticCard(seed), moved, 640, 480, { noise: 12 });
+      const otherDiag: SameCardDiagnostics = { orientations: 0 };
+      expect(sameCardScore(photo, other, moved, otherDiag)).toBeLessThan(SAME_CARD_SIMILARITY);
+      expect(otherDiag.orientations).toBe(2);
+    }
   });
 });

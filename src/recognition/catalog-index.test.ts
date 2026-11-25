@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { CatalogLookup, loadCatalogIndex } from './catalog-index';
-import type { CatalogIndexData } from './catalog-index';
+import { CatalogLookup, digitVariants, loadCatalogIndex } from './catalog-index';
+import type { CatalogIndexData, IndexCandidate } from './catalog-index';
 import { parseBottomText } from './parse-ocr';
+import type { ParsedBottom } from './parse-ocr';
+import { nameSimilarity, normalizeName } from './text';
 
 const data: CatalogIndexData = {
   version: 1,
@@ -165,5 +167,253 @@ describe('variantCandidates', () => {
 
   it('sem número lido não há variantes', () => {
     expect(lookup.variantCandidates({}, ['Pikachu'], new Set())).toEqual([]);
+  });
+});
+
+/**
+ * Cópia fiel da lógica ANTIGA (varredura completa com regex por carta), mantida só para provar que os índices
+ * pré-computados devolvem exatamente os mesmos candidatos, na mesma ordem, com o mesmo total.
+ */
+function legacyParseLocalId(localId: string): { prefix: string; value: number } | null {
+  const match = /^([A-Za-z]*)0*(\d+)$/.exec(localId);
+  if (!match) return null;
+  return { prefix: (match[1] ?? '').toUpperCase(), value: Number.parseInt(match[2] ?? '0', 10) };
+}
+
+function legacyCandidatesWithTotal(
+  indexData: CatalogIndexData,
+  bottom: ParsedBottom,
+  nameGuesses: string[],
+  limit = 8,
+): { list: IndexCandidate[]; total: number } {
+  const result: IndexCandidate[] = [];
+  const number = bottom.number;
+  const nameKeys = nameGuesses.map(normalizeName).filter(Boolean);
+  const strictNumber = !!(number && number.total);
+
+  for (const set of indexData.sets) {
+    let setPrior = 0;
+    if (number?.total && number.total.prefix === '') {
+      if (set.official === number.total.value || set.total === number.total.value) setPrior += 0.4;
+      else if (Math.abs(set.official - number.total.value) <= 2) setPrior += 0.2;
+    }
+    if (bottom.setCode && set.code && set.code.toUpperCase() === bottom.setCode.toUpperCase()) setPrior += 0.2;
+
+    for (const [localId, name, ptName, dexId] of set.cards) {
+      let prior = setPrior;
+      let numberMatched = false;
+      if (number) {
+        const local = legacyParseLocalId(localId);
+        if (local && local.value === number.value && local.prefix === number.prefix.toUpperCase()) {
+          numberMatched = true;
+          prior += 0.3;
+        }
+      }
+      if (strictNumber) {
+        if (!numberMatched) continue;
+        if (nameGuesses.length > 0) {
+          const similarity = Math.max(
+            ...nameGuesses.map((guess) => Math.max(nameSimilarity(guess, name), ptName ? nameSimilarity(guess, ptName) : 0)),
+          );
+          prior += similarity * 0.4;
+        }
+      } else {
+        if (!numberMatched && nameKeys.length === 0) continue;
+        if (nameGuesses.length > 0) {
+          const similarity = Math.max(
+            ...nameGuesses.map((guess) => Math.max(nameSimilarity(guess, name), ptName ? nameSimilarity(guess, ptName) : 0)),
+          );
+          if (!numberMatched && similarity < 0.75) continue;
+          prior += similarity * 0.4;
+        } else if (!numberMatched) {
+          continue;
+        }
+      }
+      result.push({
+        id: `${set.id}-${localId}`,
+        setId: set.id,
+        localId,
+        name,
+        altNames: ptName ? [ptName] : undefined,
+        setOfficial: set.official,
+        setTotal: set.total,
+        setCode: set.code,
+        release: set.release,
+        ...(dexId ? { dexId } : {}),
+        prior,
+      });
+    }
+  }
+  result.sort((a, b) => b.prior - a.prior || (b.release ?? '').localeCompare(a.release ?? ''));
+  return { list: result.slice(0, limit), total: result.length };
+}
+
+function legacyVariantCandidates(
+  indexData: CatalogIndexData,
+  bottom: ParsedBottom,
+  nameGuesses: string[],
+  excludeIds: ReadonlySet<string>,
+  limit = 6,
+): IndexCandidate[] {
+  const number = bottom.number;
+  if (!number) return [];
+  const numberValues = new Map<number, number>([[number.value, 0]]);
+  for (const v of digitVariants(number.value)) numberValues.set(v, 1);
+  const totalValues = new Map<number, number>();
+  if (number.total && number.total.prefix === '') {
+    totalValues.set(number.total.value, 0);
+    for (const v of digitVariants(number.total.value)) totalValues.set(v, 1);
+  }
+  const result: IndexCandidate[] = [];
+  for (const set of indexData.sets) {
+    let changed = 0;
+    if (totalValues.size > 0) {
+      const penalty = totalValues.get(set.official);
+      if (penalty === undefined) continue;
+      changed += penalty;
+    }
+    for (const [localId, name, ptName, dexId] of set.cards) {
+      const local = legacyParseLocalId(localId);
+      if (!local || local.prefix !== number.prefix.toUpperCase()) continue;
+      const numberPenalty = numberValues.get(local.value);
+      if (numberPenalty === undefined) continue;
+      const id = `${set.id}-${localId}`;
+      if (excludeIds.has(id)) continue;
+      let prior = 0.3 - 0.1 * (changed + numberPenalty);
+      if (nameGuesses.length > 0) {
+        const similarity = Math.max(
+          ...nameGuesses.map((guess) => Math.max(nameSimilarity(guess, name), ptName ? nameSimilarity(guess, ptName) : 0)),
+        );
+        prior += similarity * 0.3;
+      }
+      result.push({
+        id, setId: set.id, localId, name, altNames: ptName ? [ptName] : undefined, setOfficial: set.official,
+        setTotal: set.total, setCode: set.code, release: set.release, ...(dexId ? { dexId } : {}), prior, viaVariant: true,
+      });
+    }
+  }
+  result.sort((a, b) => b.prior - a.prior || (b.release ?? '').localeCompare(a.release ?? ''));
+  return result.slice(0, limit);
+}
+
+/** Catálogo determinístico de 40 sets × 75 cartas (3.000), cobrindo prefixos, zeros, nomes, altNames e dexId. */
+function equivalenceCatalog(): CatalogIndexData {
+  let seed = 0x2f6e2b1;
+  const next = (): number => {
+    seed = (seed * 1664525 + 1013904223) >>> 0;
+    return seed / 0x100000000;
+  };
+  const names = ['Pikachu', 'Pikachu ex', 'Charizard ex', 'Mimikyu', 'Gengar', 'Terapagos ex', 'Budew', 'Eevee', 'Mew', 'Snorlax'];
+  const alts = ['Pikachu', 'Carapicu', 'Mimikyu', 'Gengar', 'Terapagos', 'Bulbasauro', 'Eevee', 'Mew'];
+  const officials = [60, 102, 108, 165, 187, 30];
+  const sets = Array.from({ length: 40 }, (_, s) => {
+    const official = officials[s % officials.length]!;
+    const cards: [string, string, string?, number?][] = [
+      ['025', 'Pikachu', 'Pikachu', 25],
+      ['25', 'Pikachu ex'],
+      ['080', 'Pikachu'],
+      ['80', 'Gengar', 'Gengar'],
+      ['TG05', 'Mimikyu', 'Mimikyu'],
+      ['TG06', 'Mimikyu ex'],
+      ['SWSH025', 'Eevee', 'Eevee'],
+      ['060', 'Gengar ex', 'Gengar', 94],
+      ['SWSH001a', 'Budew'],
+    ];
+    for (let i = 0; i < 66; i++) {
+      const base = 1 + Math.floor(next() * official);
+      let localId = String(base);
+      if (i % 11 === 0) localId = `TG${String(base).padStart(2, '0')}`;
+      else if (i % 17 === 0) localId = `SWSH${String(base).padStart(3, '0')}`;
+      else if (i % 37 === 0) localId = `SWSH${base}a`;
+      else if (i % 5 === 0) localId = String(base).padStart(3, '0');
+      const name = names[Math.floor(next() * names.length)] ?? 'Pikachu';
+      const altName = i % 4 === 0 ? alts[Math.floor(next() * alts.length)] : undefined;
+      const dexId = i % 9 === 0 ? 900 + (i % 50) : undefined;
+      cards.push([localId, name, altName, dexId]);
+    }
+    return {
+      id: `eq${s}`,
+      name: `Equivalence ${s}`,
+      ptName: s % 2 === 0 ? `Equivalencia ${s}` : undefined,
+      official,
+      total: official + (s % 4),
+      release: `20${10 + (s % 15)}-0${1 + (s % 9)}-1${s % 10}`,
+      code: s % 3 === 0 ? 'MEW' : undefined,
+      cards,
+    };
+  });
+  return { version: 1, generatedAt: '2026-11-25T00:00:00Z', sets };
+}
+
+describe('equivalência com a varredura ingênua (índices pré-computados)', () => {
+  const indexData = equivalenceCatalog();
+  const indexed = new CatalogLookup(indexData);
+
+  const bottoms: [string, ParsedBottom][] = [
+    ['número + total', parseBottomText('25/102')],
+    ['zeros à esquerda', parseBottomText('025/165')],
+    ['número + total com prefixo', parseBottomText('TG05/TG30')],
+    ['total próximo', parseBottomText('25/108')],
+    ['código do set + número/total', parseBottomText('MEW EN 025/102')],
+    ['número sem total (promo)', parseBottomText('TG05')],
+    ['número sem total SWSH', parseBottomText('SWSH025')],
+    ['número sem total, sem prefixo', { number: { prefix: '', value: 25, raw: '25' } }],
+    ['total sem set exato', parseBottomText('25/999')],
+    ['só nome', {}],
+    ['código do set sem número', { setCode: 'MEW' }],
+  ];
+  const guessSets: string[][] = [[], ['Pikachu'], ['Pikachu ex', 'Gengar'], ['!!!'], ['Zzzzz']];
+
+  it('candidatesWithTotal: mesmos candidatos, ordem e total', () => {
+    expect(indexData.sets).toHaveLength(40);
+    expect(indexed.cardCount).toBe(3000);
+    for (const [label, bottom] of bottoms) {
+      for (const names of guessSets) {
+        for (const limit of [1, 6, 50]) {
+          const expected = legacyCandidatesWithTotal(indexData, bottom, names, limit);
+          const actual = indexed.candidatesWithTotal(bottom, names, limit);
+          expect(actual, `${label} / nomes=[${names.join(', ')}] / limite=${limit}`).toEqual(expected);
+        }
+      }
+    }
+  }, 30_000);
+
+  it('variantCandidates: mesmas variantes, ordem, prior e viaVariant', () => {
+    const variantBottoms: [string, ParsedBottom][] = [
+      ['variante de número + total', parseBottomText('85/102')],
+      ['total presente nos sets', parseBottomText('85/60')],
+      ['prefixo TG', parseBottomText('TG06/TG30')],
+      ['zeros à esquerda', parseBottomText('080/062')],
+      ['número sem total', parseBottomText('SWSH025')],
+      ['total sem set', parseBottomText('25/999')],
+    ];
+    const excludeSets: ReadonlySet<string>[] = [
+      new Set(),
+      new Set(['eq0-025', 'eq1-TG05', 'eq2-080', 'eq3-25']),
+    ];
+    const variantGuesses: string[][] = [[], ['Pikachu'], ['Mimikyu', 'Gengar']];
+    for (const [label, bottom] of variantBottoms) {
+      for (const excludeIds of excludeSets) {
+        for (const names of variantGuesses) {
+          for (const limit of [1, 6, 50]) {
+            const expected = legacyVariantCandidates(indexData, bottom, names, excludeIds, limit);
+            const actual = indexed.variantCandidates(bottom, names, excludeIds, limit);
+            expect(actual, `${label} / nomes=[${names.join(', ')}] / limite=${limit}`).toEqual(expected);
+          }
+        }
+      }
+    }
+  }, 30_000);
+
+  it('byId e hasCard respondem como a varredura direta, inclusive para ids inexistentes', () => {
+    for (const set of indexData.sets) {
+      for (const [localId] of set.cards) {
+        const id = `${set.id}-${localId}`;
+        expect(indexed.hasCard(id), id).toBe(true);
+        expect(indexed.byId(id), id).toMatchObject({ id, setId: set.id, localId });
+      }
+    }
+    expect(indexed.hasCard('eq0-nao-existe')).toBe(false);
+    expect(indexed.byId('eq0-nao-existe')).toBeNull();
   });
 });

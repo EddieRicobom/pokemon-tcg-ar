@@ -2,6 +2,7 @@ import { TARGET_VERSION } from '../ar/target';
 import { normalizeTraits } from '../core/card-traits';
 import { fetchSprite as defaultFetchSprite } from '../ar/sprite-source';
 import { formDexId, spriteKeyIsFor } from '../core/dex-form';
+import { speciesDexId } from '../core/species-name';
 import { isMegaName } from '../core/mega';
 import { isShiny, shinyForNewCard } from '../core/shiny';
 import type { SpriteSource } from '../ar/sprite-source';
@@ -157,6 +158,12 @@ export class CardCache {
   private readonly backoffMs: number;
   private readonly retries: number;
   private index: Map<string, CachedCard> | null = null;
+  /** Soma dos bytes dos registros de asset. Carregada uma vez (lazy) e mantida em memória. */
+  private assetBytes: number | null = null;
+  /** Muda a cada gravação que altera cartas ou assets; invalida o cache de `localReferences`. */
+  private revision = 0;
+  private localRefs: LocalReference[] | null = null;
+  private localRefsRevision = -1;
 
   constructor(private readonly deps: CardCacheDeps) {
     this.db = deps.db;
@@ -203,11 +210,15 @@ export class CardCache {
 
   /** Referências para reconhecer sem rede: cartas com características válidas guardadas. */
   async localReferences(): Promise<LocalReference[]> {
+    // Reconstruir isto a cada quadro do scan custa caro; só muda quando alguma carta é gravada.
+    if (this.localRefs && this.localRefsRevision === this.revision) return this.localRefs;
     const result: LocalReference[] = [];
     for (const card of (await this.load()).values()) {
       if (!card.features || card.pending !== undefined) continue;
       result.push({ card: this.toRecord(card), features: featuresFromJson(card.features) });
     }
+    this.localRefs = result;
+    this.localRefsRevision = this.revision;
     return result;
   }
 
@@ -231,6 +242,25 @@ export class CardCache {
   private async save(card: CachedCard): Promise<void> {
     (await this.load()).set(card.id, card);
     await this.db.put('cards', card);
+    this.revision++;
+  }
+
+  // ------------------------------------------------------------ contabilidade
+
+  /** Carrega a soma de bytes dos assets uma única vez; daí em diante é só um número em memória. */
+  private async loadAssetBytes(): Promise<number> {
+    if (this.assetBytes === null) {
+      let total = 0;
+      for (const record of await this.db.getAll('assets')) total += record.bytes;
+      this.assetBytes = total;
+    }
+    return this.assetBytes;
+  }
+
+  /** Mantém o contador de bytes em dia depois de gravar/apagar um registro de asset. */
+  private noteAssetChange(previousBytes: number, nextBytes: number): void {
+    if (this.assetBytes !== null) this.assetBytes += nextBytes - previousBytes;
+    this.revision++;
   }
 
   /**
@@ -371,6 +401,7 @@ export class CardCache {
   private async storeAsset(cardId: string, kind: AssetKind, url: string, blob: Blob, previous?: SlotInfo): Promise<SlotInfo> {
     const knownRecord = await this.db.get('assets', url);
     const alreadyStored = knownRecord && (await this.assets.has(url));
+    let previousRecord = knownRecord;
     if (!alreadyStored) {
       try {
         await this.assets.put(url, blob);
@@ -378,6 +409,8 @@ export class CardCache {
         if (!(error instanceof QuotaError)) throw error;
         await this.evictForSpace(cardId, blob.size);
         await this.assets.put(url, blob);
+        // A expulsão pode ter apagado o registro lido acima: relê para o contador de bytes não contar duas vezes.
+        previousRecord = await this.db.get('assets', url);
       }
     }
     const refs = new Set(knownRecord?.refs ?? []);
@@ -387,6 +420,7 @@ export class CardCache {
       refs: [...refs], storedAt: alreadyStored ? knownRecord.storedAt : this.now(),
     };
     await this.db.put('assets', record);
+    this.noteAssetChange(previousRecord?.bytes ?? 0, record.bytes);
     if (previous?.key && previous.key !== url) await this.release(cardId, previous.key);
     return { state: 'ok', key: url, bytes: record.bytes, kind: previous?.kind };
   }
@@ -401,8 +435,10 @@ export class CardCache {
     if (refs.length === 0) {
       await this.assets.delete(url);
       await this.db.delete('assets', url);
+      this.noteAssetChange(record.bytes, 0);
     } else {
       await this.db.put('assets', { ...record, refs });
+      this.noteAssetChange(record.bytes, record.bytes);
     }
   }
 
@@ -461,6 +497,15 @@ export class CardCache {
   async prepareCard(id: string, onProgress?: (progress: PrepareProgress) => void): Promise<PrepareResult> {
     let card = await this.get(id);
     if (!card) throw new Error(`Carta ${id} não está no cache.`);
+    // Carta gravada quando a fonte não informou o dexId (Delta Reign, nov/2026): recupera pelo nome impresso.
+    // Só para Pokémon (Treinador/Energia não têm `category: 'Pokemon'`); sem correspondência, continua faltando.
+    if (card.dexIds.length === 0 && card.traits?.category === 'Pokemon') {
+      const recovered = speciesDexId(card.name);
+      if (recovered !== undefined) {
+        card = { ...card, dexIds: [recovered] };
+        await this.save(card);
+      }
+    }
     const steps: PrepareStep[] = ['referência', 'sprite', 'alvo de AR'];
     const report = (step: PrepareStep) => onProgress?.({ cardId: id, step, index: steps.indexOf(step), total: steps.length });
     const timings: PrepareTimings = {};
@@ -613,10 +658,14 @@ export class CardCache {
   /** Detecta arquivos que o navegador expulsou (cache evicted): o registro volta a "faltando". */
   async verifyIntegrity(): Promise<number> {
     let repaired = 0;
-    for (const card of (await this.load()).values()) {
+    const index = await this.load();
+    // Uma leitura do backend inteiro em vez de um `has` por arquivo de cada carta.
+    const keys = this.assets.keys ? await this.assets.keys() : null;
+    const isPresent = (key: string) => (keys ? keys.has(key) : this.assets.has(key));
+    for (const card of index.values()) {
       const next = { ...card };
       const slots = (['reference', 'sprite', 'target'] as const).map((slotName) => ({ slotName, slot: card[slotName] }));
-      const present = await Promise.all(slots.map(({ slot }) => slot.state === 'ok' && slot.key ? this.assets.has(slot.key) : true));
+      const present = await Promise.all(slots.map(({ slot }) => (slot.state === 'ok' && slot.key ? isPresent(slot.key) : true)));
       let changed = false;
       for (let i = 0; i < slots.length; i++) {
         const { slotName, slot } = slots[i]!;
@@ -639,6 +688,7 @@ export class CardCache {
     }
     await this.db.delete('cards', id);
     (await this.load()).delete(id);
+    this.revision++;
   }
 
   async clear(): Promise<void> {
@@ -646,12 +696,13 @@ export class CardCache {
     await this.db.clear('assets');
     await this.assets.clear();
     this.index = new Map();
+    this.assetBytes = 0;
+    this.localRefs = null;
+    this.revision++;
   }
 
   private async totalBytes(): Promise<number> {
-    let total = 0;
-    for (const record of await this.db.getAll('assets')) total += record.bytes;
-    return total;
+    return this.loadAssetBytes();
   }
 
   /** Mantém o limite de cartas e de bytes removendo as menos recentes (nunca a que acabou de ser usada). */
@@ -676,11 +727,12 @@ export class CardCache {
   private async evictForSpace(protectId: string, needed: number): Promise<void> {
     const candidates = [...(await this.load()).values()].filter((card) => card.id !== protectId).sort((a, b) => a.lastSeenAt - b.lastSeenAt);
     let freed = 0;
+    await this.loadAssetBytes();
     for (const card of candidates) {
       if (freed >= needed) break;
-      const before = await this.totalBytes();
+      const before = this.assetBytes ?? 0;
       await this.remove(card.id);
-      freed += before - (await this.totalBytes());
+      freed += before - (this.assetBytes ?? 0);
     }
   }
 
