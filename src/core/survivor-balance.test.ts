@@ -41,7 +41,8 @@ describe('regressão de dificuldade do Survival', { timeout: 30_000 }, () => {
     expect(Math.max(...values) - Math.min(...values)).toBeLessThanOrEqual(38_000);
     expect(averages.get('bug')).toBeGreaterThanOrEqual(142_000);
     // A variedade nova de ataques de chefe (cruz, raios e meteoros) muda um pouco o ritmo da amostra.
-    expect(averages.get('fighting')).toBeGreaterThanOrEqual(146_000);
+    // A sinergia garantida também desloca uma vaga por oferta: fighting cai ~0,8% e continua bem acima do piso geral.
+    expect(averages.get('fighting')).toBeGreaterThanOrEqual(143_500);
     expect(averages.get('ice')).toBeGreaterThanOrEqual(147_000);
   });
 });

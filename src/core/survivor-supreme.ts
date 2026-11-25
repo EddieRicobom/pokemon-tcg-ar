@@ -1,4 +1,5 @@
 import { healSurvivor } from './survivor-healing';
+import { breakSurvivorEnemyArmor, mitigateSurvivorEnemyDamage } from './survivor-armor';
 import type { PokemonType } from './pokemon-data';
 import type { SurvivorEnemy, SurvivorEvent, SurvivorInput, SurvivorState } from './survivor-types';
 
@@ -190,7 +191,10 @@ function releaseSupreme(state: SurvivorState, hooks: SupremeHooks, events: Survi
   let hits = 0;
   for (const e of state.enemies) {
     if (e.hp <= 0 || e.thief || Math.hypot(e.x - origin.x, e.y - origin.y) > radius + e.radius) continue;
-    const damage = supremeDamageTo(e, def, hooks.attackDamage) * ((e.protectedMs ?? 0) > 0 ? 0.75 : 1);
+    const raw = supremeDamageTo(e, def, hooks.attackDamage) * ((e.protectedMs ?? 0) > 0 ? 0.75 : 1);
+    // O Supremo é dano direto: respeita a armadura, mas abre a guarda antes de bater.
+    breakSurvivorEnemyArmor(e);
+    const damage = mitigateSurvivorEnemyDamage(e, raw);
     hooks.record(def.name, color, Math.min(Math.max(0, e.hp), damage));
     e.hp -= damage;
     e.hitFlashMs = 140;

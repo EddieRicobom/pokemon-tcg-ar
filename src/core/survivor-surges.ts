@@ -17,14 +17,15 @@ import { ARENA_H, ARENA_W, PLAYER_RADIUS } from './survivor-types';
  * o primeiro deles começar. Nada aqui inventa recompensa fora dos sistemas que já existem (orbes, chaves e artefatos).
  */
 
-export type SurvivorSurgeKind = 'orb-rain' | 'swarm' | 'wild-friend' | 'trial';
-export const SURVIVOR_SURGE_KINDS: readonly SurvivorSurgeKind[] = ['orb-rain', 'swarm', 'wild-friend', 'trial'];
+export type SurvivorSurgeKind = 'orb-rain' | 'swarm' | 'wild-friend' | 'trial' | 'elite-pack';
+export const SURVIVOR_SURGE_KINDS: readonly SurvivorSurgeKind[] = ['orb-rain', 'swarm', 'wild-friend', 'trial', 'elite-pack'];
 
 export const SURVIVOR_SURGE_LABEL: Record<SurvivorSurgeKind, { icon: string; name: string }> = {
   'orb-rain': { icon: '🌠', name: 'Chuva de orbes' },
   swarm: { icon: '🪶', name: 'Revoada' },
   'wild-friend': { icon: '💚', name: 'Amigo selvagem' },
   trial: { icon: '⏱', name: 'Desafio relâmpago' },
+  'elite-pack': { icon: '⚔️', name: 'Matilha de elite' },
 };
 
 /** Primeiro evento depois da fase de aprendizado (o primeiro especial chega aos 3 min); depois, um a cada 105 s jogados. */
@@ -103,6 +104,19 @@ export const TRIAL_REWARD_ORB_VALUE = 10;
 export const KILL_MARK_EVERY_MS = 10_000;
 const KILL_MARKS = 7;
 
+/**
+ * Matilha de elite: só depois dos 10 min, quando a densidade de comuns já caiu. É o pico de ritmo do
+ * late game: 3 elites (4 a partir dos 15 min) em volta de um ponto marcado, com uma chave no fim.
+ */
+export const ELITE_PACK_MIN_MS = 10 * 60_000;
+export const ELITE_PACK_LATE_MS = 15 * 60_000;
+export const ELITE_PACK_WARN_MS = 2200;
+export const ELITE_PACK_BASE = 3;
+export const ELITE_PACK_LATE = 4;
+export const ELITE_PACK_FIGHT_MS = 45_000;
+export const ELITE_PACK_DISTANCE = 300;
+export const ELITE_PACK_SPREAD = 78;
+
 export interface SurgeDrop {
   x: number;
   y: number;
@@ -153,6 +167,8 @@ export interface SurgeHooks {
   attackDamage: number;
   /** Cria um inimigo comum do momento e devolve o objeto, já na lista (null se a arena está cheia). */
   spawnCommon(): SurvivorEnemy | null;
+  /** Cria uma elite numa posição do aviso da matilha; devolve o id (null se a arena está cheia). */
+  spawnElite(x: number, y: number): number | null;
   /** Solta uma chave de baú no chão. */
   dropKey(x: number, y: number): void;
   /** Solta um artefato sorteado pelo sistema de itens da corrida. */
@@ -174,8 +190,8 @@ export function surgeRoll(seed: number, index: number, salt: number): number {
 }
 
 /**
- * Ordem dos eventos da corrida: cada volta de quatro passa por todos os tipos, embaralhados pela semente. A revoada
- * nunca abre antes de `SWARM_MIN_MS`: se for a vez dela cedo demais, troca de lugar com o próximo tipo.
+ * Ordem dos eventos da corrida: cada volta passa por todos os tipos, embaralhados pela semente. Revoada e
+ * matilha têm janela mínima — se for a vez delas cedo demais, troca de lugar com o próximo tipo.
  */
 export function surgeKindAt(seed: number, index: number, elapsedMs: number): SurvivorSurgeKind {
   const round = Math.floor(index / SURVIVOR_SURGE_KINDS.length);
@@ -185,9 +201,14 @@ export function surgeKindAt(seed: number, index: number, elapsedMs: number): Sur
     [order[i], order[j]] = [order[j]!, order[i]!];
   }
   const slot = index % order.length;
-  const kind = order[slot]!;
-  if (kind !== 'swarm' || elapsedMs >= SWARM_MIN_MS) return kind;
-  return order[(slot + 1) % order.length]!;
+  const available = (kind: SurvivorSurgeKind): boolean =>
+    (kind !== 'swarm' || elapsedMs >= SWARM_MIN_MS) && (kind !== 'elite-pack' || elapsedMs >= ELITE_PACK_MIN_MS);
+  // Se a vez for de um evento que ainda não pode abrir, cede o lugar ao próximo tipo disponível.
+  for (let offset = 0; offset < order.length; offset++) {
+    const candidate = order[(slot + offset) % order.length]!;
+    if (available(candidate)) return candidate;
+  }
+  return order[slot]!;
 }
 
 /** Meta do desafio: o ritmo do último minuto, levado a 20 s com folga de 30%, entre 8 e 40 abates. */
@@ -249,9 +270,12 @@ function startSurge(state: SurvivorState, track: SurvivorSurgeTrack, events: Sur
     const probe = { id: 900_000 + index, kind: 0, boss: false, grade: 'comum', x: at.x, y: at.y, hp: 1, maxHp: 1, speed: 0, damage: 0, radius: 13, hitFlashMs: 0 } satisfies SurvivorEnemy;
     const dexId = state.enemyDexId ? state.enemyDexId(probe, state.elapsedMs, state.runSeed) : null;
     state.surge = { kind, phase: 'offer', index, leftMs: FRIEND_OFFER_MS, friend: { dexId, x: at.x, y: at.y, zapTimerMs: 0 } };
-  } else {
+  } else if (kind === 'trial') {
     const at = pointAround(state, surgeRoll(seed, index, 5) * Math.PI * 2, 220 + surgeRoll(seed, index, 6) * 80);
     state.surge = { kind, phase: 'offer', index, leftMs: TRIAL_OFFER_MS, x: at.x, y: at.y };
+  } else {
+    const at = pointAround(state, surgeRoll(seed, index, 8) * Math.PI * 2, ELITE_PACK_DISTANCE);
+    state.surge = { kind, phase: 'warn', index, leftMs: ELITE_PACK_WARN_MS, x: at.x, y: at.y, memberIds: [] };
   }
   const surge = state.surge;
   events.push({ type: 'surge', kind, phase: surge.phase === 'active' ? 'start' : surge.phase, ...(surge.friend?.dexId ? { dexId: surge.friend.dexId } : {}) });
@@ -443,6 +467,46 @@ function stepTrial(state: SurvivorState, track: SurvivorSurgeTrack, surge: Survi
   if (surge.leftMs <= 0) finish(state, track, events, 'trial', 'fail', done);
 }
 
+/**
+ * Matilha de elite: aviso curto e depois as elites nascem juntas em volta do ponto marcado. A chave só
+ * cai quando a matilha inteira cai, então fugir não dá recompensa e enfrentar dá.
+ */
+function stepElitePack(state: SurvivorState, track: SurvivorSurgeTrack, surge: SurvivorSurge, dtMs: number, events: SurvivorEvent[], hooks: SurgeHooks): void {
+  surge.leftMs -= dtMs;
+  if (surge.phase === 'warn') {
+    if (surge.leftMs > 0) return;
+    const cx = surge.x ?? state.player.x;
+    const cy = surge.y ?? state.player.y;
+    const count = state.elapsedMs >= ELITE_PACK_LATE_MS ? ELITE_PACK_LATE : ELITE_PACK_BASE;
+    surge.memberIds ??= [];
+    for (let i = 0; i < count; i++) {
+      const angle = surgeRoll(state.runSeed, surge.index, 400 + i) * Math.PI * 2;
+      const distance = 30 + surgeRoll(state.runSeed, surge.index, 500 + i) * ELITE_PACK_SPREAD;
+      const id = hooks.spawnElite(cx + Math.cos(angle) * distance, cy + Math.sin(angle) * distance);
+      if (id !== null) surge.memberIds.push(id);
+    }
+    if (surge.memberIds.length === 0) {
+      finish(state, track, events, 'elite-pack', 'end');
+      return;
+    }
+    surge.phase = 'active';
+    surge.leftMs = ELITE_PACK_FIGHT_MS;
+    state.fx.push({ kind: 'pulse', x: cx, y: cy, r: 110, color: '#ff7a4a', ageMs: 0, lifeMs: 700 });
+    events.push({ type: 'surge', kind: 'elite-pack', phase: 'start', value: surge.memberIds.length });
+    return;
+  }
+  const alive = surge.memberIds?.some((id) => state.enemies.some((e) => e.id === id && e.hp > 0)) ?? false;
+  if (!alive) {
+    const cx = surge.x ?? state.player.x;
+    const cy = surge.y ?? state.player.y;
+    hooks.dropKey(cx, cy);
+    state.fx.push({ kind: 'pulse', x: cx, y: cy, r: 70, color: '#ffd84a', ageMs: 0, lifeMs: 600 });
+    finish(state, track, events, 'elite-pack', 'success', surge.memberIds?.length ?? 0);
+    return;
+  }
+  if (surge.leftMs <= 0) finish(state, track, events, 'elite-pack', 'end');
+}
+
 /** Um passo dos eventos-relâmpago. Chame depois das mortes do quadro (o desafio conta abates de verdade). */
 export function stepSurvivorSurge(state: SurvivorState, dtMs: number, events: SurvivorEvent[], hooks: SurgeHooks): void {
   const track = state.surges;
@@ -468,11 +532,12 @@ export function stepSurvivorSurge(state: SurvivorState, dtMs: number, events: Su
     if (surge.leftMs <= 0 && (surge.drops?.length ?? 0) === 0 && (surge.dropsLeft ?? 0) === 0) finish(state, track, events, 'orb-rain', 'end', ORB_RAIN_DROPS);
   } else if (surge.kind === 'swarm') stepSwarm(state, track, surge, dtMs, events, hooks);
   else if (surge.kind === 'wild-friend') stepFriend(state, track, surge, dtMs, events, hooks);
-  else stepTrial(state, track, surge, dtMs, events, hooks);
+  else if (surge.kind === 'trial') stepTrial(state, track, surge, dtMs, events, hooks);
+  else stepElitePack(state, track, surge, dtMs, events, hooks);
 }
 
 /** Texto do HUD para o evento em curso (null sem evento). */
-export function surgeHudText(state: Pick<SurvivorState, 'surge' | 'kills' | 'player'>): string | null {
+export function surgeHudText(state: Pick<SurvivorState, 'surge' | 'kills' | 'player' | 'enemies'>): string | null {
   const surge = state.surge;
   if (!surge) return null;
   const label = SURVIVOR_SURGE_LABEL[surge.kind];
@@ -487,6 +552,11 @@ export function surgeHudText(state: Pick<SurvivorState, 'surge' | 'kills' | 'pla
   if (surge.kind === 'wild-friend') {
     const friend = surge.friend!;
     return surge.phase === 'offer' ? `${label.icon} Amigo ${direction(friend.x, friend.y)} · ${seconds}s` : `${label.icon} Amigo ajudando · ${seconds}s`;
+  }
+  if (surge.kind === 'elite-pack') {
+    if (surge.phase === 'warn') return `${label.icon} Matilha de elite ${direction(surge.x ?? 0, surge.y ?? 0)} · ${seconds}s`;
+    const alive = surge.memberIds?.filter((id) => state.enemies.some((e) => e.id === id && e.hp > 0)).length ?? 0;
+    return `${label.icon} Matilha: ${alive} ${alive === 1 ? 'elite restante' : 'elites restantes'} · ${seconds}s`;
   }
   if (surge.phase === 'offer') return `${label.icon} Desafio ${direction(surge.x ?? 0, surge.y ?? 0)} · ${seconds}s`;
   const done = Math.max(0, state.kills - (surge.startKills ?? state.kills));

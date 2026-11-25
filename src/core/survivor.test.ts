@@ -27,6 +27,11 @@ import {
   survivorDirectDamageMultiplier,
   mitigateSurvivorEnemyDamage,
   survivorEnemyDamageReduction,
+  breakSurvivorEnemyArmor,
+  SURVIVOR_ARMOR_BREAK_MS,
+  survivorBossPhase,
+  rollSurvivorRunUpgrades,
+  survivorBuildFamily,
   survivorProjectileOpacity,
   survivorRapidAttackDamageMultiplier,
   SURVIVOR_SHADOW_BALL_FIRST_MS,
@@ -554,6 +559,30 @@ describe('stepSurvivor', () => {
     expect(picks).toHaveLength(5);
     expect(new Set(picks.map((p) => p.id)).size).toBe(5);
     for (const p of picks) expect(SURVIVOR_UPGRADES.some((u) => u.id === p.id)).toBe(true);
+  });
+
+  it('a oferta do Nv 5+ reserva a primeira vaga para a família dominante da build', () => {
+    const s = createSurvivorState(9, { kindCount: 2 });
+    s.player.level = 8;
+    s.player.upgradeLevels = { vigor: 1, 'guard-physical': 1, 'guard-special': 1 };
+    expect(survivorBuildFamily(s.player)).toBe('defesa');
+
+    const offer = rollSurvivorRunUpgrades(s, 3);
+    expect(offer).toHaveLength(3);
+    expect(new Set(offer.map((option) => option.id)).size).toBe(3);
+    expect(offer[0]!.family).toBe('defesa');
+
+    // Antes do Nv 5 a família dominante não é usada: a helper continua identificando a build, mas a oferta
+    // não é forçada. Aqui só garantimos que a rolagem continua válida e sem repetição.
+    s.player.level = 4;
+    const early = rollSurvivorRunUpgrades(s, 3);
+    expect(early).toHaveLength(3);
+    expect(new Set(early.map((option) => option.id)).size).toBe(3);
+  });
+
+  it('build vazia não inventa família dominante', () => {
+    const s = createSurvivorState(10, { kindCount: 1 });
+    expect(survivorBuildFamily(s.player)).toBeNull();
   });
 
   it('é determinístico: a mesma semente produz a mesma corrida', () => {
@@ -1484,6 +1513,31 @@ describe('treinadores e chefão final', () => {
     expect(mitigateSurvivorEnemyDamage({ damageReduction: 0.5 }, 100)).toBe(50);
     expect(mitigateSurvivorEnemyDamage({ damageReduction: 0.5 }, Number.NaN)).toBe(0);
     expect(mitigateSurvivorEnemyDamage({ damageReduction: 0.5 }, -10)).toBe(0);
+  });
+
+  it('quebra de armadura some com a guarda por alguns segundos e nunca fica negativa', () => {
+    const enemy = { damageReduction: 0.5 } as SurvivorEnemy;
+    expect(breakSurvivorEnemyArmor(enemy)).toBe(true);
+    expect(enemy.armorBreakMs).toBe(SURVIVOR_ARMOR_BREAK_MS);
+    expect(survivorEnemyDamageReduction(enemy)).toBeCloseTo(0.15, 5);
+    expect(mitigateSurvivorEnemyDamage(enemy, 100)).toBeCloseTo(85, 5);
+    // Já quebrada: renova o tempo sem duplicar a redução.
+    expect(breakSurvivorEnemyArmor(enemy, 1000)).toBe(false);
+    expect(survivorEnemyDamageReduction(enemy)).toBeCloseTo(0.15, 5);
+    enemy.armorBreakMs = 0;
+    expect(survivorEnemyDamageReduction(enemy)).toBe(0.5);
+
+    const light = { damageReduction: 0.2 } as SurvivorEnemy;
+    breakSurvivorEnemyArmor(light);
+    expect(survivorEnemyDamageReduction(light)).toBe(0);
+    expect(breakSurvivorEnemyArmor({} as SurvivorEnemy)).toBe(false);
+  });
+
+  it('fases do chefe acompanham a vida restante', () => {
+    expect(survivorBossPhase({ hp: 1000, maxHp: 1000 })).toBe(1);
+    expect(survivorBossPhase({ hp: 600, maxHp: 1000 })).toBe(2);
+    expect(survivorBossPhase({ hp: 330, maxHp: 1000 })).toBe(3);
+    expect(survivorBossPhase({ hp: 0, maxHp: 0 })).toBe(1);
   });
 
   it('repete os chefes periódicos a cada minuto e escala seus atributos', () => {

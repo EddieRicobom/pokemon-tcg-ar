@@ -5,6 +5,7 @@ import { attackProfile, moveFor } from './survivor-moves';
 import { chooseSurvivorSpecial, chooseSurvivorSpecialBranch } from './survivor-specials';
 import type { BaseStats } from './pokemon-data';
 import {
+  ELITE_PACK_BASE, ELITE_PACK_FIGHT_MS, ELITE_PACK_LATE, ELITE_PACK_LATE_MS, ELITE_PACK_MIN_MS, ELITE_PACK_WARN_MS,
   FRIEND_APPROACH_SPEED, FRIEND_HELP_MS, FRIEND_OFFER_MS, ORB_RAIN_CLOSE_MAX_DIST, ORB_RAIN_CLOSE_MIN_DIST, ORB_RAIN_CROWD, ORB_RAIN_MAX_DIST, ORB_RAIN_MIN_DIST, orbRainReach,
   SWARM_LANE_HALF, SWARM_LANE_OFFSET, TRIAL_DRIFT_SPEED, TRIAL_TOUCH_RADIUS, ORB_RAIN_DROPS, orbRainValue, SURGE_EVERY_MS, SURGE_FIRST_MS, surgeHudText, surgeKindAt,
   SURVIVOR_SURGE_KINDS, SWARM_DAMAGE_FACTOR, SWARM_HP_FACTOR, SWARM_MIN_MS, SWARM_SIZE, SWARM_WARN_MS, TRIAL_MAX_TARGET,
@@ -46,7 +47,8 @@ function step(s: SurvivorState, ms: number, input: SurvivorInput = idle): Surviv
 /** Leva a corrida até o evento `kind` começar (agenda do próprio motor, sem pular o sorteio). */
 function startKind(kind: SurvivorSurgeKind, seed = 11): { s: SurvivorState; events: SurvivorEvent[] } {
   const s = quiet(seed);
-  s.elapsedMs = SWARM_MIN_MS + 1000;
+  // A matilha só existe depois dos 10 min; os outros eventos seguem a janela da revoada.
+  s.elapsedMs = (kind === 'elite-pack' ? ELITE_PACK_MIN_MS : SWARM_MIN_MS) + 1000;
   let index = 0;
   while (surgeKindAt(seed, index, s.elapsedMs) !== kind) index++;
   s.surges!.count = index;
@@ -67,13 +69,17 @@ const target = (s: SurvivorState, x: number, y: number, hp = 50): SurvivorEnemy 
 };
 
 describe('eventos-relâmpago: agenda', () => {
-  it('cada volta de quatro passa por todos os tipos, e a revoada nunca abre antes dos 4 min', () => {
+  it('cada volta passa por todos os tipos, e revoada/matilha respeitam a janela mínima', () => {
+    const kindsPerRound = SURVIVOR_SURGE_KINDS.length;
     for (const seed of [1, 7, 42, 99, 2024]) {
       for (let round = 0; round < 3; round++) {
-        const kinds = new Set(Array.from({ length: 4 }, (_, i) => surgeKindAt(seed, round * 4 + i, 30 * 60_000)));
+        const kinds = new Set(Array.from({ length: kindsPerRound }, (_, i) => surgeKindAt(seed, round * kindsPerRound + i, 30 * 60_000)));
         expect(kinds.size).toBe(SURVIVOR_SURGE_KINDS.length);
       }
-      for (let index = 0; index < 8; index++) expect(surgeKindAt(seed, index, SWARM_MIN_MS - 1)).not.toBe('swarm');
+      for (let index = 0; index < 12; index++) {
+        expect(surgeKindAt(seed, index, SWARM_MIN_MS - 1)).not.toBe('swarm');
+        expect(surgeKindAt(seed, index, ELITE_PACK_MIN_MS - 1)).not.toBe('elite-pack');
+      }
     }
   });
 
@@ -302,5 +308,45 @@ describe('Desafio relâmpago', () => {
     expect(out.at(-1)).toMatchObject({ kind: 'trial', phase: 'fail' });
     expect((fail.keys ?? 0) + (fail.keyDrops?.length ?? 0)).toBe(0);
     expect(fail.player.hp).toBe(hp);
+  });
+});
+
+describe('Matilha de elite', () => {
+  it('avisa, solta 3 elites juntas e só paga a chave quando todas caem', () => {
+    const { s, events } = startKind('elite-pack');
+    expect(surgeEvents(events)[0]).toMatchObject({ kind: 'elite-pack', phase: 'warn' });
+    expect(s.enemies).toHaveLength(0);
+
+    const started = surgeEvents(step(s, ELITE_PACK_WARN_MS + 50));
+    expect(started.at(-1)).toMatchObject({ kind: 'elite-pack', phase: 'start', value: ELITE_PACK_BASE });
+    const pack = s.enemies.filter((e) => e.grade === 'elite');
+    expect(pack).toHaveLength(ELITE_PACK_BASE);
+    for (const enemy of pack) {
+      expect(enemy.damageReduction).toBeGreaterThan(0);
+      // Todos nascem perto do ponto avisado, não espalhados pela arena.
+      expect(Math.hypot(enemy.x - s.surge!.x!, enemy.y - s.surge!.y!)).toBeLessThan(160);
+    }
+    expect(surgeHudText(s)).toContain(`${ELITE_PACK_BASE} elites`);
+
+    // Matar uma parte não paga nada.
+    pack[0]!.hp = 0;
+    expect(surgeEvents(step(s, 100))).toHaveLength(0);
+    for (const enemy of pack) enemy.hp = 0;
+    const done = surgeEvents(step(s, 100));
+    expect(done.at(-1)).toMatchObject({ kind: 'elite-pack', phase: 'success', value: ELITE_PACK_BASE });
+    expect((s.keys ?? 0) + (s.keyDrops?.length ?? 0)).toBe(1);
+  });
+
+  it('depois dos 15 min a matilha cresce, e fugir só encerra sem chave', () => {
+    const { s } = startKind('elite-pack');
+    s.elapsedMs = ELITE_PACK_LATE_MS;
+    const started = surgeEvents(step(s, ELITE_PACK_WARN_MS + 50));
+    expect(started.at(-1)).toMatchObject({ kind: 'elite-pack', phase: 'start', value: ELITE_PACK_LATE });
+
+    const escaped = startKind('elite-pack', 13).s;
+    step(escaped, ELITE_PACK_WARN_MS + 50);
+    const out = surgeEvents(step(escaped, ELITE_PACK_FIGHT_MS + 100));
+    expect(out.at(-1)).toMatchObject({ kind: 'elite-pack', phase: 'end' });
+    expect((escaped.keys ?? 0) + (escaped.keyDrops?.length ?? 0)).toBe(0);
   });
 });

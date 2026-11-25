@@ -8,19 +8,27 @@ export const PINBALL_H = 600;
 const BALL_R = 7;
 /** Passo fixo da simulação (250 Hz): a bola nunca anda mais que ~5 px por passo, então não atravessa paredes. */
 const SUBSTEP_MS = 4;
-const GRAVITY = 680;
-const MAX_SPEED = 950;
-const ROLL_DRAG = 0.12;
-const SPIN_CURVE = 58;
+/**
+ * Ritmo global da mesa. A 0,6 a bola e a física andam a 60% da velocidade original: velocidades e giros
+ * caem por este fator e acelerações pelo quadrado dele. As trajetórias continuam idênticas — a mesa só
+ * fica mais lenta para ler, não mais fácil de atravessar.
+ */
+export const PINBALL_TIME_SCALE = 0.6;
+const SPEED = PINBALL_TIME_SCALE;
+const ACCEL = SPEED * SPEED;
+const GRAVITY = 680 * ACCEL;
+const MAX_SPEED = 950 * SPEED;
+const ROLL_DRAG = 0.12 * SPEED;
+const SPIN_CURVE = 58 * SPEED;
 const MAX_SPIN = 1;
-const BUMPER_MIN_KICK = 360;
-const TARGET_MIN_KICK = 230;
-const CRITTER_MIN_KICK = 220;
-const CORE_MIN_KICK = 290;
+const BUMPER_MIN_KICK = 360 * SPEED;
+const TARGET_MIN_KICK = 230 * SPEED;
+const CRITTER_MIN_KICK = 220 * SPEED;
+const CORE_MIN_KICK = 290 * SPEED;
 export const PINBALL_FLIPPER_LENGTH = 58;
 const FLIPPER_RADIUS = 6;
-const FLIPPER_UP_SPEED = 20;
-const FLIPPER_DOWN_SPEED = 12;
+const FLIPPER_UP_SPEED = 20 * SPEED;
+const FLIPPER_DOWN_SPEED = 12 * SPEED;
 const FLIPPER_REST_ANGLE = [0.30, Math.PI - 0.30] as const;
 const FLIPPER_UP_ANGLE = [-0.47, Math.PI + 0.47] as const;
 const MAX_EXTRA_BALLS = 9;
@@ -244,7 +252,7 @@ function score(s: PinballState, points: number): void {
 export function launchPinball(s: PinballState): boolean {
   if (s.phase !== 'ready' && s.phase !== 'between') return false;
   s.phase = 'playing';
-  s.ball = { x: 316, y: 515, vx: -24, vy: -820 };
+  s.ball = { x: 316, y: 515, vx: -24 * SPEED, vy: -820 * SPEED };
   s.saverMs = 7000;
   s.skillShot = true;
   s.abilityUses = 1;
@@ -259,8 +267,8 @@ export function activatePinballAbility(s: PinballState, ability: PinballAbility)
   if (s.phase !== 'playing' || s.abilityUses <= 0 || s.tiltLockMs > 0) return false;
   s.abilityUses--;
   if (ability === 'impulse') {
-    s.ball.vx = (180 - s.ball.x) * 1.3;
-    s.ball.vy = -880;
+    s.ball.vx = (180 - s.ball.x) * 1.3 * SPEED;
+    s.ball.vy = -880 * SPEED;
   } else if (ability === 'guard') {
     s.kickback = true;
     s.saverMs = Math.max(s.saverMs, 7000);
@@ -275,8 +283,8 @@ export function activatePinballAbility(s: PinballState, ability: PinballAbility)
 /** Uma sacudida salva a bola, mas três seguidas travam os flippers por um instante. */
 export function nudgePinball(s: PinballState, direction: -1 | 1): PinballEvent[] {
   if (s.phase !== 'playing') return [];
-  s.ball.vx += direction * 125;
-  s.ball.vy -= 95;
+  s.ball.vx += direction * 125 * SPEED;
+  s.ball.vy -= 95 * SPEED;
   s.tiltHeat += 1;
   if (s.tiltHeat >= 3) {
     s.tiltHeat = 0;
@@ -300,7 +308,7 @@ function reflectCircle(s: PinballState, x: number, y: number, radius: number, ki
   b.y = y + ny * limit;
   const toward = b.vx * nx + b.vy * ny;
   if (toward < 0) { b.vx -= 1.8 * toward * nx; b.vy -= 1.8 * toward * ny; }
-  if (toward < 0) { b.vx += nx * kick; b.vy += ny * kick; }
+  if (toward < 0) { b.vx += nx * kick * SPEED; b.vy += ny * kick * SPEED; }
   if (minBounce > 0) {
     const out = b.vx * nx + b.vy * ny;
     if (out < minBounce) { b.vx += nx * (minBounce - out); b.vy += ny * (minBounce - out); }
@@ -368,7 +376,7 @@ function flipperContact(s: PinballState, index: number, omega: number, pressed: 
   if (pressed && Math.abs(omega) > 1) {
     // Um toque fraco ainda sobe: o mínimo evita que a bola morra em cima do flipper erguido.
     const out = b.vx * nx + b.vy * ny;
-    if (out < 190) { b.vx += nx * (190 - out); b.vy += ny * (190 - out); }
+    if (out < 190 * SPEED) { b.vx += nx * (190 * SPEED - out); b.vy += ny * (190 * SPEED - out); }
   }
   const tangent = b.vx * -ny + b.vy * nx;
   s.spin = clampSpin(s.spin * 0.6 + tangent * 0.0015);
@@ -451,8 +459,8 @@ function syncCritters(s: PinballState): void {
   if (s.critters.length > 0 && s.critters[0]!.dexId === info.dexId) return;
   const lane = PINBALL_CRITTER_LANE;
   s.critters = [
-    { dexId: info.dexId, name: info.species, x: lane.minX + 18, y: lane.y, vx: 34, r: lane.r, hiddenMs: 0, cooldownMs: 0, flashMs: 0 },
-    { dexId: info.dexId, name: info.species, x: lane.maxX - 18, y: lane.y, vx: -28, r: lane.r, hiddenMs: 0, cooldownMs: 0, flashMs: 0 },
+    { dexId: info.dexId, name: info.species, x: lane.minX + 18, y: lane.y, vx: 34 * SPEED, r: lane.r, hiddenMs: 0, cooldownMs: 0, flashMs: 0 },
+    { dexId: info.dexId, name: info.species, x: lane.maxX - 18, y: lane.y, vx: -28 * SPEED, r: lane.r, hiddenMs: 0, cooldownMs: 0, flashMs: 0 },
   ];
 }
 
@@ -610,7 +618,7 @@ export function stepPinball(s: PinballState, input: PinballInput, dtMs: number):
   for (let substep = 0; substep < count; substep++) {
     const b = s.ball;
     // Como no Pokémon Pinball, a gravidade "solta" quando a bola já desce rápido: o arco fica mais de fliperama.
-    const gravity = GRAVITY * (b.vy > 300 ? 0.6 : b.vy > 130 ? 0.82 : 1);
+    const gravity = GRAVITY * (b.vy > 300 * SPEED ? 0.6 : b.vy > 130 * SPEED ? 0.82 : 1);
     b.vy += gravity * dt;
     b.x += b.vx * dt;
     b.y += b.vy * dt;
@@ -618,14 +626,14 @@ export function stepPinball(s: PinballState, input: PinballInput, dtMs: number):
     const drag = Math.max(0.9, 1 - ROLL_DRAG * dt);
     b.vx *= drag;
     b.vy *= drag;
-    s.spin *= Math.exp(-1.1 * dt);
+    s.spin *= Math.exp(-1.1 * SPEED * dt);
     if (b.x < 25 + BALL_R) { b.x = 25 + BALL_R; b.vx = Math.abs(b.vx) * 0.86; }
     if (b.x > 335 - BALL_R) { b.x = 335 - BALL_R; b.vx = -Math.abs(b.vx) * 0.86; }
     if (b.y < 33 + BALL_R) { b.y = 33 + BALL_R; b.vy = Math.abs(b.vy) * 0.86; s.spin *= 0.8; }
     // A canaleta do lançador só se abre no topo, levando a bola para a mesa.
-    if (b.x > 300 + BALL_R && b.y < 155 && b.vy < 0) b.vx = Math.min(b.vx, -270);
+    if (b.x > 300 + BALL_R && b.y < 155 && b.vy < 0) b.vx = Math.min(b.vx, -270 * SPEED);
     // Uma via de saída: a bola não volta para a canaleta nem fica presa no canto direito.
-    if (b.x > 300 + BALL_R && b.y < 168) b.vx = Math.min(b.vx, -230);
+    if (b.x > 300 + BALL_R && b.y < 168) b.vx = Math.min(b.vx, -230 * SPEED);
     if (b.y > 165 && b.y < 520 && b.x > 300 - BALL_R && b.x < 300 + BALL_R) {
       if (b.vx > 0) { b.x = 300 - BALL_R; b.vx = -Math.abs(b.vx) * 0.78; }
       else if (b.vx < 0) { b.x = 300 + BALL_R; b.vx = Math.abs(b.vx) * 0.78; }
@@ -633,15 +641,15 @@ export function stepPinball(s: PinballState, input: PinballInput, dtMs: number):
     // Guias internas devolvem as bolas dos cantos aos flippers.
     if (b.y > 452 && b.y < 540 && b.x < 104 && b.x > 65) {
       const rail = reflectSegment(s, 74, 458, 100, 522, 3, 0.58);
-      if (rail.hit && b.vy > 0) b.vx += 35;
+      if (rail.hit && b.vy > 0) b.vx += 35 * SPEED;
     }
     if (b.y > 450 && b.y < 540 && b.x > 258 && b.x < 300) {
       const rail = reflectSegment(s, 274, 456, 266, 500, 3, 0.58);
-      if (rail.hit && b.vy > 0) b.vx -= 35;
+      if (rail.hit && b.vy > 0) b.vx -= 35 * SPEED;
     }
     // Slingshots abaixo dos bumpers mantêm a bola em movimento.
-    if (reflectSegment(s, 76, 389, 119, 428, 5, 0.92).hit && b.vy > 0) { b.vx += 75; b.vy -= 90; }
-    if (reflectSegment(s, 284, 389, 241, 428, 5, 0.92).hit && b.vy > 0) { b.vx -= 75; b.vy -= 90; }
+    if (reflectSegment(s, 76, 389, 119, 428, 5, 0.92).hit && b.vy > 0) { b.vx += 75 * SPEED; b.vy -= 90 * SPEED; }
+    if (reflectSegment(s, 284, 389, 241, 428, 5, 0.92).hit && b.vy > 0) { b.vx -= 75 * SPEED; b.vy -= 90 * SPEED; }
     for (let i = 0; i < PINBALL_BUMPERS.length; i++) {
       const bumper = PINBALL_BUMPERS[i]!;
       const hit = reflectCircle(s, bumper.x, bumper.y, bumper.r, 70, BUMPER_MIN_KICK);
@@ -705,8 +713,8 @@ export function stepPinball(s: PinballState, input: PinballInput, dtMs: number):
     updateFlippers(s, input, dt, events);
     if (b.y > 542 && (b.x < 84 || b.x > 276) && s.kickback) {
       s.kickback = false;
-      b.vx = b.x < 180 ? 170 : -170;
-      b.vy = -640;
+      b.vx = b.x < 180 ? 170 * SPEED : -170 * SPEED;
+      b.vy = -640 * SPEED;
       announce(s, 'Resgate lateral!');
       events.push('reward');
     }

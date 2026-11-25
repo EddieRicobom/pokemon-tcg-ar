@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { activatePinballAbility, createPinballState, launchPinball, mergePinballDex, nudgePinball, pinballPartnerSkill, pinballReward, pinballStage, PINBALL_BOSS_CORE, PINBALL_BUMPERS, PINBALL_DEX_MAX, PINBALL_TARGETS, stepPinball } from './pinball';
+import { activatePinballAbility, createPinballState, launchPinball, mergePinballDex, nudgePinball, pinballPartnerSkill, pinballReward, pinballStage, PINBALL_BOSS_CORE, PINBALL_BUMPERS, PINBALL_DEX_MAX, PINBALL_TARGETS, PINBALL_TIME_SCALE, stepPinball } from './pinball';
 import type { PinballState } from './pinball';
 
 function hitTarget(s: PinballState, index = 1): void {
@@ -88,7 +88,7 @@ describe('pinball da Vila', () => {
     launchPinball(s);
     const vx = s.ball.vx;
     nudgePinball(s, 1);
-    expect(s.ball.vx).toBe(vx + 125);
+    expect(s.ball.vx).toBe(vx + 125 * PINBALL_TIME_SCALE);
     nudgePinball(s, -1);
     expect(nudgePinball(s, 1)).toContain('tilt');
     expect(s.tiltLockMs).toBe(2200);
@@ -203,7 +203,7 @@ describe('pinball da Vila', () => {
     launchPinball(baseline); launchPinball(powered);
     powered.ball = { x: 270, y: 410, vx: 80, vy: 240 };
     expect(activatePinballAbility(powered, 'impulse')).toBe(true);
-    expect(powered.ball.vy).toBe(-880);
+    expect(powered.ball.vy).toBe(-880 * PINBALL_TIME_SCALE);
     expect(powered.ball.vx).toBeLessThan(0);
     expect(activatePinballAbility(powered, 'power')).toBe(false);
     powered.abilityUses = 1;

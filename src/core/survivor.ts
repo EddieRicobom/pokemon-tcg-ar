@@ -42,14 +42,16 @@ import { SURVIVOR_MIGRATION_MS, SURVIVOR_MIGRATION_SPAWN_MULTIPLIER, survivorMig
  */
 
 export * from './survivor-types';
+export { SURVIVOR_ARMOR_BREAK_MS, SURVIVOR_ARMOR_BREAK_REDUCTION, SURVIVOR_ARMOR_MAX, breakSurvivorEnemyArmor, mitigateSurvivorEnemyDamage, survivorEnemyDamageReduction } from './survivor-armor';
 export { SURVIVOR_SIMULTANEOUS_ATTACKS_MS, survivorPlayerAttacks, type SurvivorAttackIndex } from './survivor-attack-slots';
+import { breakSurvivorEnemyArmor, mitigateSurvivorEnemyDamage } from './survivor-armor';
 import { createBonkObstacles } from './survivor-bonk';
 import {
   ADAPTIVE_START, adaptiveTarget, applyLevelBonus, damageRanking, damageTakenRanking, emptyRunStats, LEVEL_BONUS_TEXT, recordDamage, recordDamageTaken, sampleTimeline, stepAdaptive,
   SURVIVOR_THIEF_DEX, SURVIVOR_THIEF_EVERY_MS, SURVIVOR_THIEF_FIRST_MS, SURVIVOR_THIEF_LIFE_MS, SURVIVOR_THIEF_SPEED, thiefFleeTarget, thiefReward,
 } from './survivor-extras';
 import { ARENA_H, ARENA_W, DIGITAL_DANGER_COOLDOWN_MS, DIGITAL_DANGER_MAX, DIGITAL_DANGER_UNLOCK_MS, DIGITAL_DANGER_VISIBLE_RADIUS, MAGNET_PICKUP_RADIUS_CAP, MAX_DIGITAL_POKEBALLS_PER_RUN, MAX_SURVIVOR_SUPPORTS, PICKUP_RADIUS, PLAYER_RADIUS, SPAWN_MARGIN, SURVIVOR_ARCEUS_CUTSCENE_MS, SURVIVOR_ARCEUS_DEX, SURVIVOR_GIRATINA_DEX, SURVIVOR_PALKIA_DEX, SURVIVOR_FIELD_EVENT_BEACON_MS, SURVIVOR_FIELD_EVENT_EVERY_MS, SURVIVOR_FIELD_EVENT_FIRST_MS, SURVIVOR_FIELD_EVENT_HUNT_MS, SURVIVOR_FIELD_EVENT_REACH_RADIUS, SURVIVOR_LOVE_CANDY_MS, SURVIVOR_OMEGA_SHARD_MS, SURVIVOR_SHADOW_BALL_EVERY_MS, SURVIVOR_SHADOW_BALL_FIRST_MS, SURVIVOR_SHADOW_BALL_MAX_PER_RUN, SURVIVOR_SHADOW_CUTSCENE_MS, SURVIVOR_SPAWN_DISTANCE, SURVIVOR_SUPPORT_EVOLUTION_OFFER_CHANCE, SURVIVOR_SUPPORT_RARE_OFFER_CHANCE, SURVIVOR_TRUST_STONE_MS, SURVIVOR_UPGRADE_RARITIES, SURVIVOR_FAST_TRAINER_COIN_SCALE, survivorMilestoneMs } from './survivor-types';
-import type { SurvivorSummary, SurvivorBossAttack, SurvivorBossAttackKind, SurvivorChest, SurvivorGravityWell, SurvivorHeldStrike, SurvivorTimeBubble, SurvivorFinalHit, SurvivorHitSource, SurvivorEnemy, SurvivorEnemyArchetype, SurvivorEnemyGrade, SurvivorEvent, SurvivorEvolutionOption, SurvivorInput, SurvivorPlayer, SurvivorProjectile, SurvivorState, SurvivorSupport, SurvivorSupportCandidate, SurvivorSupportRole, SurvivorTypeAffinity, SurvivorUpgrade, SurvivorUpgradeOption, SurvivorUpgradeRarity } from './survivor-types';
+import type { SurvivorSummary, SurvivorBossAttack, SurvivorBossAttackKind, SurvivorChest, SurvivorGravityWell, SurvivorHeldStrike, SurvivorTimeBubble, SurvivorFinalHit, SurvivorHitSource, SurvivorEnemy, SurvivorEnemyArchetype, SurvivorEnemyGrade, SurvivorEvent, SurvivorEvolutionOption, SurvivorInput, SurvivorPlayer, SurvivorProjectile, SurvivorState, SurvivorSupport, SurvivorSupportCandidate, SurvivorSupportRole, SurvivorTypeAffinity, SurvivorUpgrade, SurvivorUpgradeFamily, SurvivorUpgradeOption, SurvivorUpgradeRarity } from './survivor-types';
 import { cadenceCanImprove, CHARGE_FOCUS_RATE_ID, CHARGE_RUSH_LENGTH_ID, SURVIVOR_ATTACK_DAMAGE_CAP, SURVIVOR_UPGRADES, SURVIVOR_RARITY_ORDER, round1 } from './survivor-upgrades';
 import { cancelTeleportHold, createSurvivorCharge, distanceToSegment, FOCUS_CHARGE_PER_SEC, FOCUS_HIT_CHARGE, FOCUS_SHOT_PIERCE, FOCUS_SHOT_SIZE_MULTIPLIER, FOCUS_SHOT_SPEED_MULTIPLIER, FOCUS_SLOW_MULTIPLIER, focusBeam, TELEPORT_MAX_RANGE, RAPID_BURST_MIN_CYCLE_MS, RAPID_BURST_SHOT_INTERVAL_MS, RAPID_BURST_SHOTS, RAPID_BURST_SPREAD, RUSH_REFERENCE_SPEED, stepChargeMeter, teleportReach } from './survivor-charge';
 import type { ChargeStyle } from './survivor-charge';
@@ -584,10 +586,12 @@ function spawnEnemy(
   boss: boolean,
   grade: SurvivorEnemyGrade = 'comum',
   trainerId?: number,
-  options?: { shadowBoss?: boolean; dexId?: number; arceus?: boolean },
+  options?: { shadowBoss?: boolean; dexId?: number; arceus?: boolean; at?: { x: number; y: number } },
 ): number | null {
   if (state.enemies.length >= ENEMY_BEHAVIOR_LIMITS.maxEnemies && !boss && grade === 'comum') return null;
-  const { x, y } = spawnPoint(state.rng, state.player, boss);
+  const spawn = spawnPoint(state.rng, state.player, boss);
+  const x = options?.at?.x ?? spawn.x;
+  const y = options?.at?.y ?? spawn.y;
   const t = state.elapsedMs / 1000;
   if (boss) {
     const shadow = options?.shadowBoss === true;
@@ -731,6 +735,12 @@ export interface SurvivorUpgradeRollOptions {
   rareChanceBonus?: number;
   /** Sorteio da Torre: ativa cartas de combo e reduz o peso de famílias já saturadas. A Arena fica de fora. */
   variety?: boolean;
+  /** Torre: garante uma carta da família dominante do jogador na primeira vaga (a partir do Nv 5). */
+  synergy?: boolean;
+  /** Torre: cartas que acabaram de ser oferecidas; perdem peso para a próxima tela não repetir a mesma escolha. */
+  avoidIds?: readonly string[];
+  /** Torre: quantas ofertas cada carta já apareceu; cartas esquecidas ganham peso (pity). */
+  seenIds?: Readonly<Record<string, number>>;
 }
 
 function isAttackUpgrade(upgrade: SurvivorUpgrade): boolean {
@@ -795,36 +805,53 @@ function rollUpgradesForAttacks(rng: Rng, count: number, attacks: readonly { mov
     return attack ? [{ upgrade: u, rarity: u.rarity, attack }] : [];
   });
   const picked: SurvivorUpgradeOption[] = [];
+  type Entry = (typeof pool)[number];
   // Famílias já muito repetidas perdem peso aos poucos: a oferta continua sorteada, mas abre espaço para
   // defesa, progresso e movimento em vez de devolver sempre a mesma pilha de ataque.
-  const familyWeight = (entry: { upgrade: SurvivorUpgrade; attack: { player?: Readonly<SurvivorPlayer> } }): number => {
-    const family = entry.upgrade.family;
+  const familyLevels = (player: Readonly<SurvivorPlayer> | undefined, family: string): number => {
     let levels = 0;
-    for (const [id, count] of Object.entries(entry.attack.player?.upgradeLevels ?? {})) {
+    for (const [id, count] of Object.entries(player?.upgradeLevels ?? {})) {
       if ((SURVIVOR_UPGRADES.find((upgrade) => upgrade.id === id)?.family ?? '') === family) levels += count;
     }
-    return Math.max(0.5, Math.pow(0.9, Math.max(0, levels - 4)));
+    return levels;
   };
-  for (let i = 0; i < count && pool.length > 0; i++) {
-    const rarity = rollUpgradeRarity(rng, pool, options?.rareChanceBonus);
-    const matching = pool.filter((upgrade) => upgrade.rarity === rarity);
-    let entry: (typeof matching)[number];
-    if (options?.variety) {
-      const weights = matching.map((candidate) => familyWeight(candidate));
-      const totalWeight = weights.reduce((sum, weight) => sum + weight, 0);
-      entry = matching[matching.length - 1]!;
-      if (totalWeight > 0) {
-        let draw = rng() * totalWeight;
-        for (let index = 0; index < matching.length; index++) {
-          draw -= weights[index]!;
-          if (draw < 0) { entry = matching[index]!; break; }
-        }
-      } else {
-        entry = matching[Math.floor(rng() * matching.length)]!;
+  const familyWeight = (entry: Entry): number =>
+    Math.max(0.5, Math.pow(0.9, Math.max(0, familyLevels(entry.attack.player, entry.upgrade.family) - 4)));
+  // Família dominante da build: soma os níveis de todas as cartas do jogador (inclui o segundo golpe).
+  let dominantFamily: string | null = null;
+  if (options?.synergy) {
+    const totals = new Map<string, number>();
+    for (const { player } of attacks) {
+      for (const [id, level] of Object.entries(player?.upgradeLevels ?? {})) {
+        const family = SURVIVOR_UPGRADES.find((upgrade) => upgrade.id === id)?.family;
+        if (family && level > 0) totals.set(family, (totals.get(family) ?? 0) + level);
       }
-    } else {
-      entry = matching[Math.floor(rng() * matching.length)]!;
     }
+    let best = 0;
+    for (const [family, total] of totals) {
+      if (total > best) { best = total; dominantFamily = family; }
+    }
+  }
+  const weightFor = (entry: Entry): number => {
+    let weight = familyWeight(entry);
+    if (dominantFamily !== null && entry.upgrade.family === dominantFamily) weight *= 2.2;
+    if (options?.avoidIds?.includes(entry.upgrade.id)) weight *= 0.25;
+    const seen = options?.seenIds?.[entry.upgrade.id] ?? 0;
+    weight *= seen === 0 ? 1.6 : Math.max(0.6, 1 - 0.12 * seen);
+    return weight;
+  };
+  const drawEntry = (candidates: Entry[]): Entry => {
+    let totalWeight = 0;
+    for (const candidate of candidates) totalWeight += weightFor(candidate);
+    if (!(totalWeight > 0)) return candidates[Math.floor(rng() * candidates.length)]!;
+    let draw = rng() * totalWeight;
+    for (const candidate of candidates) {
+      draw -= weightFor(candidate);
+      if (draw < 0) return candidate;
+    }
+    return candidates[candidates.length - 1]!;
+  };
+  const materialize = (entry: Entry): void => {
     const { upgrade: u, attack } = entry;
     pool.splice(pool.indexOf(entry), 1);
     const value = u.valueRange
@@ -833,15 +860,54 @@ function rollUpgradesForAttacks(rng: Rng, count: number, attacks: readonly { mov
     const option = describeUpgrade(u, attack.move, value);
     if (isAttackUpgrade(u) && attack.index !== undefined) option.attackIndex = attack.index;
     picked.push(option);
-    if (rarity === 'ancestral') {
+  };
+  // Sinergia garantida: a primeira vaga conversa com a build dominante, sem tirar as outras do sorteio normal.
+  if (dominantFamily !== null) {
+    const matching = pool.filter((entry) => entry.upgrade.family === dominantFamily);
+    if (matching.length > 0) {
+      materialize(drawEntry(matching));
+      // A garantia também respeita a regra de uma carta ancestral por oferta.
+      if (picked[0]?.rarity === 'ancestral') {
+        for (let j = pool.length - 1; j >= 0; j--) if (pool[j]!.rarity === 'ancestral') pool.splice(j, 1);
+      }
+    }
+  }
+  for (let i = picked.length; i < count && pool.length > 0; i++) {
+    const rarity = rollUpgradeRarity(rng, pool, options?.rareChanceBonus);
+    const matching = pool.filter((upgrade) => upgrade.rarity === rarity);
+    const entry = options?.variety ? drawEntry(matching) : matching[Math.floor(rng() * matching.length)]!;
+    materialize(entry);
+    if (entry.rarity === 'ancestral') {
       for (let j = pool.length - 1; j >= 0; j--) if (pool[j]!.rarity === 'ancestral') pool.splice(j, 1);
     }
   }
   return picked;
 }
 
+/** Família com mais níveis na build do jogador; null enquanto a build está vazia. Usada pela oferta e pelo selo no card. */
+export function survivorBuildFamily(player: Pick<SurvivorPlayer, 'upgradeLevels'>): SurvivorUpgradeFamily | null {
+  const totals = new Map<SurvivorUpgradeFamily, number>();
+  for (const [id, level] of Object.entries(player.upgradeLevels ?? {})) {
+    const family = SURVIVOR_UPGRADES.find((upgrade) => upgrade.id === id)?.family;
+    if (family && level > 0) totals.set(family, (totals.get(family) ?? 0) + level);
+  }
+  let best: SurvivorUpgradeFamily | null = null;
+  let bestTotal = 0;
+  for (const [family, total] of totals) {
+    if (total > bestTotal) { best = family; bestTotal = total; }
+  }
+  return best;
+}
+
 function rollRunUpgrades(state: SurvivorState, count: number, options: SurvivorUpgradeRollOptions): SurvivorUpgradeOption[] {
-  const varied: SurvivorUpgradeRollOptions = { ...options, variety: true };
+  const varied: SurvivorUpgradeRollOptions = {
+    ...options,
+    variety: true,
+    // A sinergia só passa a valer no Nv 5: antes disso a build ainda está se formando e não há família dominante.
+    ...(state.player.level >= 5 ? { synergy: true } : {}),
+    ...(state.lastOfferIds?.length ? { avoidIds: state.lastOfferIds } : {}),
+    ...(state.seenOfferIds ? { seenIds: state.seenOfferIds } : {}),
+  };
   const attacks = survivorPlayerAttacks(state);
   if (!attacks) return rollUpgrades(state.rng, count, state.player.terastal?.baseMove ?? state.player.move, state.player, varied);
   const first = state.attackSlots?.pending ?? attacks.active;
@@ -850,6 +916,11 @@ function rollRunUpgrades(state: SurvivorState, count: number, options: SurvivorU
     const player = attacks.players[index];
     return { index, player, move: player.terastal?.baseMove ?? player.move };
   }), varied, attacks.players.some((player) => isAncestralChosen(player.upgradeLevels)));
+}
+
+/** Sorteia a oferta normal da Torre para a build atual (Nv 5+ garante sinergia). Usado pelo motor e pelos testes. */
+export function rollSurvivorRunUpgrades(state: SurvivorState, count: number): SurvivorUpgradeOption[] {
+  return rollRunUpgrades(state, count, { excludeIds: state.bannedUpgradeIds ?? [] });
 }
 
 /** Alvos válidos para esta carta aberta. Cartas globais e ofertas especiais não têm alvo. */
@@ -930,6 +1001,7 @@ export function rerollSurvivorUpgradeOffer(state: SurvivorState): boolean {
     }
   }
   state.pendingUpgrade = [...preserved, ...rerolled];
+  trackUpgradeOffer(state, state.pendingUpgrade);
   return true;
 }
 
@@ -954,6 +1026,7 @@ export function banSurvivorUpgrade(state: SurvivorState, id: string): boolean {
   const [replacement] = rollRunUpgrades(state, 1, { excludeIds: [...current.map((option) => option.id), ...banned, id] });
   if (!replacement) return false;
   state.pendingUpgrade = current.map((option) => (option.id === id ? replacement : option));
+  trackUpgradeOffer(state, state.pendingUpgrade);
   state.bannedUpgradeIds = [...banned, id];
   state.bansLeft = Math.max(0, (state.bansLeft ?? 0) - 1);
   return true;
@@ -999,6 +1072,14 @@ function levelUp(state: SurvivorState, events: SurvivorEvent[]): void {
   offerOwedUpgrade(state, events);
 }
 
+/** Guarda quais cartas apareceram (para o pity) e quais foram as últimas (para não repetir a tela). */
+function trackUpgradeOffer(state: SurvivorState, options: readonly SurvivorUpgradeOption[]): void {
+  state.lastOfferIds = options.map((option) => option.id);
+  const seen = { ...(state.seenOfferIds ?? {}) };
+  for (const option of options) seen[option.id] = (seen[option.id] ?? 0) + 1;
+  state.seenOfferIds = seen;
+}
+
 /** Abre a próxima escolha de upgrade devida, se não houver uma aberta. */
 function offerOwedUpgrade(state: SurvivorState, events?: SurvivorEvent[]): void {
   if (state.pendingUpgrade || state.deferredUpgrade || state.pendingBlackChest != null || state.upgradesOwed <= 0) return;
@@ -1006,7 +1087,7 @@ function offerOwedUpgrade(state: SurvivorState, events?: SurvivorEvent[]): void 
   // Olhar treinado (Dojô): só a primeira oferta mostra a carta a mais, e nunca passa do teto de 5.
   const choices = Math.min(MAX_OFFER_CHOICES, Math.max(state.player.upgradeChoices, state.player.upgradeChoices + (state.firstOfferBonus ?? 0)));
   state.firstOfferBonus = 0;
-  const options = rollRunUpgrades(state, choices, { excludeIds: state.bannedUpgradeIds ?? [] });
+  const options = rollSurvivorRunUpgrades(state, choices);
   const evolve = evolutionOffer(state);
   if (evolve) options.splice(options.length - 1, 1, evolve);
   else if (!state.supportCandidate && !state.secondAttackOffered && state.player.level >= 6 && state.supportCandidates.length > 0) {
@@ -1053,6 +1134,7 @@ function offerOwedUpgrade(state: SurvivorState, events?: SurvivorEvent[]): void 
     return;
   }
   state.pendingUpgrade = options;
+  trackUpgradeOffer(state, options);
   if (state.attackSlots) state.attackSlots.pending = state.attackSlots.active;
 }
 
@@ -2547,17 +2629,6 @@ function applyMoveImpact(state: SurvivorState, e: SurvivorEnemy, move: SurvivorM
 }
 
 /** Dano de um golpe num inimigo, com o efeito do tipo. `from` é de onde o golpe veio (para empurrar). */
-/** Armadura visível no HUD e aplicada só ao dano direto do jogador (queimadura/espinhos ignoram). */
-export function survivorEnemyDamageReduction(enemy: Pick<SurvivorEnemy, 'damageReduction'>): number {
-  const value = enemy.damageReduction ?? 0;
-  return Number.isFinite(value) ? Math.max(0, Math.min(0.8, value)) : 0;
-}
-
-export function mitigateSurvivorEnemyDamage(enemy: Pick<SurvivorEnemy, 'damageReduction'>, damage: number): number {
-  if (!Number.isFinite(damage) || damage <= 0) return 0;
-  return damage * (1 - survivorEnemyDamageReduction(enemy));
-}
-
 function hitEnemy(state: SurvivorState, e: SurvivorEnemy, damage: number, from: { x: number; y: number }, attackMove = state.player.move, allowFollowUp = true, distanceFromPlayer = Math.hypot(e.x - state.player.x, e.y - state.player.y), projectileHit = false): void {
   const move = attackMove;
   const p = state.player;
@@ -2593,6 +2664,9 @@ function hitEnemy(state: SurvivorState, e: SurvivorEnemy, damage: number, from: 
   const chance = Math.min(Math.max(0.4, baseChance), baseChance + (e.hp <= e.maxHp * 0.3 ? (p.upgradeLevels['crit-finish'] ?? 0) * 0.05 : 0));
   const critical = playerAttack && chance > 0 && state.critRng() < chance;
   if (critical) upgradeMultiplier *= 2 + (p.upgradeLevels['crit-power'] ?? 0) * 0.25;
+  // Crítico e Terastal abrem a guarda: o próprio golpe que quebra já entra com a armadura reduzida,
+  // para o jogador sentir a quebra na hora em vez de só no próximo acerto.
+  if (playerAttack && (critical || move.terastal)) breakSurvivorEnemyArmor(e);
   const heldActive = playerAttack && heldGuard === 0 && p.heldMods !== undefined;
   if (heldActive) upgradeMultiplier *= heldDamageFactor(state, e, move.type);
   const environmentalDamage = damage * survivorDirectDamageMultiplier(distanceFromPlayer) * (p.move.category === 'rapido' || p.move.category === 'teleporte' ? 1 : survivorRapidAttackDamageMultiplier(p)) * upgradeMultiplier
@@ -3385,6 +3459,18 @@ function bossAttackFor(dexId: number | undefined, index = 0): { kind: SurvivorBo
   return pool[Math.abs(index) % pool.length]!;
 }
 
+/**
+ * Fase do chefe pela vida restante. Fases mudam só o ataque-assinatura (telegraph mais curto e uma
+ * área extra), sem tocar em vida, dano ou velocidade: o combate fica mais denso, não mais injusto.
+ */
+export function survivorBossPhase(boss: Pick<SurvivorEnemy, 'hp' | 'maxHp'>): 1 | 2 | 3 {
+  if (!(boss.maxHp > 0)) return 1;
+  const ratio = boss.hp / boss.maxHp;
+  if (ratio > 2 / 3) return 1;
+  if (ratio > 1 / 3) return 2;
+  return 3;
+}
+
 function startBossAttack(state: SurvivorState, events: SurvivorEvent[], boss: SurvivorEnemy): void {
   const p = state.player;
   const angle = Math.atan2(p.y - boss.y, p.x - boss.x);
@@ -3403,7 +3489,9 @@ function startBossAttack(state: SurvivorState, events: SurvivorEvent[], boss: Su
   const kind = choice.kind;
   const theme = typesOfDex(boss.dexId)[0] ?? 'normal';
   if (!arceus) state.bossAttacks = (state.bossAttacks ?? 0) + 1;
-  const telegraphMs = kind === 'lasers' ? ARCEUS_LASER_TELEGRAPH_MS : BOSS_ATTACK_TELEGRAPH_MS;
+  const phase = survivorBossPhase(boss);
+  const telegraphBase = kind === 'lasers' ? ARCEUS_LASER_TELEGRAPH_MS : BOSS_ATTACK_TELEGRAPH_MS;
+  const telegraphMs = Math.round(telegraphBase * (phase === 1 ? 1 : phase === 2 ? 0.85 : 0.75));
   const attack: SurvivorBossAttack = {
     theme, name: choice.name, kind, phase: 'telegraph', timerMs: telegraphMs, totalMs: telegraphMs,
     bossId: boss.id, x: boss.x, y: boss.y, angle, length: 0, halfWidth: 0, radius: 0, circles: [], hit: false,
@@ -3458,6 +3546,13 @@ function startBossAttack(state: SurvivorState, events: SurvivorEvent[], boss: Su
     });
   } else {
     attack.radius = (arceus ? 190 : 160) + Math.min(30, boss.radius * 0.5);
+  }
+  // Fase final: uma área extra fora do eixo do jogador. Ela fecha a fuga lateral sem cobrir o centro,
+  // então a leitura continua possível mesmo com o telegraph mais curto.
+  if (phase >= 3 && attack.circles.length > 0) {
+    const sideX = Math.cos(angle + Math.PI / 2) * 140;
+    const sideY = Math.sin(angle + Math.PI / 2) * 140;
+    attack.circles.push({ x: p.x + sideX, y: p.y + sideY, radius: 42 });
   }
   if (arceus) state.arceusAttacks = (state.arceusAttacks ?? 0) + 1;
   state.bossAttack = attack;
@@ -4194,6 +4289,7 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
   for (const e of state.enemies) {
     if (e.hp <= 0) continue;
     if (e.hitFlashMs > 0) e.hitFlashMs = Math.max(0, e.hitFlashMs - dtMs);
+    if ((e.armorBreakMs ?? 0) > 0) e.armorBreakMs = Math.max(0, (e.armorBreakMs ?? 0) - dtMs);
     if (e.burnMs && e.burnMs > 0) {
       e.hp -= (e.burnDps ?? 0) * (Math.min(dtMs, e.burnMs) / 1000);
       e.burnMs = Math.max(0, e.burnMs - dtMs);
@@ -4496,6 +4592,11 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
     spawnCommon: () => {
       const id = spawnEnemy(state, events, false);
       return id === null ? null : state.enemies.find((e) => e.id === id) ?? null;
+    },
+    spawnElite: (x, y) => {
+      // A matilha respeita o mesmo teto da arena; sem espaço, ela simplesmente não aparece.
+      if (state.enemies.length >= ENEMY_BEHAVIOR_LIMITS.maxEnemies) return null;
+      return spawnEnemy(state, events, false, 'elite', undefined, { at: { x, y } });
     },
     dropKey: (x, y) => { dropKey(state, x, y); },
     dropArtifact: (x, y) => dropArtifact(state, x, y),

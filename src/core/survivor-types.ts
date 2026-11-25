@@ -291,6 +291,8 @@ export interface SurvivorEnemy {
   damage: number;
   /** Fração do dano direto do jogador ignorada por armadura (0 a 0,8). Queimadura e espinhos ignoram. */
   damageReduction?: number;
+  /** Ms restantes de armadura quebrada: crítico/Terastal/Supremo abrem a guarda por alguns segundos. */
+  armorBreakMs?: number;
   radius: number;
   /** Ms restantes do "flash" de ter sido atingido (só para o desenho). */
   hitFlashMs: number;
@@ -729,6 +731,10 @@ export interface SurvivorState {
   /** Banimentos que ainda restam e as cartas banidas desta corrida (a Vila entrega pelo Dojô). */
   bansLeft?: number;
   bannedUpgradeIds?: string[];
+  /** Últimas cartas oferecidas: a próxima oferta evita repetir a mesma tela. */
+  lastOfferIds?: string[];
+  /** Quantas ofertas cada carta já apareceu nesta corrida (pity das esquecidas). */
+  seenOfferIds?: Record<string, number>;
   /** Cartas extras que a primeira oferta de upgrade ainda mostra (Olhar treinado). */
   firstOfferBonus?: number;
   /** O que a Vila entregou para esta corrida; vazio na corrida pura. */
