@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { activatePinballAbility, createPinballState, launchPinball, mergePinballDex, nudgePinball, pinballPartnerSkill, pinballReward, pinballStage, pinballVisibleRect, PINBALL_BOSS_CORE, PINBALL_BUMPERS, PINBALL_DEX_MAX, PINBALL_FLASH_MS, PINBALL_POPUP_MS, PINBALL_TARGETS, PINBALL_TIME_SCALE, PINBALL_TIMER_SCALE, stepPinball } from './pinball';
+import { activatePinballAbility, createPinballState, launchPinball, mergePinballDex, nudgePinball, pinballCampaignWins, pinballModeUrgent, pinballModeWindowMs, pinballObjective, pinballPartnerSkill, pinballReward, pinballSeconds, pinballStage, pinballVisibleRect, PINBALL_ABILITY_MS, PINBALL_BOSS_CORE, PINBALL_BUMPERS, PINBALL_CAMPAIGN_STAGES, PINBALL_DEX_MAX, PINBALL_FLASH_MS, PINBALL_POPUP_MS, PINBALL_SAVER_MS, PINBALL_TARGETS, PINBALL_TIME_SCALE, PINBALL_TIMER_SCALE, stepPinball } from './pinball';
 import type { PinballState } from './pinball';
 
 function hitTarget(s: PinballState, index = 1): void {
@@ -153,7 +153,7 @@ describe('pinball da Vila', () => {
     expect(s.abilityMs).toBeCloseTo(12_000 * PINBALL_TIMER_SCALE, 6);
   });
 
-  it('tempo esgotado permite tentar novamente a etapa atual', () => {
+  it('tempo esgotado permite tentar novamente a etapa atual e preserva a carga', () => {
     const s = createPinballState();
     launchPinball(s);
     s.stage = 1;
@@ -164,6 +164,12 @@ describe('pinball da Vila', () => {
     expect(s.mode).toBe('normal');
     expect(s.stage).toBe(1);
     expect(s.balls).toBe(3);
+    expect(s.charge).toBe(2);
+    expect(s.message).toContain('2/3');
+    expect(s.message).toContain('1 toque');
+    // Um único novo toque reabre o desafio em vez de recomeçar do zero.
+    hitTarget(s);
+    expect(s.mode).toBe('evolution');
   });
 
   it('o tipo real define a habilidade e ausência de dado não cria tipo', () => {
@@ -411,12 +417,59 @@ describe('pinball da Vila', () => {
     const base = createPinballState(0);
     expect(pinballReward({ ...base, phase: 'ready' })).toBe(0);
     const loss = pinballReward({ ...base, phase: 'over', score: 2400, caught: 2, evolved: 1 });
-    expect(loss).toBe(3);
+    expect(loss).toBe(3 + 4 + 3);
+    const deepLoss = pinballReward({ ...base, phase: 'over', stage: 12, score: 2400, caught: 2, evolved: 1 });
+    expect(deepLoss).toBeGreaterThan(loss);
+    expect(pinballReward({ ...base, phase: 'over', stage: 60, score: 1_000_000, caught: 99, evolved: 99 })).toBe(120);
     const win = pinballReward({ ...base, phase: 'won', score: 6000, caught: 2, evolved: 1 });
     expect(win).toBe(25 + 15 + 4 + 3);
     const late = pinballReward({ ...base, phase: 'won', stage: 5, score: 10_000, caught: 2, evolved: 2 });
     expect(late).toBe(25 + 40 + 25 + 4 + 6);
     expect(pinballReward({ ...base, phase: 'won', stage: 5, score: 10_000_000, caught: 99, evolved: 99 })).toBe(120);
+  });
+
+  it('um único objetivo por modo, sem "para iniciar" durante o desafio', () => {
+    const s = createPinballState();
+    expect(pinballObjective(s)).toMatchObject({ label: 'MISSÃO', counter: '0/3 toques' });
+    s.mode = 'capture'; s.progress = 2;
+    const capture = pinballObjective(s);
+    expect(capture.counter).toBe('2/3 capturas');
+    expect(capture.hint).not.toContain('para iniciar');
+    expect(capture.hint).toContain('capture');
+
+    s.mode = 'evolution'; s.progress = 3;
+    expect(pinballObjective(s).counter).toBe('3/7 bumpers');
+
+    s.mode = 'bonus'; s.bossPhase = 0; s.progress = 4;
+    expect(pinballObjective(s).counter).toBe('4/5 bumpers');
+    s.bossPhase = 1; s.progress = 1;
+    expect(pinballObjective(s).counter).toBe('1/2 alvos diferentes');
+    s.bossPhase = 2; s.progress = 2;
+    expect(pinballObjective(s).counter).toBe('2/2 no núcleo');
+  });
+
+  it('janelas de desafio, urgência e textos de duração usam a mesma fonte', () => {
+    expect(pinballModeWindowMs('capture')).toBeCloseTo(60_000 * PINBALL_TIMER_SCALE, 6);
+    expect(pinballModeWindowMs('evolution')).toBe(pinballModeWindowMs('capture'));
+    expect(pinballModeWindowMs('bonus')).toBeCloseTo(100_000 * PINBALL_TIMER_SCALE, 6);
+    expect(pinballModeWindowMs('normal')).toBe(0);
+    expect(pinballModeUrgent({ mode: 'capture', modeMs: 9000 })).toBe(true);
+    expect(pinballModeUrgent({ mode: 'capture', modeMs: 11_000 })).toBe(false);
+    expect(pinballModeUrgent({ mode: 'normal', modeMs: 500 })).toBe(false);
+    expect(pinballSeconds(PINBALL_SAVER_MS)).toBe(12);
+    expect(pinballSeconds(PINBALL_ABILITY_MS)).toBe(20);
+    expect(pinballPartnerSkill(7)!.description).toContain(`${pinballSeconds(PINBALL_SAVER_MS)} s`);
+    expect(pinballPartnerSkill(445)!.description).toContain(`${pinballSeconds(PINBALL_ABILITY_MS)} s`);
+  });
+
+  it('marco de campanha a cada seis etapas, sem contar duas vezes', () => {
+    expect(PINBALL_CAMPAIGN_STAGES).toBe(6);
+    expect(pinballCampaignWins(-1)).toBe(0);
+    expect(pinballCampaignWins(0)).toBe(0);
+    expect(pinballCampaignWins(5)).toBe(0);
+    expect(pinballCampaignWins(6)).toBe(1);
+    expect(pinballCampaignWins(11)).toBe(1);
+    expect(pinballCampaignWins(12)).toBe(2);
   });
 
   it('enquadramento fixo mantém alvos, flippers e ralo visíveis', () => {

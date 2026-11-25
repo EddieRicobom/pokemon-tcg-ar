@@ -41,6 +41,23 @@ const ACCEL = SPEED * SPEED;
  */
 export const PINBALL_TIMER_SCALE = 1 / SPEED;
 const TIMER = PINBALL_TIMER_SCALE;
+/** Janelas citadas nos textos: o número exibido é o tempo real que o jogador vê no chip. */
+export const PINBALL_SAVER_MS = 7000 * TIMER;
+export const PINBALL_ABILITY_MS = 12_000 * TIMER;
+export const PINBALL_BONUS_MS = 10_000 * TIMER;
+export function pinballSeconds(ms: number): number { return Math.round(Math.max(0, ms) / 1000); }
+/** Cada volta completa nas seis etapas escritas à mão fecha um marco da campanha. */
+export const PINBALL_CAMPAIGN_STAGES = 6;
+export function pinballCampaignWins(stage: number): number {
+  return Math.floor(Math.max(0, Math.floor(stage) || 0) / PINBALL_CAMPAIGN_STAGES);
+}
+export function pinballModeWindowMs(mode: PinballMode): number {
+  return mode === 'normal' ? 0 : (mode === 'bonus' ? 100_000 : 60_000) * TIMER;
+}
+/** Últimos 10 s reais do desafio: a barra e o chip ficam vermelhos. */
+export function pinballModeUrgent(state: Pick<PinballState, 'mode' | 'modeMs'>): boolean {
+  return state.mode !== 'normal' && state.modeMs > 0 && state.modeMs <= 10_000;
+}
 const GRAVITY = 680 * ACCEL;
 const MAX_SPEED = 950 * SPEED;
 const ROLL_DRAG = 0.12 * SPEED;
@@ -67,9 +84,9 @@ export type PinballAbility = 'impulse' | 'guard' | 'power' | 'focus';
 export interface PinballPartnerSkill { type: PokemonType; typeLabel: string; ability: PinballAbility; label: string; description: string }
 const ABILITIES: Record<PinballAbility, { label: string; description: string }> = {
   impulse: { label: 'Impulso', description: 'Rebate a bola em direção ao topo.' },
-  guard: { label: 'Proteção', description: 'Ativa resgate lateral e mais 7 s de proteção.' },
-  power: { label: 'Impacto', description: 'Bumpers valem o dobro por 12 s.' },
-  focus: { label: 'Precisão', description: 'Alvos pontuam em dobro; captura avança 2 por 12 s.' },
+  guard: { label: 'Proteção', description: `Ativa resgate lateral e mais ${pinballSeconds(PINBALL_SAVER_MS)} s de proteção.` },
+  power: { label: 'Impacto', description: `Bumpers valem o dobro por ${pinballSeconds(PINBALL_ABILITY_MS)} s.` },
+  focus: { label: 'Precisão', description: `Alvos pontuam em dobro; captura avança 2 por ${pinballSeconds(PINBALL_ABILITY_MS)} s.` },
 };
 /** A habilidade vem do primeiro tipo conhecido da espécie; dados ausentes não recebem tipo inventado. */
 export function pinballPartnerSkill(dexId: number): PinballPartnerSkill | null {
@@ -229,7 +246,10 @@ export type PinballEvent = 'bump' | 'target' | 'core' | 'flipper' | 'drain' | 'l
 export function pinballReward(state: Pick<PinballState, 'phase' | 'score' | 'caught' | 'evolved' | 'stage'>): number {
   if (state.phase !== 'won' && state.phase !== 'over') return 0;
   const score = Math.max(0, Math.floor(state.score) || 0);
-  if (state.phase === 'over') return Math.min(12, Math.floor(score / 800));
+  if (state.phase === 'over') {
+    const progress = pinballCampaignWins(state.stage) * 4 + Math.max(0, state.caught) * 2 + Math.max(0, state.evolved) * 3;
+    return Math.min(120, Math.floor(score / 800) + progress);
+  }
   const bonus = Math.max(0, state.caught) * 2 + Math.max(0, state.evolved) * 3;
   const chapter = Math.max(0, Math.floor(state.stage) || 0);
   return Math.min(120, 25 + chapter * 8 + Math.min(25, Math.floor(score / 400)) + bonus);
@@ -263,6 +283,27 @@ export interface PinballCritter {
 }
 
 export function pinballMissionGoal(mode: PinballMode, bossPhase = 0): number { return mode === 'evolution' ? 7 : mode === 'bonus' ? [5, 2, 2][bossPhase] ?? 2 : 3; }
+
+export interface PinballObjective { label: string; counter: string; hint: string }
+/**
+ * Uma única fonte para o objetivo mostrado no painel da mesa, na barra da etapa e nos avisos.
+ * Durante o desafio o texto descreve o que falta agora, nunca a instrução de "para iniciar".
+ */
+export function pinballObjective(state: Pick<PinballState, 'mode' | 'stage' | 'bossPhase' | 'progress' | 'charge'>): PinballObjective {
+  const info = pinballStage(state.stage);
+  if (state.mode === 'capture') {
+    return { label: 'CAPTURA', counter: `${state.progress}/${pinballMissionGoal('capture')} capturas`, hint: `Acerte alvos ou capture o ${info.species}` };
+  }
+  if (state.mode === 'evolution') {
+    return { label: 'EVOLUÇÃO', counter: `${state.progress}/${pinballMissionGoal('evolution')} bumpers`, hint: 'Acerte os bumpers para evoluir' };
+  }
+  if (state.mode === 'bonus') {
+    const phase = PINBALL_BOSS_PHASES[state.bossPhase] ?? PINBALL_BOSS_PHASES[0];
+    const unit = state.bossPhase === 1 ? 'alvos diferentes' : state.bossPhase === 2 ? 'no núcleo' : 'bumpers';
+    return { label: phase.label.toUpperCase(), counter: `${state.progress}/${pinballMissionGoal('bonus', state.bossPhase)} ${unit}`, hint: phase.objective };
+  }
+  return { label: 'MISSÃO', counter: `${state.charge}/3 toques`, hint: `Acerte alvos ou o ${info.species} para iniciar` };
+}
 
 export function createPinballState(best = 0): PinballState {
   const state: PinballState = {
@@ -301,7 +342,7 @@ export function launchPinball(s: PinballState): boolean {
   if (s.phase !== 'ready' && s.phase !== 'between') return false;
   s.phase = 'playing';
   s.ball = { x: 316, y: 515, vx: -24 * SPEED, vy: -820 * SPEED };
-  s.saverMs = 7000 * TIMER;
+  s.saverMs = PINBALL_SAVER_MS;
   s.skillShot = true;
   s.abilityUses = 1;
   s.abilityKind = null;
@@ -319,10 +360,10 @@ export function activatePinballAbility(s: PinballState, ability: PinballAbility)
     s.ball.vy = -880 * SPEED;
   } else if (ability === 'guard') {
     s.kickback = true;
-    s.saverMs = Math.max(s.saverMs, 7000 * TIMER);
+    s.saverMs = Math.max(s.saverMs, PINBALL_SAVER_MS);
   } else {
     s.abilityKind = ability;
-    s.abilityMs = 12_000 * TIMER;
+    s.abilityMs = PINBALL_ABILITY_MS;
   }
   announce(s, `${ABILITIES[ability].label} ativado!`);
   return true;
@@ -458,13 +499,13 @@ function awardBonus(s: PinballState, events: PinballEvent[]): void {
   s.bonusAwards += 1;
   score(s, 2000);
   if (kind === 'shield') {
-    s.saverMs = Math.max(s.saverMs, 10_000 * TIMER);
+    s.saverMs = Math.max(s.saverMs, PINBALL_BONUS_MS);
     s.kickback = true;
-    announce(s, 'Bônus: Proteção! Resgate por 10 s.');
+    announce(s, `Bônus: Proteção! Resgate por ${pinballSeconds(PINBALL_BONUS_MS)} s.`);
   } else {
     s.bonusKind = kind;
-    s.bonusMs = 10_000 * TIMER;
-    announce(s, kind === 'fire' ? 'Bônus: bola em chamas! Pontos em dobro por 10 s.' : 'Bônus: bola elétrica! +300 por bumper por 10 s.');
+    s.bonusMs = PINBALL_BONUS_MS;
+    announce(s, kind === 'fire' ? `Bônus: bola em chamas! Pontos em dobro por ${pinballSeconds(PINBALL_BONUS_MS)} s.` : `Bônus: bola elétrica! +300 por bumper por ${pinballSeconds(PINBALL_BONUS_MS)} s.`);
   }
   events.push('reward');
 }
@@ -478,7 +519,7 @@ function addExtraBall(s: PinballState): boolean {
 
 function enterMode(s: PinballState, mode: Exclude<PinballMode, 'normal'>, events: PinballEvent[]): void {
   s.mode = mode;
-  s.modeMs = (mode === 'bonus' ? 100_000 : 60_000) * TIMER;
+  s.modeMs = pinballModeWindowMs(mode);
   s.progress = 0;
   s.charge = 0;
   s.bossPhase = 0;
@@ -492,7 +533,7 @@ function chargeChallenge(s: PinballState, events: PinballEvent[]): void {
   s.charge += 1;
   const info = pinballStage(s.stage);
   if (s.charge >= 3) enterMode(s, info.mode, events);
-  else announce(s, `${s.charge}/3 alvos para iniciar ${info.title}`);
+  else announce(s, `${s.charge}/3 toques para abrir ${info.title}`);
 }
 
 /** Avanço de captura do desafio; a Precisão vale em dobro, como nos alvos. */
@@ -645,7 +686,11 @@ export function stepPinball(s: PinballState, input: PinballInput, dtMs: number):
   if (s.abilityMs === 0) s.abilityKind = null;
   if (s.mode !== 'normal') {
     s.modeMs = Math.max(0, s.modeMs - elapsed);
-    if (s.modeMs === 0) { s.mode = 'normal'; s.progress = 0; s.charge = 0; s.bossPhase = 0; s.bossMask = 0; announce(s, 'Tempo encerrado. Tente abrir o desafio novamente.'); }
+    if (s.modeMs === 0) {
+      const lost = pinballObjective(s).counter;
+      s.mode = 'normal'; s.progress = 0; s.charge = 2; s.bossPhase = 0; s.bossMask = 0;
+      announce(s, `Tempo esgotado: ${lost}. 1 toque para reabrir.`);
+    }
   }
   for (let index = 0; index < s.hitCooldown.length; index++) s.hitCooldown[index] = Math.max(0, (s.hitCooldown[index] ?? 0) - elapsed);
   for (let index = 0; index < s.hitFlash.length; index++) s.hitFlash[index] = Math.max(0, (s.hitFlash[index] ?? 0) - elapsed);

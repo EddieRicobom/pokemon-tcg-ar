@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, triggerRef, watch } from 'vue';
-import { activatePinballAbility, createPinballState, launchPinball, mergePinballDex, nudgePinball, pinballMissionGoal, pinballPartnerSkill, pinballReward, pinballStage, PINBALL_BOSS_CORE, PINBALL_BOSS_PHASES, PINBALL_BUMPERS, PINBALL_DEX_MAX, PINBALL_FLASH_MS, PINBALL_FLIPPER_LENGTH, PINBALL_FLIPPERS, PINBALL_H, PINBALL_POPUP_MS, PINBALL_TARGETS, PINBALL_TIMER_SCALE, PINBALL_VIEW, PINBALL_W, stepPinball } from '../core/pinball';
+import { activatePinballAbility, createPinballState, launchPinball, mergePinballDex, nudgePinball, pinballCampaignWins, pinballModeUrgent, pinballModeWindowMs, pinballObjective, pinballPartnerSkill, pinballReward, pinballStage, PINBALL_BOSS_CORE, PINBALL_BUMPERS, PINBALL_DEX_MAX, PINBALL_FLASH_MS, PINBALL_FLIPPER_LENGTH, PINBALL_FLIPPERS, PINBALL_H, PINBALL_POPUP_MS, PINBALL_TARGETS, PINBALL_TIMER_SCALE, PINBALL_VIEW, PINBALL_W, stepPinball } from '../core/pinball';
 import type { PinballEvent, PinballState } from '../core/pinball';
 import { getLocalVillageSprite, getLocalVillageSpriteDirs } from '../app/services';
 import { contentBounds } from '../village/local-sprite';
@@ -44,9 +44,12 @@ watch(menuOpen, async (open) => {
   releaseAllFlippers();
   await nextTick();
   if (open) menuSheet.value?.querySelector<HTMLElement>('button, select, input, [href]')?.focus();
+  else if (state.value.phase === 'playing') canvas.value?.focus();
   else menuButton.value?.focus();
 });
 const stage = computed(() => pinballStage(state.value.stage));
+const objective = computed(() => pinballObjective(state.value));
+const modeUrgent = computed(() => pinballModeUrgent(state.value));
 const tiltSegments = computed(() => Math.min(3, Math.ceil(state.value.tiltHeat)));
 const ADVENTURE_KEY = 'tcg-ar-pinball-adventure-v1';
 interface PinballAdventure { bestStage: number; completions: number; bestScore: number }
@@ -89,15 +92,30 @@ function syncCaughtDex(): void {
 watch(() => state.value.captured.length, syncCaughtDex);
 const stageBanner = ref<{ title: string; subtitle: string; tint: string } | null>(null);
 let bannerTimer: ReturnType<typeof setTimeout> | null = null;
-function showStageBanner(): void {
-  const info = pinballStage(state.value.stage);
-  if (!info) return;
-  stageBanner.value = { title: info.title, subtitle: info.encounter, tint: info.tint };
+function showBanner(title: string, subtitle: string, tint: string): void {
+  stageBanner.value = { title, subtitle, tint };
   if (bannerTimer) clearTimeout(bannerTimer);
   bannerTimer = setTimeout(() => (stageBanner.value = null), 1800);
 }
+function showStageBanner(): void {
+  const info = pinballStage(state.value.stage);
+  if (!info) return;
+  showBanner(info.title, info.encounter, info.tint);
+}
+function saveAdventure(): void {
+  try {
+    localStorage.setItem(ADVENTURE_KEY, JSON.stringify(adventure.value));
+  } catch {
+    // Só não guarda o histórico da aventura.
+  }
+}
 watch(() => state.value.stage, (next, previous) => {
-  if (next !== previous && state.value.phase === 'playing') showStageBanner();
+  if (next === previous || state.value.phase !== 'playing') return;
+  showStageBanner();
+  if (next > adventure.value.bestStage) {
+    adventure.value = { ...adventure.value, bestStage: next };
+    saveAdventure();
+  }
 });
 let rewarded = false;
 watch([selectedPartnerId, muted, effects], () => {
@@ -307,12 +325,19 @@ function paint(): void {
   }
   const modeColor = s.mode === 'capture' ? '#56e5aa' : s.mode === 'evolution' ? '#d0a5ff' : s.mode === 'bonus' ? '#ffdf6d' : '#b8f0df';
   const pulse = 1 + Math.sin(performance.now() / 220) * 0.12;
+  const goal = pinballObjective(s);
   c.fillStyle = '#092d2bdc'; c.strokeStyle = modeColor; c.lineWidth = 3;
   c.beginPath(); c.roundRect(101, 254, 158, 58, 15); c.fill(); c.stroke();
   c.fillStyle = modeColor; c.font = 'bold 15px system-ui';
-  c.fillText(s.mode === 'capture' ? 'CAPTURA' : s.mode === 'evolution' ? 'EVOLUÇÃO' : s.mode === 'bonus' ? PINBALL_BOSS_PHASES[s.bossPhase]?.label.toUpperCase() ?? 'CHEFE' : 'MISSÃO', 180, 277);
+  c.fillText(goal.label, 180, 277);
   c.fillStyle = '#fff'; c.font = 'bold 11px system-ui';
-  c.fillText(s.mode === 'normal' ? `${s.charge}/3 ALVOS` : `${s.progress}/${pinballMissionGoal(s.mode, s.bossPhase)} ${s.mode === 'evolution' || s.mode === 'bonus' && s.bossPhase === 0 ? 'BUMPERS' : s.mode === 'bonus' && s.bossPhase === 2 ? 'NÚCLEO' : 'ALVOS'}`, 180, 297);
+  c.fillText(goal.counter, 180, 297);
+  if (s.mode !== 'normal') {
+    const windowMs = pinballModeWindowMs(s.mode);
+    const fraction = windowMs > 0 ? Math.max(0, Math.min(1, s.modeMs / windowMs)) : 0;
+    c.fillStyle = '#081f1c'; c.fillRect(114, 304, 132, 4);
+    c.fillStyle = pinballModeUrgent(s) ? '#ff6b6b' : modeColor; c.fillRect(114, 304, 132 * fraction, 4);
+  }
   PINBALL_BUMPERS.forEach((bumper, index) => {
     c.beginPath(); c.arc(bumper.x, bumper.y, bumper.r + 5, 0, Math.PI * 2); c.fillStyle = '#592f24'; c.fill();
     c.strokeStyle = '#ffef9a'; c.lineWidth = 3; c.stroke();
@@ -429,19 +454,32 @@ function grantReward(): void {
     completions: adventure.value.completions + (won ? 1 : 0),
     bestScore: Math.max(adventure.value.bestScore, s.score),
   };
-  try {
-    localStorage.setItem(ADVENTURE_KEY, JSON.stringify(adventure.value));
-  } catch {
-    // Só não guarda o histórico da aventura.
-  }
+  saveAdventure();
   if (effects.value) vibrate(won ? { kind: 'win' } : { kind: 'lose' });
+}
+
+/** A cada seis etapas a campanha fecha um marco: vale conquista de vitória e um prêmio, uma vez por volta. */
+const MILESTONE_COINS = 25;
+let milestonesPaid = 0;
+function grantMilestones(): void {
+  const wins = pinballCampaignWins(state.value.stage);
+  if (wins <= milestonesPaid) return;
+  const gained = wins - milestonesPaid;
+  milestonesPaid = wins;
+  for (let i = 0; i < gained; i++) recordEvent({ type: 'minigame', game: 'pinball', won: true, score: Math.min(100, Math.round(state.value.score / 100)) });
+  addCoins(MILESTONE_COINS * gained);
+  adventure.value = { ...adventure.value, completions: adventure.value.completions + gained, bestStage: Math.max(adventure.value.bestStage, state.value.stage) };
+  saveAdventure();
+  showBanner('CAMPANHA CONCLUÍDA', `Marco ${wins} · +${MILESTONE_COINS * gained} moedas`, '#ffe066');
+  if (effects.value) vibrate({ kind: 'win' });
 }
 
 function tick(time: number): void {
   const dt = lastTime ? Math.min(50, time - lastTime) : 16;
   lastTime = time;
-  // O menu é uma pausa de verdade: a física e as janelas de jogo congelam, mas o quadro continua desenhando.
-  const events = menuOpen.value ? [] : stepPinball(state.value, { left: left.value, right: right.value }, dt);
+  // Com o menu aberto a mesa fica congelada e o quadro nem é repintado (a sheet cobre tudo).
+  if (menuOpen.value) { frame = requestAnimationFrame(tick); return; }
+  const events = stepPinball(state.value, { left: left.value, right: right.value }, dt);
   sound(events);
   if (effects.value) {
     if (events.includes('drain')) vibrate({ kind: 'out', mine: true });
@@ -450,7 +488,8 @@ function tick(time: number): void {
     else if (events.includes('bump') || events.includes('core')) vibrate({ kind: 'bumper' });
   }
   grantReward();
-  if (state.value.phase === 'playing' && !menuOpen.value) {
+  grantMilestones();
+  if (state.value.phase === 'playing') {
     trail.unshift({ x: state.value.ball.x, y: state.value.ball.y });
     if (trail.length > 8) trail.length = 8;
   } else trail.length = 0;
@@ -463,22 +502,29 @@ function tick(time: number): void {
 }
 
 function launch(): void {
+  if (menuOpen.value) return;
   if (state.value.phase === 'over' || state.value.phase === 'won') {
     state.value = createPinballState(Math.max(savedBest(), state.value.best));
     rewarded = false;
     rewardText.value = '';
+    milestonesPaid = 0;
   }
   if (launchPinball(state.value)) sound(['launch']);
   triggerRef(state);
 }
-function nudge(direction: -1 | 1): void { sound(nudgePinball(state.value, direction)); triggerRef(state); }
+function nudge(direction: -1 | 1): void { if (menuOpen.value) return; sound(nudgePinball(state.value, direction)); triggerRef(state); }
 function useAbility(): void {
+  if (menuOpen.value) return;
   const skill = partnerSkill.value;
   if (skill && activatePinballAbility(state.value, skill.ability)) sound(['reward']);
   triggerRef(state);
 }
 function pressFlipper(event: PointerEvent, side: 'left' | 'right'): void {
   (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
+  holdFlipper(side);
+}
+function holdFlipper(side: 'left' | 'right'): void {
+  if (menuOpen.value) return;
   if (side === 'left') left.value = true;
   else right.value = true;
 }
@@ -547,7 +593,7 @@ onBeforeUnmount(() => {
 
 <template>
   <section class="pinball-game" :style="{ '--stage-tint': stage?.tint ?? '#65dca6' }" aria-label="Poképinball da Vila">
-    <header class="pinball-top">
+    <header class="pinball-top" :inert="menuOpen">
       <div class="pinball-brand"><small>AVENTURA DA VILA</small><h2>Poképinball</h2></div>
       <div class="pinball-scores">
         <span><small>PONTOS</small><b>{{ state.score.toLocaleString('pt-BR') }}</b></span>
@@ -559,16 +605,17 @@ onBeforeUnmount(() => {
       <button type="button" class="pinball-icon" aria-label="Sair do Pinball" @click="emit('close')">✕</button>
     </header>
 
-    <div class="pinball-stagebar">
+    <div class="pinball-stagebar" :inert="menuOpen">
       <div class="pinball-stage-line">
         <small>ETAPA {{ state.stage + 1 }}</small>
         <strong>{{ state.phase === 'over' ? 'Fim da aventura' : stage?.title }}</strong>
       </div>
-      <p v-if="state.phase === 'playing' && state.mode !== 'normal'">{{ state.mode === 'bonus' ? PINBALL_BOSS_PHASES[state.bossPhase]?.objective : stage?.objective }} · {{ state.progress }}/{{ pinballMissionGoal(state.mode, state.bossPhase) }} · {{ Math.ceil(state.modeMs / 1000) }}s</p>
-      <p v-else-if="state.phase === 'playing'">{{ state.charge }}/3 toques para abrir o desafio · alvos ou {{ stage?.species }}</p>
+      <p v-if="state.phase === 'playing' && state.mode !== 'normal'">{{ objective.hint }} · {{ objective.counter }} · {{ Math.ceil(state.modeMs / 1000) }}s</p>
+      <p v-else-if="state.phase === 'playing'">{{ objective.counter }} · {{ objective.hint }}</p>
       <p v-else>{{ stage?.encounter }} · {{ stage?.objective }}</p>
       <p v-if="state.bonusKind" class="pinball-bonus">{{ state.bonusKind === 'fire' ? '🔥 BOLA EM CHAMAS · PONTOS EM DOBRO' : '⚡ BOLA ELÉTRICA · +300 POR BUMPER' }} · {{ Math.ceil(state.bonusMs / 1000) }}s</p>
-      <div v-if="state.phase === 'playing' && (state.saverMs > 0 || state.kickback || state.skillShot)" class="pinball-windows">
+      <div v-if="state.phase === 'playing' && (state.saverMs > 0 || state.kickback || state.skillShot || (state.mode !== 'normal' && modeUrgent))" class="pinball-windows">
+        <span v-if="modeUrgent" class="pinball-window urgent">⏱ {{ Math.ceil(state.modeMs / 1000) }}s</span>
         <span v-if="state.saverMs > 0" class="pinball-window save">🛟 BOLA SALVA · {{ Math.ceil(state.saverMs / 1000) }}s</span>
         <span v-if="state.kickback" class="pinball-window kick">↩ RESGATE LATERAL PRONTO</span>
         <span v-if="state.skillShot" class="pinball-window skill">🎯 TIRO DE HABILIDADE · acerte um alvo</span>
@@ -587,9 +634,9 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
-    <div class="pinball-board">
+    <div class="pinball-board" :inert="menuOpen">
       <div class="pinball-table">
-        <canvas ref="canvas" :width="PINBALL_W" :height="PINBALL_H" aria-label="Mesa de pinball: use os flippers esquerdo e direito para manter a Pokébola em jogo" />
+        <canvas ref="canvas" tabindex="-1" :width="PINBALL_W" :height="PINBALL_H" aria-label="Mesa de pinball: use os flippers esquerdo e direito para manter a Pokébola em jogo" />
         <div class="pinball-tint" aria-hidden="true"></div>
         <div v-if="stageBanner" class="pinball-banner" :style="{ '--c': stageBanner.tint }" aria-hidden="true">
           <small>ETAPA {{ state.stage + 1 }}</small>
@@ -601,10 +648,11 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
-    <p class="pinball-message" role="status" aria-live="polite" aria-atomic="true">{{ state.messageMs > 0 || state.phase !== 'playing' ? state.message : '' }}</p>
+    <p class="pinball-message" aria-hidden="true">{{ state.messageMs > 0 || state.phase !== 'playing' ? state.message : '' }}</p>
+    <p class="pinball-live" role="status" aria-live="polite" aria-atomic="true">{{ state.messageMs > 0 || state.phase !== 'playing' ? state.message : '' }}</p>
 
-    <div class="pinball-controls">
-      <button type="button" class="pinball-flip" aria-label="Flipper esquerdo" @pointerdown.prevent="pressFlipper($event, 'left')" @pointerup="releaseFlipper('left')" @pointercancel="releaseFlipper('left')" @lostpointercapture="releaseFlipper('left')">◀</button>
+    <div class="pinball-controls" :inert="menuOpen">
+      <button type="button" class="pinball-flip" aria-label="Flipper esquerdo" aria-keyshortcuts="A ArrowLeft" :data-held="left" @pointerdown.prevent="pressFlipper($event, 'left')" @pointerup="releaseFlipper('left')" @pointercancel="releaseFlipper('left')" @lostpointercapture="releaseFlipper('left')" @keydown.space.stop.prevent="holdFlipper('left')" @keydown.enter.stop.prevent="holdFlipper('left')" @keyup.space.stop.prevent="releaseFlipper('left')" @keyup.enter.stop.prevent="releaseFlipper('left')" @blur="releaseFlipper('left')">◀</button>
       <div class="pinball-middle">
         <button type="button" class="pinball-ability" :disabled="!partnerSkill || state.phase !== 'playing' || state.abilityUses === 0" @click="useAbility">{{ partnerSkill?.label ?? 'Habilidade' }}<small v-if="partnerSkill"> · {{ state.abilityUses }}</small></button>
         <p class="pinball-tilt" :class="{ locked: state.tiltLockMs > 0 }" :aria-label="`Sacudidas ${tiltSegments} de 3${state.tiltLockMs > 0 ? ', tilt ativo' : ''}`">
@@ -612,10 +660,10 @@ onBeforeUnmount(() => {
           <b>{{ state.tiltLockMs > 0 ? 'TILT' : 'Sacudidas' }}</b>
         </p>
       </div>
-      <button type="button" class="pinball-flip" aria-label="Flipper direito" @pointerdown.prevent="pressFlipper($event, 'right')" @pointerup="releaseFlipper('right')" @pointercancel="releaseFlipper('right')" @lostpointercapture="releaseFlipper('right')">▶</button>
+      <button type="button" class="pinball-flip" aria-label="Flipper direito" aria-keyshortcuts="D ArrowRight" :data-held="right" @pointerdown.prevent="pressFlipper($event, 'right')" @pointerup="releaseFlipper('right')" @pointercancel="releaseFlipper('right')" @lostpointercapture="releaseFlipper('right')" @keydown.space.stop.prevent="holdFlipper('right')" @keydown.enter.stop.prevent="holdFlipper('right')" @keyup.space.stop.prevent="releaseFlipper('right')" @keyup.enter.stop.prevent="releaseFlipper('right')" @blur="releaseFlipper('right')">▶</button>
     </div>
 
-    <div class="pinball-actions">
+    <div class="pinball-actions" :inert="menuOpen">
       <button type="button" :disabled="state.phase !== 'playing'" @click="nudge(-1)">Sacudir ←</button>
       <button type="button" :disabled="state.phase !== 'playing'" @click="nudge(1)">Sacudir →</button>
       <button type="button" :aria-pressed="muted" @click="muted = !muted">{{ muted ? 'Som off' : 'Som on' }}</button>
@@ -626,12 +674,12 @@ onBeforeUnmount(() => {
       <div class="pinball-partner"><img v-if="selectedPartner?.thumb" :src="selectedPartner.thumb" alt="" width="34" height="34" /><label>Parceiro <select v-model="selectedPartnerId" :disabled="state.phase !== 'ready' && state.phase !== 'over' && state.phase !== 'won'"><option value="">Sem parceiro</option><option v-for="partner in props.partners" :key="partner.id" :value="partner.id">{{ partner.name }}</option></select></label></div>
       <p class="pinball-skill">{{ selectedPartner ? partnerSkill ? `${partnerSkill.typeLabel} · ${partnerSkill.description} · ${state.abilityUses} uso por bola` : 'Tipo indisponível para este parceiro; habilidade não ativada.' : props.partners.length ? 'Escolha um Pokémon da Vila ou jogue sem habilidade.' : 'Sem Pokémon disponível na Vila; jogue com a bola neutra.' }}</p>
       <p class="pinball-progress">Capturas: {{ state.caught }} · Evoluções: {{ state.evolved }} · Multiplicador: ×{{ state.multiplier }} · Bola: nível {{ state.ballLevel }} <span v-if="state.saverMs > 0">· Proteção {{ Math.ceil(state.saverMs / 1000) }}s</span><span v-if="state.kickback"> · Resgate pronto</span></p>
-      <p class="pinball-progress">Melhor etapa: {{ adventure.bestStage }} · Pokédex do Pinball: {{ caughtDex.length }}/{{ PINBALL_DEX_MAX }} · Recorde: {{ adventure.bestScore.toLocaleString('pt-BR') }}</p>
+      <p class="pinball-progress">Melhor etapa: {{ adventure.bestStage ? adventure.bestStage + 1 : '—' }} · Pokédex do Pinball: {{ caughtDex.length }}/{{ PINBALL_DEX_MAX }} · Recorde da aventura: {{ adventure.bestScore.toLocaleString('pt-BR') }}</p>
       <div class="pinball-options">
         <button type="button" :aria-pressed="muted" @click="muted = !muted">{{ muted ? 'Som desligado' : 'Som ligado' }}</button>
         <button type="button" :aria-pressed="effects" @click="effects = !effects">{{ effects ? 'Efeitos ligados' : 'Efeitos desligados' }}</button>
       </div>
-      <p class="pinball-help">Teclado: A/← e D/→ controlam os flippers; Espaço lança; Q/E sacodem a mesa. Três sacudidas seguidas causam TILT.</p>
+      <p class="pinball-help">Teclado: A/← e D/→ controlam os flippers; Espaço lança; Q/E sacodem a mesa. Três sacudidas seguidas causam TILT. Com o menu aberto, a mesa fica pausada.</p>
       <p class="pinball-note">Encontros e capturas são desafios desta mesa. Não reconhecem cartas nem adicionam Pokémon à Caixa.</p>
     </div>
   </section>
@@ -649,6 +697,9 @@ onBeforeUnmount(() => {
 .pinball-window.save{color:#d6f7ff;border-color:#7bdcff;background:#102f42cc}
 .pinball-window.kick{color:#fff3b0;border-color:#ffe066;background:#3a3113cc}
 .pinball-window.skill{color:#ffd9f2;border-color:#ff9bd0;background:#421230cc}
+.pinball-window.urgent{color:#ffd7d7;border-color:#ff6b6b;background:#4a1212cc;animation:pinball-urgent .8s ease-in-out infinite alternate}
+@keyframes pinball-urgent{to{background:#7a1f1fd9}}
+.pinball-live{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0}
 .pinball-combo-meter{display:block;height:2px;margin-top:1px;border-radius:2px;background:#ffffff26;overflow:hidden}
 .pinball-combo-meter em{display:block;height:100%;background:#ffd36a;transition:width .12s linear}
 .pinball-endless{color:#9fe8c5!important;font-size:.56rem!important;font-weight:800;letter-spacing:.08em}
@@ -658,12 +709,13 @@ onBeforeUnmount(() => {
 .pinball-board{position:relative;flex:1 1 auto;min-height:0;display:grid;place-items:center}.pinball-table{position:relative;height:100%;max-width:100%;aspect-ratio:3/5;border-radius:16px;overflow:hidden;box-shadow:0 10px 38px #0009,0 0 0 3px #eabb45;background:#124d33}.pinball-table canvas{display:block;width:100%;height:100%}.pinball-tint{position:absolute;inset:0;pointer-events:none;background:var(--stage-tint);opacity:.14;mix-blend-mode:screen}.pinball-launch{position:absolute;left:18%;top:64%;width:64%;min-height:40px;border:2px solid #fff1a0;border-radius:12px;background:linear-gradient(#f9dd63,#ce9025);color:#43240e;font:900 .95rem system-ui;box-shadow:0 3px 0 #753f16;cursor:pointer}.pinball-reward{position:absolute;left:50%;bottom:12px;transform:translateX(-50%);margin:0;padding:5px 11px;border-radius:999px;background:#08231ee8;border:1px solid #ffe39a;color:#ffe9b2;font-size:.78rem;font-weight:800;white-space:nowrap}
 .pinball-message{min-height:1.1em;margin:0;color:#ffe28a;font-size:.84rem;font-weight:800;text-shadow:0 1px #0a2420;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .pinball-controls{display:grid;grid-template-columns:1fr auto 1fr;align-items:stretch;gap:8px}.pinball-flip{min-height:58px;border:2px solid #ffe39a;border-radius:15px;background:linear-gradient(#ed7566,#bc3e43);color:white;font:800 1.4rem system-ui;box-shadow:0 4px 0 #67232b;touch-action:none;user-select:none}.pinball-flip:active{background:#ffa268;transform:translateY(3px);box-shadow:0 1px 0 #67232b}
+.pinball-flip[data-held="true"]{background:#ffa268;transform:translateY(3px);box-shadow:0 1px 0 #67232b}
 .pinball-middle{display:grid;grid-template-rows:1fr auto;gap:3px;min-width:96px}.pinball-ability{min-height:34px;padding:3px 6px;border:1px solid #ffe39a;border-radius:9px;background:#a83e43;color:#fff;font:800 .66rem system-ui}.pinball-ability:disabled{opacity:.5}.pinball-ability small{font-weight:700;opacity:.9}.pinball-tilt{display:flex;align-items:center;justify-content:center;gap:3px;margin:0;color:#ffdda1;font-size:.55rem;font-weight:800}.pinball-tilt span{width:7px;height:7px;border-radius:50%;background:#395851}.pinball-tilt span.on{background:#f9c449;box-shadow:0 0 5px #f9c449}.pinball-tilt.locked{color:#ff9d9d}.pinball-tilt.locked span{background:#bc3e43}.pinball-tilt b{margin-left:3px;font-size:.55rem;font-weight:800}
 .pinball-actions{display:flex;justify-content:center;flex-wrap:wrap;gap:6px}.pinball-actions button{min-height:32px;padding:4px 10px;border:1px solid #d9b664;border-radius:9px;background:linear-gradient(#245646,#163c36);color:#fff8df;font:700 .7rem system-ui;box-shadow:0 2px 0 #08251e}.pinball-actions button:disabled{opacity:.45;box-shadow:none}
 .pinball-sheet{position:absolute;inset:max(8px,env(safe-area-inset-top)) max(8px,env(safe-area-inset-right)) max(8px,env(safe-area-inset-bottom)) max(8px,env(safe-area-inset-left));z-index:5;display:grid;align-content:start;gap:8px;overflow-y:auto;padding:12px;border:1px solid #a88d50;border-radius:16px;background:#082b29;box-shadow:0 18px 50px #000c;text-align:left}.pinball-sheet header{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:1.1rem}.pinball-sheet header button{width:38px;height:38px;border:1px solid #d9b664;border-radius:10px;background:#173f36;color:#fff;font:800 1.2rem system-ui}.pinball-partner{display:flex;align-items:center;gap:7px}.pinball-partner img{object-fit:contain;image-rendering:pixelated}.pinball-partner label{display:flex;align-items:center;gap:5px;font-size:.78rem;font-weight:800}.pinball-partner select{max-width:150px;padding:5px;border:1px solid #d9b664;border-radius:8px;background:#102f2b;color:#fff}.pinball-skill,.pinball-progress,.pinball-help,.pinball-note{margin:0;color:#c9ddcd;font-size:.76rem;line-height:1.4}.pinball-skill{color:#ffdda1}.pinball-progress{color:#ffe5a7;font-weight:700}.pinball-options{display:flex;gap:6px;flex-wrap:wrap}.pinball-options button{min-height:34px;padding:5px 9px;border:1px solid #d9b664;border-radius:9px;background:#173f36;color:#fff;font:700 .72rem system-ui}
 .pinball-banner{position:absolute;inset:0;z-index:2;display:grid;place-content:center;gap:3px;pointer-events:none;background:linear-gradient(transparent,#061e1bd9 28% 72%,transparent);animation:pinball-banner 1.8s ease-out both;text-align:center}.pinball-banner small{font-size:.66rem;letter-spacing:.18em;font-weight:900;color:var(--c)}.pinball-banner strong{font-size:1.45rem;line-height:1.1;color:#fff;text-shadow:0 2px 0 #0009}.pinball-banner span{font-size:.78rem;color:#ffe9b2}
 @keyframes pinball-banner{0%{opacity:0;transform:scale(.94)}14%,76%{opacity:1;transform:scale(1)}100%{opacity:0}}
-@media(prefers-reduced-motion:reduce){.pinball-banner{animation:none}}
+@media(prefers-reduced-motion:reduce){.pinball-banner{animation:none}.pinball-window.urgent{animation:none}}
 @media(max-height:700px){.pinball-message{display:none}.pinball-brand small{display:none}.pinball-flip{min-height:50px}.pinball-actions button{min-height:28px;padding:2px 8px}}
 @media(max-width:380px){.pinball-brand{display:none}.pinball-scores{flex:1 1 auto;margin-left:0;justify-content:space-around}.pinball-icon{width:30px;height:30px}}
 @media(min-width:700px){.pinball-game{max-width:560px;margin:auto;border-radius:18px}}
