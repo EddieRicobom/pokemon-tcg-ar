@@ -648,3 +648,9 @@ com o robô quase sem abates). Ficam anotados para a próxima rodada.
 - **Fases do chefe.** A vida restante define três fases (>66%, >33%, resto). Fase II encurta o telegraph para 85% e a fase III para 75%, com uma área extra fora do eixo do jogador. Vida, dano e velocidade não mudam: a luta fica mais densa, não mais injusta.
 - **Matilha de elite.** Depois dos 10 min, o rodízio de eventos-relâmpago ganha uma matilha de 3 elites (4 a partir dos 15 min) em volta de um ponto avisado. A chave só cai quando todas caem; fugir encerra sem recompensa. É o pico de ritmo do late game, compensando a densidade comum menor.
 - **Ofertas com sinergia.** A partir do Nv 5, a primeira vaga da oferta vem da família dominante da build. Cartas recém-oferecidas perdem 75% do peso e cartas nunca vistas ganham 60%, então a oferta não repete a mesma tela nem esquece o catálogo. O card mostra o selo `Combina com sua build`.
+
+## Corte de 11% no dano inicial do jogador (25/11/2026)
+
+- `SURVIVOR_START_DAMAGE_SCALE = 0,89` multiplica o dano de `initialAttack` (golpe principal e segundo golpe). O corte é na base da corrida, não nas cartas: os +% de ataque continuam valendo sobre o novo valor.
+- A Arena passa `startDamageScale: 1` e mantém o próprio equilíbrio; o corte é da Torre (e das variantes que usam a mesma corrida, como o BONK).
+- Medição nas 18 sementes: sobrevivência média de 135–180 s (antes 138–180), leque de ~45 s. O piso do teste de regressão caiu para 133 s e o leque máximo para 46 s.

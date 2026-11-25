@@ -165,6 +165,7 @@ export const BALANCE = {
   spawnRateMultiplier: 0.45,
   /** Intervalo de invulnerabilidade após qualquer acerto; dá tempo para reposicionar sem remover o perigo. */
   hitInvulnerabilityMs: 750,
+  /** Dano base quando a corrida não traz perfil de golpe; o corte de 11% entra em `initialAttack`. */
   playerDamage: 10,
   playerCooldownMs: 600,
   /** Distância inicial usada para normalizar a queda de dano dos golpes diretos. */
@@ -231,6 +232,8 @@ export interface CreateSurvivorOptions {
   noHeld?: boolean;
   /** Resolve apenas a espécie visual, preservando os números da onda e do grau. */
   enemyDexId?: (enemy: Readonly<SurvivorEnemy>, elapsedMs: number, runSeed: number) => number;
+  /** Escala do dano inicial do jogador. Padrão 0,89 (corte de 11% na Torre); a Arena passa 1 para manter o próprio equilíbrio. */
+  startDamageScale?: number;
   /** Perfil interno do inimigo. Se omitido, os quatro tipos comuns alternam por `kind`. */
   enemyArchetypeFor?: (enemy: Pick<SurvivorEnemy, 'kind' | 'boss' | 'grade'>) => SurvivorEnemyArchetype;
   /** Quantas espécies "comuns" o elenco desta corrida tem (o chefe usa o índice seguinte). Mínimo 1. */
@@ -284,12 +287,15 @@ function secondaryMoveFor(move: SurvivorMove): SurvivorMove {
   return { ...move, category, name: `${move.name} secundário`, icon: '✦' };
 }
 
-function initialAttack(move: SurvivorMove, profile: AttackProfile | undefined, preparation: ReturnType<typeof survivorPreparation>): SurvivorAttackFields {
+/** Corte de 11% no dano com que a corrida começa (25/11/2026). */
+export const SURVIVOR_START_DAMAGE_SCALE = 0.89;
+
+function initialAttack(move: SurvivorMove, profile: AttackProfile | undefined, preparation: ReturnType<typeof survivorPreparation>, damageScale: number): SurvivorAttackFields {
   return {
     move,
     attackRadius: profile?.radius ?? 0,
     projectileSize: profile?.projectileSize ?? 4,
-    attackDamage: (profile?.damage ?? BALANCE.playerDamage) * preparation.damageMultiplier,
+    attackDamage: (profile?.damage ?? BALANCE.playerDamage) * damageScale * preparation.damageMultiplier,
     areaDamageMultiplier: move.category === 'area' ? 0.15 : 1,
     attackRange: (profile?.range ?? 170) * preparation.rangeMultiplier,
     attackCooldownMs: profile?.cooldownMs ?? BALANCE.playerCooldownMs,
@@ -308,6 +314,7 @@ export function createSurvivorState(seed: number, options: CreateSurvivorOptions
   const fast = options.fast === true && options.infinite !== true;
   const shadowGuardian = SHADOW_GUARDIANS[0]!;
   const prof = options.profile;
+  const startDamageScale = options.startDamageScale ?? SURVIVOR_START_DAMAGE_SCALE;
   const preparation = survivorPreparation(options.preparation);
   const loadout = options.loadout ?? PURE_LOADOUT;
   const lunch = loadout.lunch;
@@ -317,7 +324,7 @@ export function createSurvivorState(seed: number, options: CreateSurvivorOptions
   const player: SurvivorPlayer = {
     dexId: options.dexId ?? 0,
     stage: 0,
-    ...initialAttack(move, prof, preparation),
+    ...initialAttack(move, prof, preparation, startDamageScale),
     x: ARENA_W / 2,
     y: ARENA_H / 2,
     hp: baseMaxHp,
@@ -449,7 +456,7 @@ export function createSurvivorState(seed: number, options: CreateSurvivorOptions
   };
   if (options.secondAttack) {
     const { move: alternateMove, profile: alternateProfile } = options.secondAttack;
-    const stored = initialAttack(alternateMove, alternateProfile, preparation);
+    const stored = initialAttack(alternateMove, alternateProfile, preparation, startDamageScale);
     for (const upgrade of SURVIVOR_UPGRADES) {
       if (!isAttackUpgrade(upgrade) && player.upgradeLevels[upgrade.id] !== undefined) stored.upgradeLevels[upgrade.id] = player.upgradeLevels[upgrade.id]!;
     }

@@ -30,6 +30,7 @@ import {
   breakSurvivorEnemyArmor,
   SURVIVOR_ARMOR_BREAK_MS,
   survivorBossPhase,
+  SURVIVOR_START_DAMAGE_SCALE,
   rollSurvivorRunUpgrades,
   survivorBuildFamily,
   survivorProjectileOpacity,
@@ -82,6 +83,16 @@ function run(seed: number, kindCount = 4) {
 }
 
 describe('stepSurvivor', () => {
+  it('a corrida começa com 11% menos dano que o perfil do golpe', () => {
+    const { move, profile } = as('fire', 'projetil');
+    const s = createSurvivorState(7, { kindCount: 1, move, profile });
+    expect(SURVIVOR_START_DAMAGE_SCALE).toBeCloseTo(0.89, 5);
+    expect(s.player.attackDamage).toBeCloseTo(profile.damage * 0.89, 6);
+
+    const fallback = createSurvivorState(7, { kindCount: 1 });
+    expect(fallback.player.attackDamage).toBeCloseTo(BALANCE.playerDamage * 0.89, 6);
+  });
+
   it('preserva as bordas dos círculos de contato, projétil e coleta', () => {
     const s = quiet(run(5));
     const p = s.player;

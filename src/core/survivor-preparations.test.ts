@@ -22,12 +22,12 @@ describe('preparações da Torre', () => {
     const longAim = createSurvivorState(1, { ...options, preparation: 'mira-longa' }).player;
 
     expect(quick.speed).toBeCloseTo(216);
-    expect(quick.attackDamage).toBeCloseTo(92);
+    expect(quick.attackDamage).toBeCloseTo(81.9, 1);
     expect(quick.maxHp).toBe(normal.maxHp);
     expect(aim.speed).toBeCloseTo(184);
-    expect(aim.attackDamage).toBeCloseTo(108);
+    expect(aim.attackDamage).toBeCloseTo(96.1, 1);
     expect(magnet.pickupRadius).toBeCloseTo(normal.pickupRadius * 1.2);
-    expect(magnet.attackDamage).toBeCloseTo(92);
+    expect(magnet.attackDamage).toBeCloseTo(81.9, 1);
     expect(longAim.attackRange).toBeCloseTo(normal.attackRange * 1.12);
     expect(longAim.speed).toBeCloseTo(normal.speed * 0.92);
     expect(longAim.maxHp).toBe(normal.maxHp);

@@ -5,6 +5,13 @@ O estado atual, as fases, as pendências e os riscos continuam no [plano](../IMP
 datadas (com o que foi e o que não foi validado em cada uma). A regra de validação do plano vale também para estas entradas:
 🔶 significa que **nada foi visto num celular real**.
 
+## Torre: dano inicial do jogador 11% menor (25/11/2026)
+
+- **Corte de 11%:** `SURVIVOR_START_DAMAGE_SCALE = 0,89` é aplicado em `initialAttack`, então o dano com que a corrida começa — golpe principal, segundo golpe e o fallback sem perfil — cai 11%. As cartas continuam multiplicando sobre essa base.
+- **Arena fora:** `createArenaPrep` passa `startDamageScale: 1`; a Arena tem teto de poder e envelope de duração próprios e não deve herdar um ajuste da Torre.
+- **Efeito medido:** na simulação de 18 tipos, a faixa de sobrevivência ficou em 135–180 s (antes 138–180) e o leque entre tipos abriu para ~45 s. Os limites do teste de regressão foram recalibrados (piso 133 s, teto 190 s, leque 46 s).
+- 🔶 Typecheck, 68 arquivos / 735 testes do Survival, suíte completa (347 arquivos / 3455 testes), build e 14/14 de layout passaram. O corte precisa de playtest para confirmar se o começo não ficou lento demais.
+
 ## BONK: ápice do salto mais leve; Pinball: janelas e estado visíveis (25/11/2026)
 
 - **BONK:** perto do ápice (`|velocidade vertical| < 150`) a gravidade cai para 72%, alongando o salto em ~6 quadros. A troca dá tempo de mirar a queda e de ler os obstáculos, sem mudar altura de pulo nem colisões.

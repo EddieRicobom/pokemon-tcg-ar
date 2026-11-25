@@ -82,7 +82,8 @@ function nextOffer(prep: ArenaPrep): void {
 
 export function createArenaPrep(member: ArenaPrepMember, seed: number, bond = 0): ArenaPrep {
   const { move, profile } = survivorAttackOf(member.dexId);
-  const state = createSurvivorState(seed, { kindCount: 1, move, profile, dexId: member.dexId });
+  // A Arena tem o próprio teto de poder e o próprio envelope de duração: não herda o corte de 11% da Torre.
+  const state = createSurvivorState(seed, { kindCount: 1, move, profile, dexId: member.dexId, startDamageScale: 1 });
   const prep: ArenaPrep = { member, state, picked: [], offer: [], rareChanceBonus: arenaFriendRareBonus(bond) };
   nextOffer(prep);
   return prep;
