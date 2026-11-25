@@ -3206,6 +3206,15 @@ function draw(): void {
     cinemaCasters.push(playerCaster);
     drawCastShadows(ctx, cinemaCasters, cinemaLights, cinema);
   }
+  // Halo escuro sob o jogador: reduz o ruído do cenário sem escurecer inimigos ou projéteis, que são desenhados depois.
+  const playerHalo = ctx.createRadialGradient(s.player.x, s.player.y, 10, s.player.x, s.player.y, 38);
+  playerHalo.addColorStop(0, 'rgba(4,10,14,0)');
+  playerHalo.addColorStop(0.7, 'rgba(4,10,14,0.16)');
+  playerHalo.addColorStop(1, 'rgba(4,10,14,0.3)');
+  ctx.save();
+  ctx.fillStyle = playerHalo;
+  ctx.beginPath(); ctx.arc(s.player.x, s.player.y, 38, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
   for (const e of s.enemies) {
     if (e.x >= left && e.x <= right && e.y >= top && e.y <= bottom) {
       drawEnemy(e);
@@ -3227,15 +3236,6 @@ function draw(): void {
     ctx.restore();
   }
   drawFootDust(ctx, s.player.x, s.player.y);
-  // Halo escuro atrás do jogador: os projéteis e partículas ao redor perdem contraste e ele volta a ser o foco.
-  const playerHalo = ctx.createRadialGradient(s.player.x, s.player.y, 10, s.player.x, s.player.y, 38);
-  playerHalo.addColorStop(0, 'rgba(4,10,14,0)');
-  playerHalo.addColorStop(0.7, 'rgba(4,10,14,0.18)');
-  playerHalo.addColorStop(1, 'rgba(4,10,14,0.34)');
-  ctx.save();
-  ctx.fillStyle = playerHalo;
-  ctx.beginPath(); ctx.arc(s.player.x, s.player.y, 38, 0, Math.PI * 2); ctx.fill();
-  ctx.restore();
   const blink = s.player.invulnMs > 0 && Math.floor(animMs / 80) % 2 === 0;
   // Orbitais acima do Pokémon na tela passam por trás dele; os de baixo, pela frente.
   const orbiters = move.category === 'orbit' ? survivorOrbiters(s.player) : [];
@@ -5233,7 +5233,7 @@ onBeforeUnmount(() => {
               <p>{{ autoPaused ? 'O relógio parou quando o app saiu da frente. Nada aconteceu com a sua vida ou os inimigos.' : 'Respire e prepare sua próxima jogada.' }}</p>
             </header>
             <button type="button" class="primary survivor-pause-save-top" @pointerdown.stop @click.stop="saveAndLeave">💾 Salvar e sair</button>
-            <button type="button" class="primary survivor-pause-resume" @pointerdown.stop @click.stop="togglePause">▶ Retomar partida <small class="gamepad-hint" aria-hidden="true">Start</small></button>
+            <button type="button" class="primary survivor-pause-resume" data-gamepad-default @pointerdown.stop @click.stop="togglePause">▶ Retomar partida <small class="gamepad-hint" aria-hidden="true">Start</small></button>
             <div class="survivor-pause-content">
             <div v-if="runNumbers" class="survivor-info-section">
               <strong>Números da corrida</strong>
@@ -5262,7 +5262,7 @@ onBeforeUnmount(() => {
                 <li><b>🎚 Desafio N%:</b> força dos inimigos comuns em relação à Torre de sempre. Verde é mais fácil, vermelho acima de 120% é aperto.</li>
                 <li><b>⏱ tempo · ☠ abates:</b> tempo da corrida e inimigos derrotados.</li>
                 <li><b>☠ Pressão N:</b> densidade, velocidade e dano extras que a dificuldade acumulou.</li>
-                <li><b>Barras pequenas:</b> vida de elites e chefões; o glifo ao lado mostra o tipo.</li>
+                <li><b>Barras pequenas:</b> vida de elites, chefões e chefes; o glifo ao lado mostra o tipo.</li>
                 <li><b>Aviso de ataque:</b> o nome, o glifo do tipo e a contagem até o impacto; ande para fora da área marcada.</li>
               </ul>
             </details>

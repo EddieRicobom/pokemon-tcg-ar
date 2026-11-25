@@ -14,6 +14,7 @@ datadas (com o que foi e o que não foi validado em cada uma). A regra de valida
 - **Controles:** «TROCAR GOLPE» saiu de baixo do D-pad e foi para o centro; atalho «Efeitos reduzidos» na pausa; «Salvar e sair» subiu para o topo do menu de pausa.
 - **Inimigos especiais:** elites/chefões/chefes têm micro-barra de vida e glifo do tipo; a pausa explica as barras e os avisos.
 - **Resumo:** os gráficos e fontes de dano ficam em «Detalhes da corrida», e o formulário de feedback fica recolhido em «Dar feedback (opcional)». Os números principais continuam no topo.
+- **Limite:** as setas de ameaça, o anel/status do jogador e as micro-barras são do modo normal; o BONK continua com a arte própria.
 - 🔶 Typecheck, 65 arquivos / 716 testes do Survival, suíte completa (344 arquivos / 3435 testes), build e os 14 testes de layout passaram. Conferi no navegador o HUD, o anel do jogador, o toast reposicionado e o «Salvar e sair» no topo da pausa; não testei todos os resumos/estados em celular real.
 
 ## Torre: Desafio adaptável acima de 120% (25/11/2026)

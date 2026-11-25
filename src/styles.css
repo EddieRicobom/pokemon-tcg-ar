@@ -6146,7 +6146,7 @@ body.no-scroll .reward-toasts {
 .survivor-toast {
   position: absolute;
   top: auto;
-  bottom: calc(19% + env(safe-area-inset-bottom));
+  bottom: calc(154px + env(safe-area-inset-bottom));
   left: 50%;
   transform: translateX(-50%);
   z-index: 3;
@@ -6809,8 +6809,7 @@ body.no-scroll .reward-toasts {
 .survivor-stage { --sv-left: calc(var(--sv-edge) + env(safe-area-inset-left)); }
 .survivor-stage.hand-left .survivor-special-button,
 .survivor-stage.hand-left .survivor-charge-button,
-.survivor-stage.hand-left .survivor-auto-charge { right: auto; left: var(--sv-left); }
-.survivor-stage.hand-left .survivor-second-charge,
+.survivor-stage.hand-left .survivor-auto-charge { right: auto; left: var(--sv-left); }.survivor-stage.hand-left .survivor-second-charge,
 .survivor-stage.hand-left .survivor-jump-button { right: auto; left: calc(var(--sv-left) + var(--sv-sp) * var(--sv-s) + var(--sv-gap)); }
 .survivor-stage.hand-left.btn-pilha .survivor-jump-button { left: var(--sv-left); bottom: calc(var(--sv-sp-b) + var(--sv-sp) * var(--sv-s) + var(--sv-gap) + var(--sv-lift) + env(safe-area-inset-bottom)); }
 .survivor-stage.hand-left.btn-troca .survivor-jump-button { left: var(--sv-left); bottom: calc(var(--sv-sp-b) + var(--sv-lift) + env(safe-area-inset-bottom)); }
@@ -6869,7 +6868,7 @@ body.no-scroll .reward-toasts {
   .survivor-pick-bar { grid-template-columns: 3.7em 1fr; font-size: .52rem; }
   .survivor-upgrades { max-height: calc(100% - 16px); }
   .survivor-upgrade-btn { margin-top: 6px; padding: 7px 9px; }
-  .survivor-toast { top: auto; bottom: 24%; max-width: min(48vw, 420px); font-size: .78rem; }
+  .survivor-toast { top: auto; bottom: 154px; max-width: min(48vw, 420px); font-size: .78rem; }
 }
 .survivor-guardian { z-index: 9; background: #080d19cc; }
 .survivor-guardian .card { border: 1px solid var(--special-color); box-shadow: 0 0 36px color-mix(in srgb, var(--special-color), transparent 70%); }
@@ -7164,9 +7163,9 @@ body:has(.survivor-summary) .universal-controls { opacity: 0; pointer-events: no
 .survivor-summary-more,
 .survivor-feedback-details { margin: 10px 0; border-top: 1px solid #d8d0b8; padding-top: 4px; text-align: left; }
 .survivor-summary-more > summary,
-.survivor-feedback-details > summary { cursor: pointer; padding: 6px 0; color: #3f4b47; font-weight: 800; }
+.survivor-feedback-details > summary { cursor: pointer; padding: 6px 0; color: #dcecff; font-weight: 800; }
 .survivor-summary-more[open] > summary,
-.survivor-feedback-details[open] > summary { color: #252d30; }
+.survivor-feedback-details[open] > summary { color: #fffbe9; }
 
 .survivor-feedback,
 .survivor-feedback-result {
@@ -8824,7 +8823,7 @@ body:has(.survivor-summary) .universal-controls { opacity: 0; pointer-events: no
 .survivor-pause-panel .survivor-mode { margin: 0; }
 .survivor-pause-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
 .survivor-pause-panel .survivor-back, .survivor-pause-panel .survivor-exit { flex: 1; width: auto; margin: 0; color: #465c56; }
-.survivor-pause-panel .survivor-save { flex: 1 1 45%; width: auto; min-height: 40px; margin: 0; color: #66501e; font-weight: 800; }
+.survivor-pause-panel .survivor-save { flex: 1 1 100%; width: 100%; min-height: 40px; margin: 0; color: #66501e; font-weight: 800; }
 .survivor-pause-panel .survivor-exit { color: #a43e39; }
 .survivor-pause-panel :focus-visible { outline: 3px solid #d89e35; outline-offset: 2px; }
 .survivor-pause-panel .survivor-mode button { min-height: 44px; padding: 6px; border: 2px solid #aeb8a8; border-radius: 5px; background: #eef0df; color: #252d30; }
@@ -8864,7 +8863,7 @@ body:has(.survivor-summary) .universal-controls { opacity: 0; pointer-events: no
 @media (orientation: portrait) {
   .survivor-stats .survivor-adaptive-chip,
   .survivor-stats .survivor-action-dock { position: absolute; right: -136px; width: 80px; justify-content: center; }
-  .survivor-stats .survivor-adaptive-chip { top: 105px; text-align: center; }
+  .survivor-stats .survivor-adaptive-chip { top: 105px; width: 96px; text-align: center; }
   .survivor-stats .survivor-action-dock { top: 130px; }
 }
 

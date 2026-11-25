@@ -59,7 +59,8 @@ export function upgradesTaken(p: Pick<SurvivorPlayer, 'upgradeLevels'>): number 
 export function adaptiveTarget(p: Pick<SurvivorPlayer, 'upgradeLevels' | 'stage' | 'hp' | 'maxHp' | 'level'>): number {
   const levelPressure = Math.max(0, (p.level ?? 1) - 10) * 0.012;
   const power = 0.8 + upgradesTaken(p) * 0.014 + p.stage * 0.08 + levelPressure;
-  const struggling = p.hp < p.maxHp * 0.35 ? 0.25 : 0;
+  // O alívio por vida baixa acompanha o tamanho do desafio: a 300% ele não pode virar só 8% de respiro.
+  const struggling = p.hp < p.maxHp * 0.35 ? Math.max(0.25, (power - 0.8) * 0.3) : 0;
   return Math.max(ADAPTIVE_MIN, Math.min(ADAPTIVE_MAX, power - struggling));
 }
 
