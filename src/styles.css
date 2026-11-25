@@ -6146,7 +6146,7 @@ body.no-scroll .reward-toasts {
 .survivor-toast {
   position: absolute;
   top: auto;
-  bottom: calc(154px + env(safe-area-inset-bottom));
+  bottom: calc(168px + env(safe-area-inset-bottom));
   left: 50%;
   transform: translateX(-50%);
   z-index: 3;
@@ -6809,12 +6809,12 @@ body.no-scroll .reward-toasts {
 .survivor-stage { --sv-left: calc(var(--sv-edge) + env(safe-area-inset-left)); }
 .survivor-stage.hand-left .survivor-special-button,
 .survivor-stage.hand-left .survivor-charge-button,
-.survivor-stage.hand-left .survivor-auto-charge { right: auto; left: var(--sv-left); }.survivor-stage.hand-left .survivor-second-charge,
+.survivor-stage.hand-left .survivor-auto-charge { right: auto; left: var(--sv-left); }
+.survivor-stage.hand-left .survivor-second-charge,
 .survivor-stage.hand-left .survivor-jump-button { right: auto; left: calc(var(--sv-left) + var(--sv-sp) * var(--sv-s) + var(--sv-gap)); }
 .survivor-stage.hand-left.btn-pilha .survivor-jump-button { left: var(--sv-left); bottom: calc(var(--sv-sp-b) + var(--sv-sp) * var(--sv-s) + var(--sv-gap) + var(--sv-lift) + env(safe-area-inset-bottom)); }
 .survivor-stage.hand-left.btn-troca .survivor-jump-button { left: var(--sv-left); bottom: calc(var(--sv-sp-b) + var(--sv-lift) + env(safe-area-inset-bottom)); }
 .survivor-stage.hand-left.btn-troca .survivor-special-button { left: calc(var(--sv-left) + var(--sv-ju) * var(--sv-s) + var(--sv-gap)); bottom: calc(var(--sv-ju-b) + var(--sv-lift) + env(safe-area-inset-bottom)); }
-.survivor-stage.hand-left .survivor-attack-switch { left: 50%; right: auto; transform: translateX(-50%); }
 /* Os controles universais só aparecem em paisagem baixa; sobe as ações para não ficarem atrás deles. */
 @media (orientation: landscape) and (max-height: 900px) {
   .survivor-stage { --sv-lift: calc(var(--nav-height) + 14px + clamp(112px, 26vh, 148px) + 14px); }
@@ -6868,7 +6868,7 @@ body.no-scroll .reward-toasts {
   .survivor-pick-bar { grid-template-columns: 3.7em 1fr; font-size: .52rem; }
   .survivor-upgrades { max-height: calc(100% - 16px); }
   .survivor-upgrade-btn { margin-top: 6px; padding: 7px 9px; }
-  .survivor-toast { top: auto; bottom: 154px; max-width: min(48vw, 420px); font-size: .78rem; }
+  .survivor-toast { top: auto; bottom: 168px; max-width: min(48vw, 420px); font-size: .78rem; }
 }
 .survivor-guardian { z-index: 9; background: #080d19cc; }
 .survivor-guardian .card { border: 1px solid var(--special-color); box-shadow: 0 0 36px color-mix(in srgb, var(--special-color), transparent 70%); }
@@ -8863,7 +8863,7 @@ body:has(.survivor-summary) .universal-controls { opacity: 0; pointer-events: no
 @media (orientation: portrait) {
   .survivor-stats .survivor-adaptive-chip,
   .survivor-stats .survivor-action-dock { position: absolute; right: -136px; width: 80px; justify-content: center; }
-  .survivor-stats .survivor-adaptive-chip { top: 105px; width: 96px; text-align: center; }
+  .survivor-stats .survivor-adaptive-chip { top: 105px; width: auto; min-width: 96px; max-width: 168px; text-align: center; }
   .survivor-stats .survivor-action-dock { top: 130px; }
 }
 
