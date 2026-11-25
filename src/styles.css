@@ -6145,7 +6145,8 @@ body.no-scroll .reward-toasts {
 
 .survivor-toast {
   position: absolute;
-  top: 112px;
+  top: auto;
+  bottom: calc(168px + env(safe-area-inset-bottom));
   left: 50%;
   transform: translateX(-50%);
   z-index: 3;
@@ -6814,7 +6815,6 @@ body.no-scroll .reward-toasts {
 .survivor-stage.hand-left.btn-pilha .survivor-jump-button { left: var(--sv-left); bottom: calc(var(--sv-sp-b) + var(--sv-sp) * var(--sv-s) + var(--sv-gap) + var(--sv-lift) + env(safe-area-inset-bottom)); }
 .survivor-stage.hand-left.btn-troca .survivor-jump-button { left: var(--sv-left); bottom: calc(var(--sv-sp-b) + var(--sv-lift) + env(safe-area-inset-bottom)); }
 .survivor-stage.hand-left.btn-troca .survivor-special-button { left: calc(var(--sv-left) + var(--sv-ju) * var(--sv-s) + var(--sv-gap)); bottom: calc(var(--sv-ju-b) + var(--sv-lift) + env(safe-area-inset-bottom)); }
-.survivor-stage.hand-left .survivor-attack-switch { right: calc(8px + env(safe-area-inset-right)); left: auto; }
 /* Os controles universais só aparecem em paisagem baixa; sobe as ações para não ficarem atrás deles. */
 @media (orientation: landscape) and (max-height: 900px) {
   .survivor-stage { --sv-lift: calc(var(--nav-height) + 14px + clamp(112px, 26vh, 148px) + 14px); }
@@ -6868,7 +6868,7 @@ body.no-scroll .reward-toasts {
   .survivor-pick-bar { grid-template-columns: 3.7em 1fr; font-size: .52rem; }
   .survivor-upgrades { max-height: calc(100% - 16px); }
   .survivor-upgrade-btn { margin-top: 6px; padding: 7px 9px; }
-  .survivor-toast { top: 68px; max-width: min(48vw, 420px); font-size: .78rem; }
+  .survivor-toast { top: auto; bottom: 168px; max-width: min(48vw, 420px); font-size: .78rem; }
 }
 .survivor-guardian { z-index: 9; background: #080d19cc; }
 .survivor-guardian .card { border: 1px solid var(--special-color); box-shadow: 0 0 36px color-mix(in srgb, var(--special-color), transparent 70%); }
@@ -6907,7 +6907,9 @@ body.no-scroll .reward-toasts {
 /* A cutscene é modal: os controles do aplicativo não podem ficar por cima dela. */
 body:has(.survivor-arceus-cutscene) .universal-controls,
 body:has(.survivor-shadow-cutscene) .universal-controls,
-body:has(.survivor-arceus-time) .universal-controls { opacity: 0; pointer-events: none; }
+body:has(.survivor-arceus-time) .universal-controls,
+body:has(.survivor-pause-panel) .universal-controls,
+body:has(.survivor-summary) .universal-controls { opacity: 0; pointer-events: none; }
 .arceus-card { width: min(100%, 380px); padding: 16px 18px; border: 2px solid #ffe066; border-radius: 12px; background: #101521f2; box-shadow: 0 0 64px #ffd94a88, 2px 2px 0 #303839; text-align: center; animation: arceus-card-in 420ms cubic-bezier(.18,.82,.25,1) both; }
 .arceus-kicker { margin: 0 0 4px; color: #ffe066; font-size: .62rem; font-weight: 900; letter-spacing: .16em; }
 .arceus-portrait { position: relative; display: grid; min-height: 154px; place-items: center; isolation: isolate; }
@@ -7158,6 +7160,12 @@ body:has(.survivor-arceus-time) .universal-controls { opacity: 0; pointer-events
   -webkit-overflow-scrolling: touch;
   touch-action: pan-y;
 }
+.survivor-summary-more,
+.survivor-feedback-details { margin: 10px 0; border-top: 1px solid #d8d0b8; padding-top: 4px; text-align: left; }
+.survivor-summary-more > summary,
+.survivor-feedback-details > summary { cursor: pointer; padding: 6px 0; color: #dcecff; font-weight: 800; }
+.survivor-summary-more[open] > summary,
+.survivor-feedback-details[open] > summary { color: #fffbe9; }
 
 .survivor-feedback,
 .survivor-feedback-result {
@@ -8791,6 +8799,8 @@ body:has(.survivor-arceus-time) .universal-controls { opacity: 0; pointer-events
 .survivor-pause-header h2 { margin: 2px 0 3px; color: #252d30; }
 .survivor-pause-header p { margin: 0; color: #596662; font-size: .8rem; }
 .survivor-pause-panel .survivor-pause-resume { width: 100%; min-height: 44px; margin: 0 0 12px; }
+.survivor-pause-panel .survivor-pause-save-top { width: 100%; min-height: 44px; margin: 0 0 8px; border-color: #e1bf58; background: #5f4a1a; color: #fff4c4; }
+.survivor-pause-panel .survivor-hud-legend { margin-top: 8px; }
 .survivor-pause-content { display: grid; gap: 10px; }
 .survivor-pause-panel .music-controls,
 .survivor-pause-panel .survivor-help,
@@ -8813,7 +8823,7 @@ body:has(.survivor-arceus-time) .universal-controls { opacity: 0; pointer-events
 .survivor-pause-panel .survivor-mode { margin: 0; }
 .survivor-pause-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
 .survivor-pause-panel .survivor-back, .survivor-pause-panel .survivor-exit { flex: 1; width: auto; margin: 0; color: #465c56; }
-.survivor-pause-panel .survivor-save { flex: 1 1 45%; width: auto; min-height: 40px; margin: 0; color: #66501e; font-weight: 800; }
+.survivor-pause-panel .survivor-save { flex: 1 1 100%; width: 100%; min-height: 40px; margin: 0; color: #66501e; font-weight: 800; }
 .survivor-pause-panel .survivor-exit { color: #a43e39; }
 .survivor-pause-panel :focus-visible { outline: 3px solid #d89e35; outline-offset: 2px; }
 .survivor-pause-panel .survivor-mode button { min-height: 44px; padding: 6px; border: 2px solid #aeb8a8; border-radius: 5px; background: #eef0df; color: #252d30; }
@@ -8840,6 +8850,10 @@ body:has(.survivor-arceus-time) .universal-controls { opacity: 0; pointer-events
   white-space: normal;
 }
 
+/* O Desafio adaptável agora tem rótulo e cor por faixa: até 90% fácil, até 120% normal, acima disso duro. */
+.survivor-adaptive-chip.easy { border-color: #7fd18b; background: #16341f; color: #d9ffdd; }
+.survivor-adaptive-chip.normal { border-color: #ffe066; background: #3a3113; color: #fff3b0; }
+.survivor-adaptive-chip.hard { border-color: #ff8a7a; background: #3d1d18; color: #ffe0d8; }
 /* Indicadores essenciais agrupados sob o HP; ações e dificuldade ficam sob o mapa. */
 .survivor-stats { gap: 4px; }
 .survivor-stats .survivor-key-chip { order: -4; }
@@ -8849,7 +8863,7 @@ body:has(.survivor-arceus-time) .universal-controls { opacity: 0; pointer-events
 @media (orientation: portrait) {
   .survivor-stats .survivor-adaptive-chip,
   .survivor-stats .survivor-action-dock { position: absolute; right: -136px; width: 80px; justify-content: center; }
-  .survivor-stats .survivor-adaptive-chip { top: 105px; text-align: center; }
+  .survivor-stats .survivor-adaptive-chip { top: 105px; width: auto; min-width: 96px; max-width: 168px; text-align: center; }
   .survivor-stats .survivor-action-dock { top: 130px; }
 }
 
@@ -8873,10 +8887,11 @@ body:has(.survivor-arceus-time) .universal-controls { opacity: 0; pointer-events
 
 /* Troca de golpe e ação independente para o segundo golpe simultâneo. */
 .survivor-attack-switch {
-  position: absolute; z-index: 4; left: calc(8px + env(safe-area-inset-left));
-  bottom: calc(56px + var(--sv-lift) + env(safe-area-inset-bottom)); max-width: 165px; min-height: 40px;
+  position: absolute; z-index: 4; left: 50%;
+  bottom: calc(8px + env(safe-area-inset-bottom)); max-width: 190px; min-height: 40px;
+  transform: translateX(-50%);
   display: grid; padding: 4px 8px; border: 2px solid var(--move); border-radius: 5px;
-  background: #303c3d; color: #fff; box-shadow: 2px 2px 0 #171d1d; touch-action: manipulation;
+  background: #303c3deb; color: #fff; box-shadow: 2px 2px 0 #171d1d; touch-action: manipulation; text-align: center;
 }
 .survivor-attack-switch strong { font-size: .62rem; }
 .survivor-attack-switch small { overflow: hidden; font-size: .65rem; text-overflow: ellipsis; white-space: nowrap; }

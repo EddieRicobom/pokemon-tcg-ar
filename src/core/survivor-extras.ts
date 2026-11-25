@@ -44,7 +44,8 @@ export function thiefFleeTarget(thief: { x: number; y: number }, player: { x: nu
 export const ADAPTIVE_MIN = 0.7;
 /** Começa abaixo da Torre de sempre: um Pokémon novo tem espaço para crescer. */
 export const ADAPTIVE_START = 0.85;
-export const ADAPTIVE_MAX = 1.6;
+/** Teto alto o bastante para acompanhar builds dominantes: 300% da força de sempre. */
+export const ADAPTIVE_MAX = 3;
 
 /** Cartas pegas até agora (cada nível de upgrade conta uma). */
 export function upgradesTaken(p: Pick<SurvivorPlayer, 'upgradeLevels'>): number {
@@ -55,9 +56,11 @@ export function upgradesTaken(p: Pick<SurvivorPlayer, 'upgradeLevels'>): number 
  * Para onde o desafio quer ir: começa fácil e endurece a cada carta e evolução. Com pouca vida ele recua, para quem está
  * apanhando conseguir respirar. 1 é a Torre de sempre.
  */
-export function adaptiveTarget(p: Pick<SurvivorPlayer, 'upgradeLevels' | 'stage' | 'hp' | 'maxHp'>): number {
-  const power = 0.8 + upgradesTaken(p) * 0.014 + p.stage * 0.08;
-  const struggling = p.hp < p.maxHp * 0.35 ? 0.25 : 0;
+export function adaptiveTarget(p: Pick<SurvivorPlayer, 'upgradeLevels' | 'stage' | 'hp' | 'maxHp' | 'level'>): number {
+  const levelPressure = Math.max(0, (p.level ?? 1) - 10) * 0.012;
+  const power = 0.8 + upgradesTaken(p) * 0.014 + p.stage * 0.08 + levelPressure;
+  // O alívio por vida baixa acompanha o tamanho do desafio: a 300% ele não pode virar só 8% de respiro.
+  const struggling = p.hp < p.maxHp * 0.35 ? Math.max(0.25, (power - 0.8) * 0.3) : 0;
   return Math.max(ADAPTIVE_MIN, Math.min(ADAPTIVE_MAX, power - struggling));
 }
 

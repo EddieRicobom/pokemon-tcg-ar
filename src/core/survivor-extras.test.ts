@@ -6,7 +6,7 @@ import type { SurvivorPlayer, SurvivorState } from './survivor-types';
 import { createSurvivorState, stepSurvivor } from './survivor';
 import { SURVIVOR_UPGRADES } from './survivor-upgrades';
 
-const player = (over: Partial<SurvivorPlayer> = {}): SurvivorPlayer => ({ upgradeLevels: {}, stage: 0, hp: 100, maxHp: 100, attackDamage: 10, speed: 150, ...over } as SurvivorPlayer);
+const player = (over: Partial<SurvivorPlayer> = {}): SurvivorPlayer => ({ upgradeLevels: {}, stage: 0, hp: 100, maxHp: 100, attackDamage: 10, speed: 150, level: 1, ...over } as SurvivorPlayer);
 
 describe('ladrão de tesouro', () => {
   it('foge para longe de quem joga', () => {
@@ -33,6 +33,15 @@ describe('desafio que se adapta', () => {
     expect(fresh).toBeLessThan(1);
     expect(strong).toBeGreaterThan(1);
     expect(strong).toBeLessThanOrEqual(ADAPTIVE_MAX);
+  });
+
+  it('fortalece além de 120% quando o nível e as cartas disparam', () => {
+    const late = adaptiveTarget(player({ upgradeLevels: { a: 30 }, stage: 3, level: 60 }));
+    expect(ADAPTIVE_MAX).toBeGreaterThan(1.2);
+    expect(late).toBeGreaterThan(1.6);
+    expect(late).toBeLessThanOrEqual(ADAPTIVE_MAX);
+    expect(adaptiveTarget(player({ upgradeLevels: { a: 300 }, stage: 20, level: 200 }))).toBe(ADAPTIVE_MAX);
+    expect(adaptiveTarget(player({ upgradeLevels: { a: 20 }, level: 40 }))).toBeGreaterThan(adaptiveTarget(player({ upgradeLevels: { a: 20 }, level: 1 })));
   });
 
   it('com pouca vida, recua', () => {
