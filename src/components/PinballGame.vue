@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, shallowRef, triggerRef, watch } from 'vue';
-import { activatePinballAbility, createPinballState, launchPinball, mergePinballDex, nudgePinball, pinballMissionGoal, pinballPartnerSkill, pinballReward, pinballStage, PINBALL_BOSS_CORE, PINBALL_BOSS_PHASES, PINBALL_BUMPERS, PINBALL_DEX_MAX, PINBALL_FLIPPER_LENGTH, PINBALL_FLIPPERS, PINBALL_H, PINBALL_TARGETS, PINBALL_TIMER_SCALE, PINBALL_W, stepPinball } from '../core/pinball';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, triggerRef, watch } from 'vue';
+import { activatePinballAbility, createPinballState, launchPinball, mergePinballDex, nudgePinball, pinballMissionGoal, pinballPartnerSkill, pinballReward, pinballStage, PINBALL_BOSS_CORE, PINBALL_BOSS_PHASES, PINBALL_BUMPERS, PINBALL_DEX_MAX, PINBALL_FLASH_MS, PINBALL_FLIPPER_LENGTH, PINBALL_FLIPPERS, PINBALL_H, PINBALL_POPUP_MS, PINBALL_TARGETS, PINBALL_TIMER_SCALE, PINBALL_VIEW, PINBALL_W, stepPinball } from '../core/pinball';
 import type { PinballEvent, PinballState } from '../core/pinball';
 import { getLocalVillageSprite, getLocalVillageSpriteDirs } from '../app/services';
 import { contentBounds } from '../village/local-sprite';
@@ -38,6 +38,14 @@ const muted = ref(saved.muted);
 const effects = ref(saved.effects);
 const rewardText = ref('');
 const menuOpen = ref(false);
+const menuButton = ref<HTMLButtonElement | null>(null);
+const menuSheet = ref<HTMLElement | null>(null);
+watch(menuOpen, async (open) => {
+  releaseAllFlippers();
+  await nextTick();
+  if (open) menuSheet.value?.querySelector<HTMLElement>('button, select, input, [href]')?.focus();
+  else menuButton.value?.focus();
+});
 const stage = computed(() => pinballStage(state.value.stage));
 const tiltSegments = computed(() => Math.min(3, Math.ceil(state.value.tiltHeat)));
 const ADVENTURE_KEY = 'tcg-ar-pinball-adventure-v1';
@@ -199,14 +207,6 @@ const trail: { x: number; y: number }[] = [];
 let frame = 0;
 let lastTime = 0;
 let hudTime = 0;
-/** Câmera suave: dá zoom no campo e segue a bola, mantendo a moldura da mesa fixa. */
-const CAMERA_SCALE = 1.10;
-const CAMERA_MIN_X = 22 + 158 / CAMERA_SCALE;
-const CAMERA_MAX_X = 338 - 158 / CAMERA_SCALE;
-const CAMERA_MIN_Y = 33 + 267 / CAMERA_SCALE;
-const CAMERA_MAX_Y = 569 - 269 / CAMERA_SCALE;
-let cameraX = 180;
-let cameraY = 300;
 let audio: AudioContext | null = null;
 let persistedBest = state.value.best;
 
@@ -215,11 +215,21 @@ function sound(events: PinballEvent[]): void {
   try {
     audio ??= new AudioContext();
     if (audio.state === 'suspended') void audio.resume();
-    const kind = events.includes('reward') ? 'reward' : events.includes('drain') ? 'drain' : events.includes('tilt') ? 'tilt' : events.includes('flipper') ? 'flipper' : 'bump';
+    const kind = events.includes('reward') ? 'reward'
+      : events.includes('tilt') ? 'tilt'
+        : events.includes('drain') ? 'drain'
+          : events.includes('mode') ? 'mode'
+            : events.includes('core') ? 'core'
+              : events.includes('target') ? 'target'
+                : events.includes('launch') ? 'launch'
+                  : events.includes('flipper') ? 'flipper' : 'bump';
+    const base = kind === 'reward' ? 660 : kind === 'core' ? 620 : kind === 'mode' ? 580 : kind === 'launch' ? 540
+      : kind === 'target' ? 500 : kind === 'bump' ? 430 : kind === 'flipper' ? 280 : kind === 'drain' ? 150 : 110;
+    const comboStep = kind === 'bump' || kind === 'target' ? Math.min(4, Math.max(0, state.value.combo - 1)) * 40 : 0;
     const tone = audio.createOscillator();
     const gain = audio.createGain();
-    tone.type = kind === 'reward' ? 'sine' : 'triangle';
-    tone.frequency.value = kind === 'reward' ? 660 : kind === 'drain' ? 150 : kind === 'tilt' ? 110 : kind === 'flipper' ? 320 : 440;
+    tone.type = kind === 'reward' || kind === 'core' ? 'sine' : 'triangle';
+    tone.frequency.value = base + comboStep;
     gain.gain.setValueAtTime(0.045, audio.currentTime);
     gain.gain.exponentialRampToValueAtTime(0.001, audio.currentTime + 0.11);
     tone.connect(gain).connect(audio.destination);
@@ -269,18 +279,10 @@ function paint(): void {
   c.clearRect(0, 0, PINBALL_W, PINBALL_H);
   if (boardArt.complete && boardArt.naturalWidth) c.drawImage(boardArt, 0, 0, PINBALL_W, PINBALL_H);
   else { c.fillStyle = '#144d35'; c.fillRect(0, 0, PINBALL_W, PINBALL_H); }
-  const targetX = s.phase === 'playing'
-    ? Math.max(CAMERA_MIN_X, Math.min(CAMERA_MAX_X, 180 + (s.ball.x - 180) * 0.4))
-    : 180;
-  const targetY = s.phase === 'playing'
-    ? Math.max(CAMERA_MIN_Y, Math.min(CAMERA_MAX_Y, s.ball.y + 16))
-    : 300;
-  cameraX += (targetX - cameraX) * 0.14;
-  cameraY += (targetY - cameraY) * 0.14;
   c.save();
   c.beginPath(); c.rect(22, 33, 316, 536); c.clip();
-  c.translate(180 - cameraX * CAMERA_SCALE, 300 - cameraY * CAMERA_SCALE);
-  c.scale(CAMERA_SCALE, CAMERA_SCALE);
+  c.translate(PINBALL_W / 2 - PINBALL_VIEW.x * PINBALL_VIEW.scale, PINBALL_H / 2 - PINBALL_VIEW.y * PINBALL_VIEW.scale);
+  c.scale(PINBALL_VIEW.scale, PINBALL_VIEW.scale);
   if (boardArt.complete && boardArt.naturalWidth) c.drawImage(boardArt, 0, 0, PINBALL_W, PINBALL_H);
   else { c.fillStyle = '#144d35'; c.fillRect(0, 0, PINBALL_W, PINBALL_H); }
   c.fillStyle = '#042d1a38'; c.fillRect(22, 33, 316, 536);
@@ -297,6 +299,12 @@ function paint(): void {
   c.beginPath(); c.moveTo(76, 389); c.lineTo(119, 428); c.lineTo(91, 423); c.closePath();
   c.moveTo(284, 389); c.lineTo(241, 428); c.lineTo(269, 423); c.closePath();
   c.fillStyle = '#df5b54'; c.fill(); c.strokeStyle = '#ffe395'; c.lineWidth = 3; c.stroke();
+  if (effects.value && (s.slingFlashMs[0] > 0 || s.slingFlashMs[1] > 0)) {
+    c.lineWidth = 4;
+    if (s.slingFlashMs[0] > 0) { c.globalAlpha = s.slingFlashMs[0] / PINBALL_FLASH_MS; c.strokeStyle = '#fff0a0'; c.beginPath(); c.moveTo(76, 389); c.lineTo(119, 428); c.stroke(); }
+    if (s.slingFlashMs[1] > 0) { c.globalAlpha = s.slingFlashMs[1] / PINBALL_FLASH_MS; c.strokeStyle = '#fff0a0'; c.beginPath(); c.moveTo(284, 389); c.lineTo(241, 428); c.stroke(); }
+    c.globalAlpha = 1;
+  }
   const modeColor = s.mode === 'capture' ? '#56e5aa' : s.mode === 'evolution' ? '#d0a5ff' : s.mode === 'bonus' ? '#ffdf6d' : '#b8f0df';
   const pulse = 1 + Math.sin(performance.now() / 220) * 0.12;
   c.fillStyle = '#092d2bdc'; c.strokeStyle = modeColor; c.lineWidth = 3;
@@ -312,6 +320,12 @@ function paint(): void {
     c.beginPath(); c.arc(bumper.x, bumper.y, bumper.r * 0.56, 0, Math.PI * 2); c.fillStyle = '#fff9d8'; c.fill();
     c.strokeStyle = '#563c32'; c.lineWidth = 2; c.beginPath(); c.moveTo(bumper.x - bumper.r + 2, bumper.y); c.lineTo(bumper.x + bumper.r - 2, bumper.y); c.stroke();
     c.beginPath(); c.arc(bumper.x, bumper.y, 3, 0, Math.PI * 2); c.fillStyle = '#fff'; c.fill();
+    const flash = s.hitFlash[index] ?? 0;
+    if (effects.value && flash > 0) {
+      const k = flash / PINBALL_FLASH_MS;
+      c.beginPath(); c.arc(bumper.x, bumper.y, bumper.r + 6 + (1 - k) * 10, 0, Math.PI * 2);
+      c.strokeStyle = `rgba(255, 249, 216, ${0.8 * k})`; c.lineWidth = 4; c.stroke();
+    }
     if (index === s.bonusSpot) {
       c.beginPath(); c.arc(bumper.x, bumper.y, (bumper.r + 8) * pulse, 0, Math.PI * 2);
       c.strokeStyle = '#ffe066'; c.lineWidth = 3; c.stroke();
@@ -328,6 +342,12 @@ function paint(): void {
           : s.mode === 'normal' ? '#f9c449' : modeColor;
     c.fill();
     c.beginPath(); c.arc(target.x, target.y, target.r, 0, Math.PI * 2); c.fillStyle = '#173c34'; c.fill();
+    const flash = s.hitFlash[PINBALL_BUMPERS.length + index] ?? 0;
+    if (effects.value && flash > 0) {
+      const k = flash / PINBALL_FLASH_MS;
+      c.beginPath(); c.arc(target.x, target.y, target.r + 7 + (1 - k) * 9, 0, Math.PI * 2);
+      c.strokeStyle = `rgba(255, 243, 168, ${0.85 * k})`; c.lineWidth = 4; c.stroke();
+    }
     c.fillStyle = s.letterStep === index ? '#fff3a8' : '#fff'; c.font = 'bold 12px system-ui'; c.fillText(['C', 'A', 'T'][index]!, target.x, target.y + 4);
   });
   if (s.mode === 'bonus') {
@@ -338,6 +358,11 @@ function paint(): void {
     c.fillStyle = active ? '#bc384f' : '#313354'; c.fill();
     c.fillStyle = '#fff'; c.font = 'bold 15px system-ui'; c.fillText(active ? '★' : '◆', PINBALL_BOSS_CORE.x, PINBALL_BOSS_CORE.y + 5);
     c.font = 'bold 10px system-ui'; c.fillText(active ? 'NÚCLEO' : 'BLOQUEADO', 180, 337);
+    if (effects.value && s.coreFlashMs > 0) {
+      const k = s.coreFlashMs / PINBALL_FLASH_MS;
+      c.beginPath(); c.arc(PINBALL_BOSS_CORE.x, PINBALL_BOSS_CORE.y, PINBALL_BOSS_CORE.r + 7 + (1 - k) * 12, 0, Math.PI * 2);
+      c.strokeStyle = `rgba(255, 240, 160, ${0.9 * k})`; c.lineWidth = 4; c.stroke();
+    }
   }
   drawCritters(c, s, performance.now());
   c.fillStyle = s.kickback ? '#fff091' : '#e0e7c2';
@@ -356,8 +381,9 @@ function paint(): void {
   const trailRgb = s.bonusKind === 'fire' ? '255, 156, 70' : s.bonusKind === 'spark' ? '120, 235, 255' : '255, 245, 194';
   if (effects.value && s.phase === 'playing') {
     trail.forEach((point, index) => {
-      c.beginPath(); c.arc(point.x, point.y, 2 + index * 0.48, 0, Math.PI * 2);
-      c.fillStyle = `rgba(${trailRgb}, ${index * 0.055})`; c.fill();
+      const fade = 1 - index / 8;
+      c.beginPath(); c.arc(point.x, point.y, 2 + fade * 2.2, 0, Math.PI * 2);
+      c.fillStyle = `rgba(${trailRgb}, ${0.3 * fade})`; c.fill();
     });
   }
   if (s.bonusKind) {
@@ -365,10 +391,21 @@ function paint(): void {
     c.strokeStyle = s.bonusKind === 'fire' ? '#ff9b4ac9' : '#78ebffc9'; c.lineWidth = 2.5; c.stroke();
   }
   c.beginPath(); c.ellipse(s.ball.x + 2, s.ball.y + 3, 7, 4, 0, 0, Math.PI * 2); c.fillStyle = '#00271988'; c.fill();
+  c.beginPath(); c.arc(s.ball.x, s.ball.y, 7.5, 0, Math.PI * 2); c.strokeStyle = '#17304a'; c.lineWidth = 1.5; c.stroke();
   c.beginPath(); c.arc(s.ball.x, s.ball.y, 7, 0, Math.PI * 2); c.fillStyle = '#f5f9ff'; c.fill();
   c.strokeStyle = '#e24f61'; c.lineWidth = 3; c.beginPath(); c.arc(s.ball.x, s.ball.y, 7, Math.PI, 2 * Math.PI); c.stroke();
   c.fillStyle = '#283954'; c.fillRect(s.ball.x - 6, s.ball.y - 1, 12, 2);
   c.beginPath(); c.arc(s.ball.x, s.ball.y, 2, 0, Math.PI * 2); c.fillStyle = '#f5f9ff'; c.fill();
+  if (effects.value) {
+    c.textAlign = 'center'; c.font = 'bold 12px system-ui'; c.lineWidth = 3; c.strokeStyle = '#06231ee0';
+    for (const popup of s.popups) {
+      const fade = Math.max(0, popup.ms / PINBALL_POPUP_MS);
+      const y = popup.y - 12 - (1 - fade) * 18;
+      c.globalAlpha = fade;
+      c.strokeText(popup.text, popup.x, y); c.fillStyle = '#fff4b8'; c.fillText(popup.text, popup.x, y);
+    }
+    c.globalAlpha = 1;
+  }
   c.restore();
   if (s.phase !== 'playing') {
     c.fillStyle = '#071420cf'; c.fillRect(31, 345, 298, 93);
@@ -403,16 +440,17 @@ function grantReward(): void {
 function tick(time: number): void {
   const dt = lastTime ? Math.min(50, time - lastTime) : 16;
   lastTime = time;
-  const events = stepPinball(state.value, { left: left.value, right: right.value }, dt);
+  // O menu é uma pausa de verdade: a física e as janelas de jogo congelam, mas o quadro continua desenhando.
+  const events = menuOpen.value ? [] : stepPinball(state.value, { left: left.value, right: right.value }, dt);
   sound(events);
   if (effects.value) {
     if (events.includes('drain')) vibrate({ kind: 'out', mine: true });
     else if (events.includes('tilt')) vibrate({ kind: 'shrink' });
     else if (events.includes('reward') || events.includes('mode')) vibrate({ kind: 'reaction' });
-    else if (events.includes('bump')) vibrate({ kind: 'bumper' });
+    else if (events.includes('bump') || events.includes('core')) vibrate({ kind: 'bumper' });
   }
   grantReward();
-  if (state.value.phase === 'playing') {
+  if (state.value.phase === 'playing' && !menuOpen.value) {
     trail.unshift({ x: state.value.ball.x, y: state.value.ball.y });
     if (trail.length > 8) trail.length = 8;
   } else trail.length = 0;
@@ -449,8 +487,25 @@ function releaseFlipper(side: 'left' | 'right'): void {
   else right.value = false;
 }
 function releaseAllFlippers(): void { left.value = false; right.value = false; }
+function onVisibilityChange(): void {
+  if (!document.hidden) return;
+  releaseAllFlippers();
+  lastTime = 0;
+  trail.length = 0;
+}
 function onKeyDown(event: KeyboardEvent): void {
+  if (event.defaultPrevented) return;
+  const target = event.target as HTMLElement | null;
+  const tag = target?.tagName;
+  // Com o menu aberto, só Escape age (e fecha só o menu, sem descartar a aventura).
+  if (menuOpen.value) {
+    if (event.key === 'Escape') { event.preventDefault(); menuOpen.value = false; }
+    return;
+  }
+  if (target && (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA' || target.isContentEditable)) return;
   if (event.key === 'Escape') { event.preventDefault(); emit('close'); return; }
+  // Espaço/Enter em um botão pertencem ao botão: não lança a bola por cima da ativação nativa.
+  if (tag === 'BUTTON' && (event.key === ' ' || event.key === 'Enter')) return;
   if (event.key === 'ArrowLeft' || event.key.toLowerCase() === 'a') left.value = true;
   else if (event.key === 'ArrowRight' || event.key.toLowerCase() === 'd') right.value = true;
   else if (event.key === ' ' || event.key === 'Enter') { if (!event.repeat) launch(); }
@@ -474,15 +529,18 @@ onMounted(() => {
   window.addEventListener('keydown', onKeyDown);
   window.addEventListener('keyup', onKeyUp);
   window.addEventListener('blur', releaseAllFlippers);
+  document.addEventListener('visibilitychange', onVisibilityChange);
   frame = requestAnimationFrame(tick);
 });
 onBeforeUnmount(() => {
   syncCaughtDex();
   cancelAnimationFrame(frame);
   if (bannerTimer) clearTimeout(bannerTimer);
+  boardArt.onload = null;
   window.removeEventListener('keydown', onKeyDown);
   window.removeEventListener('keyup', onKeyUp);
   window.removeEventListener('blur', releaseAllFlippers);
+  document.removeEventListener('visibilitychange', onVisibilityChange);
   void audio?.close();
 });
 </script>
@@ -491,13 +549,13 @@ onBeforeUnmount(() => {
   <section class="pinball-game" :style="{ '--stage-tint': stage?.tint ?? '#65dca6' }" aria-label="Poképinball da Vila">
     <header class="pinball-top">
       <div class="pinball-brand"><small>AVENTURA DA VILA</small><h2>Poképinball</h2></div>
-      <div class="pinball-scores" role="status">
+      <div class="pinball-scores">
         <span><small>PONTOS</small><b>{{ state.score.toLocaleString('pt-BR') }}</b></span>
         <span><small>RECORDE</small><b>{{ state.best.toLocaleString('pt-BR') }}</b></span>
         <span><small>BOLAS</small><b>{{ state.balls }}</b></span>
         <span><small>COMBO</small><b>×{{ state.combo || 1 }}</b><i class="pinball-combo-meter" aria-hidden="true"><em :style="{ width: `${Math.min(100, state.comboMs / (22 * PINBALL_TIMER_SCALE))}%` }" /></i></span>
       </div>
-      <button type="button" class="pinball-icon" :aria-expanded="menuOpen" aria-label="Menu do Pinball" @click="menuOpen = !menuOpen">☰</button>
+      <button ref="menuButton" type="button" class="pinball-icon" :aria-expanded="menuOpen" aria-label="Menu do Pinball" @click="menuOpen = !menuOpen">☰</button>
       <button type="button" class="pinball-icon" aria-label="Sair do Pinball" @click="emit('close')">✕</button>
     </header>
 
@@ -509,14 +567,14 @@ onBeforeUnmount(() => {
       <p v-if="state.phase === 'playing' && state.mode !== 'normal'">{{ state.mode === 'bonus' ? PINBALL_BOSS_PHASES[state.bossPhase]?.objective : stage?.objective }} · {{ state.progress }}/{{ pinballMissionGoal(state.mode, state.bossPhase) }} · {{ Math.ceil(state.modeMs / 1000) }}s</p>
       <p v-else-if="state.phase === 'playing'">{{ state.charge }}/3 toques para abrir o desafio · alvos ou {{ stage?.species }}</p>
       <p v-else>{{ stage?.encounter }} · {{ stage?.objective }}</p>
-      <p v-if="state.bonusKind" class="pinball-bonus" role="status">{{ state.bonusKind === 'fire' ? '🔥 BOLA EM CHAMAS · PONTOS EM DOBRO' : '⚡ BOLA ELÉTRICA · +300 POR BUMPER' }} · {{ Math.ceil(state.bonusMs / 1000) }}s</p>
-      <div v-if="state.phase === 'playing' && (state.saverMs > 0 || state.kickback || state.skillShot)" class="pinball-windows" role="status" aria-live="polite">
+      <p v-if="state.bonusKind" class="pinball-bonus">{{ state.bonusKind === 'fire' ? '🔥 BOLA EM CHAMAS · PONTOS EM DOBRO' : '⚡ BOLA ELÉTRICA · +300 POR BUMPER' }} · {{ Math.ceil(state.bonusMs / 1000) }}s</p>
+      <div v-if="state.phase === 'playing' && (state.saverMs > 0 || state.kickback || state.skillShot)" class="pinball-windows">
         <span v-if="state.saverMs > 0" class="pinball-window save">🛟 BOLA SALVA · {{ Math.ceil(state.saverMs / 1000) }}s</span>
         <span v-if="state.kickback" class="pinball-window kick">↩ RESGATE LATERAL PRONTO</span>
         <span v-if="state.skillShot" class="pinball-window skill">🎯 TIRO DE HABILIDADE · acerte um alvo</span>
       </div>
       <p class="pinball-endless">AVENTURA INFINITA · POKÉDEX {{ caughtDex.length }}/{{ PINBALL_DEX_MAX }}</p>
-      <div v-if="state.captured.length" class="pinball-caught" role="status" :aria-label="`Capturados nesta aventura: ${state.captured.length}. Últimos: ${recentCaptures.slice(-6).map((entry) => entry.name).join(', ')}`">
+      <div v-if="state.captured.length" class="pinball-caught" :aria-label="`Capturados nesta aventura: ${state.captured.length}. Últimos: ${recentCaptures.slice(-6).map((entry) => entry.name).join(', ')}`">
         <small>CAPTURADOS</small>
         <ul>
           <li v-for="(entry, index) in recentCaptures" :key="`${entry.stage}-${index}`" :title="entry.name">
@@ -539,11 +597,11 @@ onBeforeUnmount(() => {
           <span>{{ stageBanner.subtitle }}</span>
         </div>
         <button v-if="state.phase !== 'playing'" type="button" class="pinball-launch" @click="launch">{{ state.phase === 'over' || state.phase === 'won' ? 'Nova aventura' : 'Lançar bola' }}</button>
-        <p v-if="rewardText" class="pinball-reward" role="status">Prêmio: {{ rewardText }}</p>
+        <p v-if="rewardText" class="pinball-reward">Prêmio: {{ rewardText }}</p>
       </div>
     </div>
 
-    <p class="pinball-message" role="status">{{ state.messageMs > 0 || state.phase !== 'playing' ? state.message : state.mode === 'normal' ? `Acerte os alvos no topo ou o ${stage?.species ?? 'Pokémon'} que passeia.` : `${Math.ceil(state.modeMs / 1000)}s · ${state.mode === 'bonus' ? PINBALL_BOSS_PHASES[state.bossPhase]?.objective : state.mode === 'evolution' ? 'Acerte os bumpers' : `Capture o ${stage?.species ?? 'Pokémon'} (${state.progress}/${pinballMissionGoal(state.mode, state.bossPhase)})`}` }}</p>
+    <p class="pinball-message" role="status" aria-live="polite" aria-atomic="true">{{ state.messageMs > 0 || state.phase !== 'playing' ? state.message : '' }}</p>
 
     <div class="pinball-controls">
       <button type="button" class="pinball-flip" aria-label="Flipper esquerdo" @pointerdown.prevent="pressFlipper($event, 'left')" @pointerup="releaseFlipper('left')" @pointercancel="releaseFlipper('left')" @lostpointercapture="releaseFlipper('left')">◀</button>
@@ -563,10 +621,10 @@ onBeforeUnmount(() => {
       <button type="button" :aria-pressed="muted" @click="muted = !muted">{{ muted ? 'Som off' : 'Som on' }}</button>
     </div>
 
-    <div v-if="menuOpen" class="pinball-sheet" role="dialog" aria-label="Menu do Pinball">
+    <div v-if="menuOpen" ref="menuSheet" class="pinball-sheet" role="dialog" aria-modal="true" aria-label="Menu do Pinball">
       <header><strong>Menu</strong><button type="button" aria-label="Fechar menu" @click="menuOpen = false">×</button></header>
       <div class="pinball-partner"><img v-if="selectedPartner?.thumb" :src="selectedPartner.thumb" alt="" width="34" height="34" /><label>Parceiro <select v-model="selectedPartnerId" :disabled="state.phase !== 'ready' && state.phase !== 'over' && state.phase !== 'won'"><option value="">Sem parceiro</option><option v-for="partner in props.partners" :key="partner.id" :value="partner.id">{{ partner.name }}</option></select></label></div>
-      <p class="pinball-skill" role="status">{{ selectedPartner ? partnerSkill ? `${partnerSkill.typeLabel} · ${partnerSkill.description} · ${state.abilityUses} uso por bola` : 'Tipo indisponível para este parceiro; habilidade não ativada.' : props.partners.length ? 'Escolha um Pokémon da Vila ou jogue sem habilidade.' : 'Sem Pokémon disponível na Vila; jogue com a bola neutra.' }}</p>
+      <p class="pinball-skill">{{ selectedPartner ? partnerSkill ? `${partnerSkill.typeLabel} · ${partnerSkill.description} · ${state.abilityUses} uso por bola` : 'Tipo indisponível para este parceiro; habilidade não ativada.' : props.partners.length ? 'Escolha um Pokémon da Vila ou jogue sem habilidade.' : 'Sem Pokémon disponível na Vila; jogue com a bola neutra.' }}</p>
       <p class="pinball-progress">Capturas: {{ state.caught }} · Evoluções: {{ state.evolved }} · Multiplicador: ×{{ state.multiplier }} · Bola: nível {{ state.ballLevel }} <span v-if="state.saverMs > 0">· Proteção {{ Math.ceil(state.saverMs / 1000) }}s</span><span v-if="state.kickback"> · Resgate pronto</span></p>
       <p class="pinball-progress">Melhor etapa: {{ adventure.bestStage }} · Pokédex do Pinball: {{ caughtDex.length }}/{{ PINBALL_DEX_MAX }} · Recorde: {{ adventure.bestScore.toLocaleString('pt-BR') }}</p>
       <div class="pinball-options">

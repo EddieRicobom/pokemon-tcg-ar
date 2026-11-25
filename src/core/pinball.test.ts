@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { activatePinballAbility, createPinballState, launchPinball, mergePinballDex, nudgePinball, pinballPartnerSkill, pinballReward, pinballStage, PINBALL_BOSS_CORE, PINBALL_BUMPERS, PINBALL_DEX_MAX, PINBALL_TARGETS, PINBALL_TIME_SCALE, PINBALL_TIMER_SCALE, stepPinball } from './pinball';
+import { activatePinballAbility, createPinballState, launchPinball, mergePinballDex, nudgePinball, pinballPartnerSkill, pinballReward, pinballStage, pinballVisibleRect, PINBALL_BOSS_CORE, PINBALL_BUMPERS, PINBALL_DEX_MAX, PINBALL_FLASH_MS, PINBALL_POPUP_MS, PINBALL_TARGETS, PINBALL_TIME_SCALE, PINBALL_TIMER_SCALE, stepPinball } from './pinball';
 import type { PinballState } from './pinball';
 
 function hitTarget(s: PinballState, index = 1): void {
@@ -417,5 +417,88 @@ describe('pinball da Vila', () => {
     const late = pinballReward({ ...base, phase: 'won', stage: 5, score: 10_000, caught: 2, evolved: 2 });
     expect(late).toBe(25 + 40 + 25 + 4 + 6);
     expect(pinballReward({ ...base, phase: 'won', stage: 5, score: 10_000_000, caught: 99, evolved: 99 })).toBe(120);
+  });
+
+  it('enquadramento fixo mantém alvos, flippers e ralo visíveis', () => {
+    const view = pinballVisibleRect();
+    // Alvos C-A-T com o anel (y≈59), paredes laterais da bola e o ralo (y≈565) ficam dentro do quadro.
+    expect(view.left).toBeLessThanOrEqual(25.5);
+    expect(view.right).toBeGreaterThanOrEqual(334.5);
+    expect(view.top).toBeLessThanOrEqual(59);
+    expect(view.bottom).toBeGreaterThanOrEqual(565);
+  });
+
+  it('acerto deixa flash e pontos flutuantes com o delta real, que expiram', () => {
+    const s = createPinballState();
+    launchPinball(s);
+    const before = s.score;
+    hitBumper(s);
+    expect(s.hitFlash[1]).toBe(PINBALL_FLASH_MS);
+    expect(s.popups).toHaveLength(1);
+    expect(s.popups[0]!.text).toBe(`+${Math.round(s.score - before).toLocaleString('pt-BR')}`);
+    expect(s.hitCooldown[1]).toBeGreaterThan(0);
+
+    // Tira a bola do caminho e deixa o flash/popup expirarem sem drenar.
+    s.ball = { x: 180, y: 460, vx: 0, vy: 0 };
+    for (let i = 0; i < 60; i++) stepPinball(s, { left: false, right: false }, 16);
+    expect(s.hitFlash[1]).toBe(0);
+    expect(s.popups).toHaveLength(0);
+    expect(PINBALL_POPUP_MS).toBeGreaterThan(PINBALL_FLASH_MS);
+  });
+
+  it('limita os pontos flutuantes a oito e separa eventos de alvo e núcleo', () => {
+    const s = createPinballState();
+    launchPinball(s);
+    for (let i = 0; i < 12; i++) hitBumper(s);
+    expect(s.popups.length).toBeLessThanOrEqual(8);
+
+    s.stage = 2; s.charge = 0;
+    const targetEvents = [];
+    for (let i = 0; i < 3; i++) {
+      const target = PINBALL_TARGETS[1]!;
+      s.ball = { x: target.x, y: target.y, vx: 0, vy: 0 };
+      s.hitCooldown.fill(0);
+      targetEvents.push(...stepPinball(s, { left: false, right: false }, 16));
+    }
+    expect(targetEvents).toContain('target');
+    expect(s.mode).toBe('bonus');
+
+    s.bossPhase = 2; s.progress = 1;
+    const coreEvents = stepPinball(s, { left: false, right: false }, 16);
+    s.ball = { x: PINBALL_BOSS_CORE.x, y: PINBALL_BOSS_CORE.y, vx: 0, vy: 0 };
+    s.bossCooldownMs = 0;
+    coreEvents.push(...stepPinball(s, { left: false, right: false }, 16));
+    expect(coreEvents).toContain('core');
+    expect(s.coreFlashMs).toBe(PINBALL_FLASH_MS);
+  });
+
+  it('bola salva relança dentro da escala de velocidade e as janelas usam tempo de jogo', () => {
+    const s = createPinballState();
+    launchPinball(s);
+    s.saverMs = 1000;
+    s.ball = { x: 180, y: 610, vx: 0, vy: 200 };
+    stepPinball(s, { left: false, right: false }, 16);
+    expect(s.phase).toBe('playing');
+    expect(Math.abs(s.ball.vy - -900 * PINBALL_TIME_SCALE)).toBeLessThan(10);
+    expect(s.ball.vx).toBeLessThan(0);
+    expect(s.ball.vx).toBeGreaterThan(-20 * PINBALL_TIME_SCALE - 5);
+
+    const timers = createPinballState();
+    expect(timers.bonusSpotMs).toBeCloseTo(7000 * PINBALL_TIMER_SCALE, 6);
+    launchPinball(timers);
+    hitBumper(timers);
+    expect(timers.comboMs).toBeCloseTo(2200 * PINBALL_TIMER_SCALE, 6);
+    hitTarget(timers, 0);
+    expect(timers.letterMs).toBeCloseTo(4000 * PINBALL_TIMER_SCALE, 6);
+    for (let i = 0; i < 2; i++) hitTarget(timers, 0);
+    expect(timers.mode).toBe('capture');
+    expect(timers.modeMs).toBeCloseTo(60_000 * PINBALL_TIMER_SCALE, 6);
+
+    const bonus = createPinballState();
+    launchPinball(bonus);
+    bonus.stage = 2; bonus.charge = 0;
+    for (let i = 0; i < 3; i++) hitTarget(bonus);
+    expect(bonus.mode).toBe('bonus');
+    expect(bonus.modeMs).toBeCloseTo(100_000 * PINBALL_TIMER_SCALE, 6);
   });
 });

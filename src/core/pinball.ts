@@ -6,6 +6,24 @@ import { speciesName } from './survivor-evolution';
 export const PINBALL_W = 360;
 export const PINBALL_H = 600;
 const BALL_R = 7;
+/** Moldura visível da mesa (a mesma recortada no canvas). */
+export const PINBALL_FRAME = { x: 22, y: 33, w: 316, h: 536 } as const;
+/**
+ * Enquadramento fixo: a mesa inteira fica no quadro, sem seguir a bola. O zoom de 2% só tira
+ * a borda decorativa; alvos C-A-T (y≈59), flippers erguidos e o ralo (y≈565) continuam visíveis.
+ */
+export const PINBALL_VIEW = { scale: 1.02, x: 180, y: 303 } as const;
+/** Retângulo do projeto que aparece dentro da moldura, para o teste impedir recorte de área útil. */
+export function pinballVisibleRect(view: { scale: number; x: number; y: number } = PINBALL_VIEW): { left: number; right: number; top: number; bottom: number } {
+  const cx = PINBALL_W / 2;
+  const cy = PINBALL_H / 2;
+  return {
+    left: view.x + (PINBALL_FRAME.x - cx) / view.scale,
+    right: view.x + (PINBALL_FRAME.x + PINBALL_FRAME.w - cx) / view.scale,
+    top: view.y + (PINBALL_FRAME.y - cy) / view.scale,
+    bottom: view.y + (PINBALL_FRAME.y + PINBALL_FRAME.h - cy) / view.scale,
+  };
+}
 /** Passo fixo da simulação (250 Hz): a bola nunca anda mais que ~5 px por passo, então não atravessa paredes. */
 const SUBSTEP_MS = 4;
 /**
@@ -133,6 +151,13 @@ export const PINBALL_FLIPPERS = [
   { pivotX: 108 }, { pivotX: 252 },
 ] as const;
 export interface PinballBall { x: number; y: number; vx: number; vy: number }
+/** Pontos flutuantes na mesa: só desenho, com o delta real de placar já multiplicado. */
+export interface PinballPopup { x: number; y: number; text: string; ms: number }
+export const PINBALL_POPUP_MS = 700;
+const POPUP_MS = PINBALL_POPUP_MS;
+const MAX_POPUPS = 8;
+export const PINBALL_FLASH_MS = 220;
+const FLASH_MS = PINBALL_FLASH_MS;
 export interface PinballState {
   phase: PinballPhase;
   stage: number;
@@ -186,10 +211,16 @@ export interface PinballState {
   /** Sequência C→A→T dos alvos e a janela para completá-la. */
   letterStep: number;
   letterMs: number;
+  /** Flash visual de bumpers/alvos (mesmo índice de `hitCooldown`), slingshots e núcleo do chefe. */
+  hitFlash: number[];
+  slingFlashMs: [number, number];
+  coreFlashMs: number;
+  /** Pontos flutuantes recentes; o mais antigo sai quando passa de 8. */
+  popups: PinballPopup[];
 }
 export interface PinballCaptured { dexId: number; name: string; stage: number }
 export interface PinballInput { left: boolean; right: boolean }
-export type PinballEvent = 'bump' | 'flipper' | 'drain' | 'launch' | 'mode' | 'reward' | 'tilt';
+export type PinballEvent = 'bump' | 'target' | 'core' | 'flipper' | 'drain' | 'launch' | 'mode' | 'reward' | 'tilt';
 
 /**
  * Moedas pagas ao fim de uma aventura. Vitória vale mais e as capturas/evoluções do encontro somam;
@@ -245,6 +276,7 @@ export function createPinballState(best = 0): PinballState {
     critters: [], captured: [],
     spin: 0, flipperAngle: [...FLIPPER_REST_ANGLE],
     bonusSpot: 3, bonusSpotMs: 7000 * TIMER, bonusKind: null, bonusMs: 0, bonusAwards: 0, letterStep: 0, letterMs: 0,
+    hitFlash: Array(PINBALL_BUMPERS.length + PINBALL_TARGETS.length).fill(0), slingFlashMs: [0, 0], coreFlashMs: 0, popups: [],
   };
   syncCritters(state);
   return state;
@@ -254,6 +286,15 @@ function announce(s: PinballState, message: string): void { s.message = message;
 function score(s: PinballState, points: number): void {
   s.score += points * s.multiplier * s.ballLevel;
   s.best = Math.max(s.best, s.score);
+}
+/** Pontua e mostra na mesa o delta real (multiplicador e nível já aplicados). */
+function scoreAt(s: PinballState, points: number, x: number, y: number): void {
+  const before = s.score;
+  score(s, points);
+  const delta = Math.round(s.score - before);
+  if (delta <= 0) return;
+  s.popups.push({ x, y, text: `+${delta.toLocaleString('pt-BR')}`, ms: POPUP_MS });
+  if (s.popups.length > MAX_POPUPS) s.popups.shift();
 }
 
 export function launchPinball(s: PinballState): boolean {
@@ -533,13 +574,19 @@ function bossProgress(s: PinballState, amount: number, events: PinballEvent[]): 
 }
 
 function onTarget(s: PinballState, index: number, events: PinballEvent[]): void {
+  const target = PINBALL_TARGETS[index]!;
+  const slot = PINBALL_BUMPERS.length + index;
+  s.hitFlash[slot] = FLASH_MS;
+  let points = 0;
   if (s.skillShot) {
-    score(s, 2500);
+    points += 2500;
     s.skillShot = false;
     announce(s, 'Tiro de habilidade! +2.500');
   }
   const fire = s.bonusKind === 'fire' ? 2 : 1;
-  score(s, (s.mode === 'bonus' ? 1000 : 300) * fire * (s.abilityKind === 'focus' && s.abilityMs > 0 ? 2 : 1));
+  points += (s.mode === 'bonus' ? 1000 : 300) * fire * (s.abilityKind === 'focus' && s.abilityMs > 0 ? 2 : 1);
+  scoreAt(s, points, target.x, target.y);
+  events.push('target');
   // Letras C→A→T em ordem acendem um bônus; errar a ordem recomeça do C.
   if (index === s.letterStep) {
     s.letterStep += 1;
@@ -569,7 +616,7 @@ function onTarget(s: PinballState, index: number, events: PinballEvent[]): void 
 
 function loseBall(s: PinballState, events: PinballEvent[]): void {
   if (s.saverMs > 0) {
-    s.ball = { x: 316, y: 515, vx: -20, vy: -900 };
+    s.ball = { x: 316, y: 515, vx: -20 * SPEED, vy: -900 * SPEED };
     s.skillShot = true;
     announce(s, 'Bola salva!');
     return;
@@ -601,6 +648,12 @@ export function stepPinball(s: PinballState, input: PinballInput, dtMs: number):
     if (s.modeMs === 0) { s.mode = 'normal'; s.progress = 0; s.charge = 0; s.bossPhase = 0; s.bossMask = 0; announce(s, 'Tempo encerrado. Tente abrir o desafio novamente.'); }
   }
   for (let index = 0; index < s.hitCooldown.length; index++) s.hitCooldown[index] = Math.max(0, (s.hitCooldown[index] ?? 0) - elapsed);
+  for (let index = 0; index < s.hitFlash.length; index++) s.hitFlash[index] = Math.max(0, (s.hitFlash[index] ?? 0) - elapsed);
+  s.slingFlashMs[0] = Math.max(0, s.slingFlashMs[0] - elapsed);
+  s.slingFlashMs[1] = Math.max(0, s.slingFlashMs[1] - elapsed);
+  s.coreFlashMs = Math.max(0, s.coreFlashMs - elapsed);
+  for (const popup of s.popups) popup.ms = Math.max(0, popup.ms - elapsed);
+  if (s.popups.some((popup) => popup.ms === 0)) s.popups = s.popups.filter((popup) => popup.ms > 0);
   for (let index = 0; index < s.flipperCooldownMs.length; index++) s.flipperCooldownMs[index] = Math.max(0, (s.flipperCooldownMs[index] ?? 0) - elapsed);
   s.laneCooldownMs = Math.max(0, s.laneCooldownMs - elapsed);
   s.bossCooldownMs = Math.max(0, s.bossCooldownMs - elapsed);
@@ -655,20 +708,21 @@ export function stepPinball(s: PinballState, input: PinballInput, dtMs: number):
       if (rail.hit && b.vy > 0) b.vx -= 35 * SPEED;
     }
     // Slingshots abaixo dos bumpers mantêm a bola em movimento.
-    if (reflectSegment(s, 76, 389, 119, 428, 5, 0.92).hit && b.vy > 0) { b.vx += 75 * SPEED; b.vy -= 90 * SPEED; }
-    if (reflectSegment(s, 284, 389, 241, 428, 5, 0.92).hit && b.vy > 0) { b.vx -= 75 * SPEED; b.vy -= 90 * SPEED; }
+    if (reflectSegment(s, 76, 389, 119, 428, 5, 0.92).hit && b.vy > 0) { s.slingFlashMs[0] = FLASH_MS; b.vx += 75 * SPEED; b.vy -= 90 * SPEED; }
+    if (reflectSegment(s, 284, 389, 241, 428, 5, 0.92).hit && b.vy > 0) { s.slingFlashMs[1] = FLASH_MS; b.vx -= 75 * SPEED; b.vy -= 90 * SPEED; }
     for (let i = 0; i < PINBALL_BUMPERS.length; i++) {
       const bumper = PINBALL_BUMPERS[i]!;
       const hit = reflectCircle(s, bumper.x, bumper.y, bumper.r, 70, BUMPER_MIN_KICK);
       if ((s.hitCooldown[i] ?? 0) === 0 && hit) {
         s.hitCooldown[i] = 110;
+        s.hitFlash[i] = FLASH_MS;
         s.bumperHits += 1;
         s.combo = s.comboMs > 0 ? Math.min(5, s.combo + 1) : 1;
         s.comboMs = 2200 * TIMER;
         let points = (i < 3 ? 150 : 90) * s.combo * (s.abilityKind === 'power' && s.abilityMs > 0 ? 2 : 1);
         if (s.bonusKind === 'fire') points *= 2;
         if (s.bonusKind === 'spark') points += 300;
-        score(s, points);
+        scoreAt(s, points, bumper.x, bumper.y);
         if (s.bumperHits % 10 === 0) { s.kickback = true; announce(s, 'Resgate lateral carregado!'); }
         if (i === s.bonusSpot) {
           awardBonus(s, events);
@@ -705,9 +759,10 @@ export function stepPinball(s: PinballState, input: PinballInput, dtMs: number):
       const hitCore = reflectCircle(s, PINBALL_BOSS_CORE.x, PINBALL_BOSS_CORE.y, PINBALL_BOSS_CORE.r, 105, CORE_MIN_KICK);
       if (hitCore && s.bossCooldownMs === 0) {
         s.bossCooldownMs = 220;
-        score(s, 1500);
+        s.coreFlashMs = FLASH_MS;
+        scoreAt(s, 1500, PINBALL_BOSS_CORE.x, PINBALL_BOSS_CORE.y);
         bossProgress(s, 1, events);
-        events.push('bump');
+        events.push('core', 'bump');
       }
     }
     // Passagem no topo: acender três vezes recarrega a proteção lateral.
