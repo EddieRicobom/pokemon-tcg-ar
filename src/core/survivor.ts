@@ -703,6 +703,8 @@ export interface SurvivorUpgradeRollOptions {
   minimumRarity?: SurvivorUpgradeRarity;
   /** Pontos percentuais adicionais de chance de carta rara ou melhor (usado só na Arena). */
   rareChanceBonus?: number;
+  /** Sorteio da Torre: ativa cartas de combo e reduz o peso de famílias já saturadas. A Arena fica de fora. */
+  variety?: boolean;
 }
 
 function isAttackUpgrade(upgrade: SurvivorUpgrade): boolean {
@@ -727,6 +729,7 @@ function eligibleUpgrade(u: SurvivorUpgrade, move: SurvivorMove, player?: Readon
     && (!u.bonkOnly || player?.bonkMode === true)
     && (player?.level ?? 1) >= SURVIVOR_UPGRADE_RARITIES[u.rarity].minLevel
     && (!u.requires || (player?.upgradeLevels[u.requires] ?? 0) > 0)
+    && (!u.requiresAll || u.requiresAll.every((id) => (player?.upgradeLevels[id] ?? 0) > 0))
     && (u.rarity !== 'ancestral' || !alreadyAncestral)
     && (player?.upgradeLevels[u.id] ?? 0) < (u.maxLevels ?? Number.POSITIVE_INFINITY)
     && (!player || (u.id !== 'power' && u.id !== 'resonance' || player.attackDamage < SURVIVOR_ATTACK_DAMAGE_CAP))
@@ -743,7 +746,7 @@ function eligibleUpgrade(u: SurvivorUpgrade, move: SurvivorMove, player?: Readon
 function describeUpgrade(upgrade: SurvivorUpgrade, move: SurvivorMove, value?: number): SurvivorUpgradeOption {
   const copy = value !== undefined ? upgrade.describeValue?.(move, value) : undefined;
   const description = copy ?? upgrade.describe?.(move) ?? { name: upgrade.name, description: upgrade.description };
-  return { id: upgrade.id, family: upgrade.family, rarity: upgrade.rarity, ...(upgrade.icon ? { icon: upgrade.icon } : {}), ...(value === undefined ? {} : { value }), ...description };
+  return { id: upgrade.id, family: upgrade.family, rarity: upgrade.rarity, ...(upgrade.icon ? { icon: upgrade.icon } : {}), ...(value === undefined ? {} : { value }), ...(upgrade.requiresAll ? { synergy: upgrade.requiresAll } : {}), ...description };
 }
 
 export function rollUpgrades(
@@ -761,14 +764,41 @@ function rollUpgradesForAttacks(rng: Rng, count: number, attacks: readonly { mov
   const minimumRank = options?.minimumRarity === undefined ? 0 : SURVIVOR_RARITY_ORDER.indexOf(options.minimumRarity);
   const pool = SURVIVOR_UPGRADES.flatMap((u) => {
     if (excludedIds.has(u.id) || SURVIVOR_RARITY_ORDER.indexOf(u.rarity) < minimumRank) return [];
+    if (u.requiresAll && !options?.variety) return [];
     const attack = attacks.find(({ move, player }) => eligibleUpgrade(u, move, player, alreadyAncestral));
     return attack ? [{ upgrade: u, rarity: u.rarity, attack }] : [];
   });
   const picked: SurvivorUpgradeOption[] = [];
+  // Famílias já muito repetidas perdem peso aos poucos: a oferta continua sorteada, mas abre espaço para
+  // defesa, progresso e movimento em vez de devolver sempre a mesma pilha de ataque.
+  const familyWeight = (entry: { upgrade: SurvivorUpgrade; attack: { player?: Readonly<SurvivorPlayer> } }): number => {
+    const family = entry.upgrade.family;
+    let levels = 0;
+    for (const [id, count] of Object.entries(entry.attack.player?.upgradeLevels ?? {})) {
+      if ((SURVIVOR_UPGRADES.find((upgrade) => upgrade.id === id)?.family ?? '') === family) levels += count;
+    }
+    return Math.max(0.5, Math.pow(0.9, Math.max(0, levels - 4)));
+  };
   for (let i = 0; i < count && pool.length > 0; i++) {
     const rarity = rollUpgradeRarity(rng, pool, options?.rareChanceBonus);
     const matching = pool.filter((upgrade) => upgrade.rarity === rarity);
-    const entry = matching[Math.floor(rng() * matching.length)]!;
+    let entry: (typeof matching)[number];
+    if (options?.variety) {
+      const weights = matching.map((candidate) => familyWeight(candidate));
+      const totalWeight = weights.reduce((sum, weight) => sum + weight, 0);
+      entry = matching[matching.length - 1]!;
+      if (totalWeight > 0) {
+        let draw = rng() * totalWeight;
+        for (let index = 0; index < matching.length; index++) {
+          draw -= weights[index]!;
+          if (draw < 0) { entry = matching[index]!; break; }
+        }
+      } else {
+        entry = matching[Math.floor(rng() * matching.length)]!;
+      }
+    } else {
+      entry = matching[Math.floor(rng() * matching.length)]!;
+    }
     const { upgrade: u, attack } = entry;
     pool.splice(pool.indexOf(entry), 1);
     const value = u.valueRange
@@ -785,14 +815,15 @@ function rollUpgradesForAttacks(rng: Rng, count: number, attacks: readonly { mov
 }
 
 function rollRunUpgrades(state: SurvivorState, count: number, options: SurvivorUpgradeRollOptions): SurvivorUpgradeOption[] {
+  const varied: SurvivorUpgradeRollOptions = { ...options, variety: true };
   const attacks = survivorPlayerAttacks(state);
-  if (!attacks) return rollUpgrades(state.rng, count, state.player.terastal?.baseMove ?? state.player.move, state.player, options);
+  if (!attacks) return rollUpgrades(state.rng, count, state.player.terastal?.baseMove ?? state.player.move, state.player, varied);
   const first = state.attackSlots?.pending ?? attacks.active;
   const indexes = attacks.simultaneous ? [first, otherSurvivorAttack(first)] : [first];
   return rollUpgradesForAttacks(state.rng, count, indexes.map((index) => {
     const player = attacks.players[index];
     return { index, player, move: player.terastal?.baseMove ?? player.move };
-  }), options, attacks.players.some((player) => isAncestralChosen(player.upgradeLevels)));
+  }), varied, attacks.players.some((player) => isAncestralChosen(player.upgradeLevels)));
 }
 
 /** Alvos válidos para esta carta aberta. Cartas globais e ofertas especiais não têm alvo. */

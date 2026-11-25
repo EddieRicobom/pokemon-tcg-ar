@@ -518,6 +518,8 @@ export interface SurvivorUpgradeOption {
   family?: SurvivorUpgradeFamily;
   /** Valor já sorteado para esta carta; aplicar a escolha não sorteia novamente. */
   value?: number;
+  /** Carta de combo: só entrou na oferta porque as peças indicadas já estão na build. */
+  synergy?: readonly string[];
 }
 
 export type SurvivorUpgradeRarity = 'normal' | 'raro' | 'lendario' | 'ancestral';
@@ -946,6 +948,8 @@ export interface SurvivorUpgrade {
   maxLevels?: number;
   /** Upgrade anterior necessário para liberar esta carta em uma trilha. */
   requires?: string;
+  /** Cartas de combo: só aparecem quando todas as peças já foram escolhidas. */
+  requiresAll?: readonly string[];
   /** Pequena variação numérica, sorteada quando a carta aparece. */
   valueRange?: readonly [number, number];
   describeValue?: (move: SurvivorMove, value: number) => { name: string; description: string };

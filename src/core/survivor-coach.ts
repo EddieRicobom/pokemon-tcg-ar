@@ -43,6 +43,30 @@ export function survivorNewRecords(
   return records;
 }
 
+/**
+ * Uma frase objetiva de "por que a corrida acabou": golpe final, vida antes e a fonte de dano
+ * dominante. Complementa as dicas sem repetir o gráfico.
+ */
+export function survivorDeathNote(summary: SurvivorSummary): string | null {
+  const final = summary.finalHit;
+  if (!final) return null;
+  const source = final.shadowBoss ? 'lendário sombrio'
+    : final.boss || final.grade === 'chefao' ? 'chefão'
+      : final.grade === 'elite' ? 'elite'
+        : 'inimigo comum';
+  const hp = Math.max(0, Math.round(final.hpBefore));
+  const damage = Math.max(0, Math.round(final.damage));
+  let note = `Você tinha ${hp} de vida e levou ${damage} de ${final.kind} do ${source}.`;
+  const taken = summary.damageTaken ?? [];
+  const total = taken.reduce((sum, row) => sum + row.damage, 0);
+  const top = taken[0];
+  if (top && total > 0) {
+    const share = Math.round((top.damage / total) * 100);
+    if (share >= 35) note += ` ${share}% do dano da corrida veio de ${top.name.toLocaleLowerCase('pt-BR')}.`;
+  }
+  return note;
+}
+
 const MAX_HINTS = 3;
 
 export function survivorCoachHints(summary: SurvivorSummary, context: SurvivorCoachContext = {}): SurvivorCoachHint[] {

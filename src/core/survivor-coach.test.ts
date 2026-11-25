@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { survivorCoachHints, survivorNewRecords } from './survivor-coach';
+import { survivorCoachHints, survivorDeathNote, survivorNewRecords } from './survivor-coach';
 import type { SurvivorSummary } from './survivor-types';
 
 function summary(over: Partial<SurvivorSummary> = {}): SurvivorSummary {
@@ -86,5 +86,25 @@ describe('dicas para a próxima corrida', () => {
       .toEqual([{ id: 'tempo', from: 240_000, to: 300_000 }, { id: 'nivel', from: 18, to: 20 }]);
     expect(survivorNewRecords(summary({ survivedMs: 200_000, wave: 14, level: 19 }), { ms: 240_000, wave: 12, level: 18 }))
       .toEqual([{ id: 'onda', from: 12, to: 14 }, { id: 'nivel', from: 18, to: 19 }]);
+  });
+});
+
+describe('por que a corrida acabou', () => {
+  it('resume golpe final, vida e a fonte de dano dominante', () => {
+    const note = survivorDeathNote(summary({
+      finalHit: finalHit({ boss: true, kind: 'projétil', damage: 42, hpBefore: 30 }),
+      damageTaken: [
+        { kind: 'projétil', name: 'Projéteis', color: '#ffb36b', damage: 70 },
+        { kind: 'contato', name: 'Contato', color: '#ff6c64', damage: 30 },
+      ],
+    }));
+    expect(note).toContain('30 de vida');
+    expect(note).toContain('42');
+    expect(note).toContain('chefão');
+    expect(note).toContain('70% do dano');
+  });
+
+  it('não inventa explicação sem golpe final', () => {
+    expect(survivorDeathNote(summary())).toBeNull();
   });
 });
