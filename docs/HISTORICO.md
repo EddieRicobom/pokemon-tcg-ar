@@ -5,6 +5,20 @@ O estado atual, as fases, as pendências e os riscos continuam no [plano](../IMP
 datadas (com o que foi e o que não foi validado em cada uma). A regra de validação do plano vale também para estas entradas:
 🔶 significa que **nada foi visto num celular real**.
 
+## Torre: armadura quebrável, matilha de elite e ofertas com sinergia (25/11/2026)
+
+- **Armadura quebrável:** crítico, Terastal e Supremo reduzem 35 pontos percentuais da armadura por 4 s (piso 0, teto 0,8). Queimadura, veneno e espinhos ignoram a guarda. O golpe que quebra já entra com a armadura reduzida, e a barra do chefe mostra `🛡 ARMADURA QUEBRADA`.
+- **Fases do chefe:** a vida restante define três fases. A II encurta o telegraph para 85% e a III para 75%, com uma área extra fora do eixo do jogador. Vida, dano e velocidade não mudam — a luta fica mais densa, não mais injusta.
+- **Matilha de elite:** depois dos 10 min, o rodízio de eventos-relâmpago ganha uma matilha de 3 elites (4 a partir dos 15 min) em volta de uma marca laranja avisada. A chave só cai quando todas caem; fugir encerra sem recompensa. É o pico de ritmo que compensa a densidade comum menor no late.
+- **Ofertas com sinergia:** do Nv 5 em diante, a primeira vaga da oferta vem da família dominante da build. Cartas recém-oferecidas perdem 75% de peso e cartas nunca vistas ganham 60%; o card mostra o selo `🧩 Combina com sua build`.
+- 🔶 Typecheck, 68 arquivos / 733 testes do Survival, suíte completa (347 arquivos / 3452 testes), build e os 14 testes de layout passaram. As fases e a quebra de armadura ainda precisam de playtest humano; não testado em celular real.
+
+## Pinball: física e bola a 60% da velocidade (25/11/2026)
+
+- **Ritmo da mesa:** `PINBALL_TIME_SCALE = 0,6`. Velocidades, giros, impulsos, flippers e kickers caem pelo fator; gravidade e demais acelerações pelo quadrado dele. As trajetórias continuam idênticas, então a mesa só demora ~1,67× mais para o mesmo lance — mais lenta de ler, não mais fácil de atravessar.
+- O limiar de gravidade que "solta" quando a bola já desce rápido acompanha a escala, e o teste do empurrão usa o fator em vez de um número solto.
+- 🔶 24 testes do Pinball, typecheck, build e 14/14 de layout passaram. A sensação de velocidade ainda precisa de playtest no aparelho.
+
 ## Torre: late com menos densidade, mais vida e armadura nos chefes (25/11/2026)
 
 - **Densidade:** depois dos 10 min o intervalo entre inimigos comuns cresce **15% por minuto** (2,5× aos 20 min, 8,5× aos 60 min). A horda não some, mas para de encher a tela.

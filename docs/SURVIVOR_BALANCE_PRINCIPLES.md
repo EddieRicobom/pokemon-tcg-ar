@@ -641,3 +641,10 @@ com o robô quase sem abates). Ficam anotados para a próxima rodada.
 - **Dano**: 55% do dano do chefe no tsunami/onda, 65% nas pedras e 50% nas vinhas. A defesa e a dificuldade do jogador continuam valendo, o escudo especial quebra em vez de deixar passar, e pular no BONK ou estar invulner��vel evita o golpe.
 - **Status dos tiros inimigos**: queimadura por 3 s a 1,2% da vida m��xima por segundo, lentid��o por 1,8 s a 65% do passo e atordoamento por 0,34 s. S�� entram quando o dano de fato acontece (escudo/invulnerabilidade limpam o golpe). O HUD mostra ��cone, cor e tempo restante; a queimadura n��o dispara o flash/som de impacto a cada tique.
 - A regra dos testes fica em `survivor-status-boss.test.ts` (dano, dodge, cooldown, sem chefe, status e invulnerabilidade).
+
+## Contra-jogo da armadura, matilha de elite e ofertas com sinergia (25/11/2026)
+
+- **Armadura quebrável.** Crítico, Terastal e Supremo reduzem a armadura do alvo em 35 pontos percentuais por 4 s (piso 0, teto 0,8). O golpe que quebra já entra com a guarda aberta. Queimadura, veneno e espinhos continuam ignorando a armadura: status segue sendo a rota para builds sem crítico.
+- **Fases do chefe.** A vida restante define três fases (>66%, >33%, resto). Fase II encurta o telegraph para 85% e a fase III para 75%, com uma área extra fora do eixo do jogador. Vida, dano e velocidade não mudam: a luta fica mais densa, não mais injusta.
+- **Matilha de elite.** Depois dos 10 min, o rodízio de eventos-relâmpago ganha uma matilha de 3 elites (4 a partir dos 15 min) em volta de um ponto avisado. A chave só cai quando todas caem; fugir encerra sem recompensa. É o pico de ritmo do late game, compensando a densidade comum menor.
+- **Ofertas com sinergia.** A partir do Nv 5, a primeira vaga da oferta vem da família dominante da build. Cartas recém-oferecidas perdem 75% do peso e cartas nunca vistas ganham 60%, então a oferta não repete a mesma tela nem esquece o catálogo. O card mostra o selo `Combina com sua build`.

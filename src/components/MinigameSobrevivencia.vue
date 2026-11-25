@@ -69,6 +69,8 @@ import {
   survivorCoins,
   survivorDefenseReduction,
   survivorEnemyDamageReduction,
+  survivorBossPhase,
+  survivorBuildFamily,
   survivorScore,
   SURVIVOR_UPGRADE_RARITIES,
   SURVIVOR_UPGRADE_FAMILIES,
@@ -960,6 +962,8 @@ const bossBar = computed(() => {
     shadow: target.shadowBoss === true,
     arceus: target.arceus === true,
     reduction: Math.round(survivorEnemyDamageReduction(target) * 100),
+    broken: (target.armorBreakMs ?? 0) > 0,
+    phase: survivorBossPhase(target),
   };
 });
 /** Aviso curto do ataque-assinatura do chefe; o desenho no chão mostra a área exata. */
@@ -1154,6 +1158,8 @@ function minimapX(x: number): number { return ((x - minimap.value.bounds.x) / mi
 function minimapY(y: number): number { return ((y - minimap.value.bounds.y) / minimap.value.bounds.height) * 100; }
 const objectives = ref<ReturnType<typeof survivorObjectives>>([]);
 const pendingUpgrade = ref<SurvivorUpgradeOption[] | null>(null);
+/** Família dominante da build a partir do Nv 5; o selo no card mostra quando a oferta conversa com ela. */
+const buildFamily = computed(() => (state.value && state.value.player.level >= 5 ? survivorBuildFamily(state.value.player) : null));
 const blackChestOffer = ref(false);
 
 function decideBlackChest(accept: boolean): void {
@@ -1766,6 +1772,11 @@ function announceSurge(ev: Extract<SurvivorEvent, { type: 'surge' }>): void {
     else if (ev.phase === 'start') { playSound('success'); say(`${tag} entrou na luta por 24 s!`, 3200); }
     else if (ev.phase === 'fail') say(`${label.icon} O Pokémon selvagem voltou para o mato.`, 2600);
     else if (ev.phase === 'end') say(`${label.icon} Seu amigo selvagem se despediu.`, 2600);
+  } else if (ev.kind === 'elite-pack') {
+    if (ev.phase === 'warn') { playSound('survivor-boss'); say(`${tag} vindo aí: elites em volta da marca laranja. Derrube todas para ganhar uma chave.`, 4200); }
+    else if (ev.phase === 'start') { playSound('survivor-boss'); say(`${tag}: ${ev.value ?? 0} elites! A armadura delas abre com crítico, Terastal e Supremo.`, 4000); }
+    else if (ev.phase === 'success') { playSound('success'); say(`${tag} derrotada: uma chave de baú caiu no centro.`, 3600); }
+    else if (ev.phase === 'end') say(`${tag} se dispersou.`, 2200);
   } else if (ev.phase === 'offer') { playSound('survivor-level'); say(`${tag}: a baliza dourada vem até você e o desafio começa quando ela encostar. Fuja dela para recusar; falhar não tira nada.`, 4800); }
   else if (ev.phase === 'start') { playSound('survivor-boss'); say(`${tag}: derrote ${ev.value ?? 0} em 20 s!`, 3600); }
   else if (ev.phase === 'success') { playSound('success'); say(`${tag} cumprido: uma chave de baú e orbes para você.`, 4000); }
@@ -1862,6 +1873,35 @@ function drawSurge(c: CanvasRenderingContext2D, surge: SurvivorSurge, animMs: nu
       c.font = 'bold 11px sans-serif';
       c.fillStyle = color;
       c.fillText('AMIGO', f.x, f.y - 46);
+    }
+  } else if (surge.kind === 'elite-pack') {
+    const x = surge.x ?? 0;
+    const y = surge.y ?? 0;
+    const color = '#ff7a4a';
+    const radius = (surge.phase === 'warn' ? 72 : 104) * pulse;
+    // Aro escuro por baixo: o laranja some no capim sem ele.
+    c.globalAlpha = 0.45;
+    c.strokeStyle = '#3a1200';
+    c.lineWidth = 6;
+    c.beginPath();
+    c.arc(x, y, radius, 0, Math.PI * 2);
+    c.stroke();
+    c.globalAlpha = surge.phase === 'warn' ? 0.9 : 0.35;
+    c.strokeStyle = color;
+    c.lineWidth = 3;
+    c.setLineDash(surge.phase === 'warn' ? [9, 6] : [4, 9]);
+    c.beginPath();
+    c.arc(x, y, radius, 0, Math.PI * 2);
+    c.stroke();
+    c.setLineDash([]);
+    if (surge.phase === 'warn') {
+      c.globalAlpha = 0.95;
+      c.fillStyle = '#fff1e4';
+      c.font = 'bold 18px sans-serif';
+      c.fillText('⚔️', x, y);
+      c.font = 'bold 11px sans-serif';
+      c.fillStyle = color;
+      c.fillText('MATILHA', x, y - 54);
     }
   } else if (surge.kind === 'trial' && surge.phase === 'offer') {
     const x = surge.x ?? 0;
@@ -5236,9 +5276,10 @@ onBeforeUnmount(() => {
               <button type="button" class="chip survivor-menu-btn" :aria-label="hudExpanded ? 'Fechar menu da Torre e retomar' : 'Abrir menu da Torre: pausa, informações e opções'" :title="hudExpanded ? 'Fechar menu da Torre e retomar' : 'Abrir menu da Torre: pausa, informações e opções'" :aria-expanded="hudExpanded" aria-controls="survivor-info-panel" @pointerdown.stop @click.stop="toggleHudMenu">{{ hudExpanded ? '✕ Fechar' : '☰ Menu' }}</button>
             </span>
           </div>
-          <div v-if="bossBar" class="survivor-boss-bar" :class="{ shadow: bossBar.shadow, arceus: bossBar.arceus, low: bossBar.pct < 25 }" role="status" aria-label="Vida do chefe">
-            <span><b>{{ bossBar.name }}</b><small>{{ bossBar.hp }}/{{ bossBar.maxHp }}<template v-if="bossBar.reduction > 0"> · 🛡 {{ bossBar.reduction }}%</template></small></span>
+          <div v-if="bossBar" class="survivor-boss-bar" :class="{ shadow: bossBar.shadow, arceus: bossBar.arceus, low: bossBar.pct < 25, broken: bossBar.broken }" role="status" aria-label="Vida do chefe">
+            <span><b>{{ bossBar.name }}<template v-if="bossBar.phase > 1"> · Fase {{ bossBar.phase === 2 ? 'II' : 'III' }}</template></b><small>{{ bossBar.hp }}/{{ bossBar.maxHp }}<template v-if="bossBar.reduction > 0"> · 🛡 {{ bossBar.reduction }}%</template></small></span>
             <i><b :style="{ width: `${bossBar.pct}%` }" /></i>
+            <em v-if="bossBar.broken" class="survivor-armor-break">🛡 ARMADURA QUEBRADA</em>
           </div>
           <div v-if="bossAttackWarning" class="survivor-boss-warning" role="status" aria-live="assertive">{{ bossAttackWarning }} <small>{{ state?.bossAttack?.kind === 'lasers' ? 'ande no vão entre os raios' : state?.bossAttack?.kind === 'cross' ? 'saia das faixas da cruz' : state?.bossAttack?.kind === 'thunder' ? 'ande para o lado' : state?.bossAttack?.kind === 'meteors' ? 'saia das marcas no chão' : 'saia da área marcada' }}</small></div>
           <section v-if="hudExpanded" id="survivor-info-panel" class="survivor-info-panel" aria-label="Menu da Torre: pausa, informações e opções" @pointerdown.stop>
@@ -5370,7 +5411,7 @@ onBeforeUnmount(() => {
                 <li><b>🎚 Desafio N%:</b> força dos inimigos comuns em relação à Torre de sempre. Verde é mais fácil, vermelho acima de 120% é aperto.</li>
                 <li><b>⏱ tempo · ☠ abates:</b> tempo da corrida e inimigos derrotados.</li>
                 <li><b>☠ Pressão N:</b> densidade, velocidade e dano extras que a dificuldade acumulou.</li>
-                <li><b>Barras pequenas:</b> vida de elites, chefões e chefes; o glifo ao lado mostra o tipo e o 🛡 mostra a armadura (dano direto reduzido).</li>
+                <li><b>Barras pequenas:</b> vida de elites, chefões e chefes; o glifo ao lado mostra o tipo e o 🛡 mostra a armadura (dano direto reduzido). Crítico, Terastal e Supremo abrem a guarda por alguns segundos.</li>
                 <li><b>Aviso de ataque:</b> o nome, o glifo do tipo e a contagem até o impacto; ande para fora da área marcada.</li>
                 <li><b>XP:</b> até o nível 20 o custo sobe devagar; depois acelera de propósito para o late game não virar uma enxurrada de níveis.</li>
                 <li><b>BONK:</b> tem leitura própria; as setas de ameaça, o anel e as micro-barras são do modo normal.</li>
@@ -5839,6 +5880,7 @@ onBeforeUnmount(() => {
                 <span class="survivor-upgrade-text">
                   <span v-if="isTransformerOption(u)" class="survivor-transformer-badge">✦ Transforma o golpe</span>
                   <span v-if="u.synergy" class="survivor-synergy-badge">🔗 Sinergia ativa</span>
+                  <span v-else-if="buildFamily && u.family === buildFamily" class="survivor-build-badge">🧩 Combina com sua build</span>
                   <span v-if="u.rarity" class="survivor-rarity-label" :title="`${SURVIVOR_UPGRADE_RARITIES[u.rarity].label}: ${SURVIVOR_UPGRADE_RARITIES[u.rarity].impact}`">
                     <img class="survivor-rarity-ball" :src="RARITY_BALL_IMAGE[u.rarity]" alt="" />
                     <span>{{ SURVIVOR_UPGRADE_RARITIES[u.rarity].label }}</span>

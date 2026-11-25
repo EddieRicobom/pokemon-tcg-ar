@@ -7027,6 +7027,7 @@ body:has(.survivor-summary) .universal-controls { opacity: 0; pointer-events: no
 .survivor-upgrade-btn.held-transformer .survivor-upgrade-icon { background: radial-gradient(circle, #ffffff 30%, #c9a6ff 75%, rgba(180,140,255,0)); box-shadow: 0 0 14px rgba(201,166,255,.9); }
 .survivor-transformer-badge { display: inline-block; margin-bottom: 3px; padding: 2px 9px; border-radius: 999px; background: linear-gradient(90deg, #ff9ad5, #b48cff, #7fd4ff); color: #160d26; font-size: .72rem; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
 .survivor-synergy-badge { display: inline-block; margin-bottom: 3px; padding: 2px 9px; border-radius: 999px; border: 1px solid #ffe066; background: #3a3113; color: #fff3b0; font-size: .7rem; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; }
+.survivor-build-badge { display: inline-block; margin-bottom: 3px; padding: 2px 9px; border-radius: 999px; border: 1px solid #7bdcff; background: #102f42; color: #d6f7ff; font-size: .7rem; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; }
 .survivor-transformer-form { display: block; margin-top: 5px; padding: 5px 7px; border-radius: 7px; background: rgba(255,255,255,.12); border-left: 3px solid #7be07b; color: #ffffff !important; }
 @keyframes survivor-transformer-glow { 0%, 100% { box-shadow: 0 0 10px rgba(180,140,255,.55); } 50% { box-shadow: 0 0 22px rgba(255,154,213,.85), 0 0 4px #ffffff; } }
 @media (prefers-reduced-motion: reduce) { .survivor-upgrade-btn.held-transformer { animation: none; box-shadow: 0 0 14px rgba(180,140,255,.7); } }
@@ -8936,6 +8937,9 @@ body:has(.survivor-summary) .universal-controls { opacity: 0; pointer-events: no
 .survivor-boss-bar.arceus i b { background: linear-gradient(90deg, #ffe066, #ff9b3a); }
 .survivor-boss-bar.low i b { animation: survivor-boss-low .7s ease-in-out infinite alternate; }
 @keyframes survivor-boss-low { to { filter: brightness(1.5); } }
+.survivor-boss-bar.broken { border-color: #ffd94a; }
+.survivor-boss-bar.broken i b { background: linear-gradient(90deg, #ffd94a, #fff3b0); }
+.survivor-armor-break { font-style: normal; font-size: .58rem; font-weight: 900; letter-spacing: .04em; color: #ffe066; text-align: center; }
 
 /* Status que os tiros inimigos deixam no jogador: cor + ícone + tempo restante. */
 .survivor-status-chip { font-weight: 800; border-width: 2px; }
