@@ -31,6 +31,8 @@ import {
   SURVIVOR_SHADOW_CUTSCENE_MS,
   SURVIVOR_TERASTAL_DURATION_MS,
   SURVIVOR_TERASTAL_UNLOCK_MS,
+  SURVIVOR_ARCEUS_CUTSCENE_MS,
+  SURVIVOR_ARCEUS_DEX,
   SURVIVOR_SPAWN_DISTANCE,
   FAST_FINAL_BOSS_MS,
   FAST_TIME_SCALE,
@@ -244,7 +246,7 @@ describe('stepSurvivor', () => {
     expect(s.digitalDanger).toBeLessThan(beforePressure);
   });
 
-  it('convoca seis Pokémon mais fortes quando o Digital Danger chega ao máximo e entra em recarga', () => {
+  it('convoca Arceus quando o Digital Danger chega ao máximo e entra em recarga', () => {
     const s = quiet(createSurvivorState(102, { kindCount: 1 }));
     s.elapsedMs = DIGITAL_DANGER_UNLOCK_MS;
     s.special.phase = 'ready';
@@ -255,11 +257,24 @@ describe('stepSurvivor', () => {
     s.kills = 200;
     s.digitalDanger = DIGITAL_DANGER_MAX - 1;
     const events = stepSurvivor(s, { dx: 0, dy: 0, visibleEnemies: 0 }, 1_000);
-    expect(events).toContainEqual(expect.objectContaining({ type: 'trainerSpawn', count: 6, trigger: 'digital-danger' }));
+    expect(events).toContainEqual(expect.objectContaining({ type: 'arceusArrival', dexId: SURVIVOR_ARCEUS_DEX, name: 'Arceus' }));
+    expect(s.arceusEncounter.phase).toBe('arrival');
+    expect(s.enemies.filter((enemy) => enemy.arceus)).toHaveLength(0);
     expect(s.digitalDanger).toBe(0);
     expect(s.digitalDangerCooldownMs).toBe(DIGITAL_DANGER_COOLDOWN_MS);
-    expect(s.enemies.filter((enemy) => enemy.trainerId !== undefined)).toHaveLength(6);
-    expect(s.enemies.every((enemy) => enemy.digitalThreat)).toBe(true);
+
+    stepSurvivor(s, { dx: 0, dy: 0 }, SURVIVOR_ARCEUS_CUTSCENE_MS + 16);
+    expect(s.arceusEncounter.phase).toBe('battle');
+    const arceus = s.enemies.find((enemy) => enemy.arceus);
+    expect(arceus).toBeTruthy();
+    expect(arceus?.dexId).toBe(SURVIVOR_ARCEUS_DEX);
+    expect(arceus?.digitalThreat).toBe(true);
+    expect(arceus?.maxHp).toBeGreaterThan(BALANCE.bossHpBase * BALANCE.arceusHpMultiplier);
+
+    arceus!.hp = 0;
+    const defeated = stepSurvivor(s, { dx: 0, dy: 0 }, 16);
+    expect(s.arceusEncounter.phase).toBe('defeated');
+    expect(defeated).toContainEqual(expect.objectContaining({ type: 'arceusDefeated', dexId: SURVIVOR_ARCEUS_DEX }));
 
     const dangerAfterTrigger = s.digitalDanger;
     stepSurvivor(s, { dx: 0, dy: 0, visibleEnemies: 0 }, 10_000);
@@ -306,6 +321,7 @@ describe('stepSurvivor', () => {
     stepSurvivor(regular, { dx: 0, dy: 0 }, 1_000);
     const digital = setup(105);
     digital.nextTrainerAtMs = Number.POSITIVE_INFINITY;
+    digital.arceusEncounter.phase = 'defeated';
     digital.player.level = 12;
     digital.kills = 200;
     digital.digitalDanger = DIGITAL_DANGER_MAX - 1;

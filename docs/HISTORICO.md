@@ -5,6 +5,14 @@ O estado atual, as fases, as pendências e os riscos continuam no [plano](../IMP
 datadas (com o que foi e o que não foi validado em cada uma). A regra de validação do plano vale também para estas entradas:
 🔶 significa que **nada foi visto num celular real**.
 
+## Torre: controles para destros e canhotos, Arceus no Perigo Digital e feedback (25/11/2026)
+
+- **Botões de foco removidos:** a faixa com os três botões Chefe/Cura/Fraco saiu da tela; o ataque automático continua escolhendo o alvo por distância (o `targetPriority` do motor ficou para saves/testes antigos, mas não há mais botão na interface).
+- **Canhoto/Destro:** a pausa ganhou a escolha «Destro»/«Canhoto». Canhoto espelha Especial, carga, Pular, segundo golpe, AUTO e o botão de troca de golpe para a esquerda; em paisagem os botões sobem acima dos controles universais (D-pad e B/A/Menu). O movimento continua sendo arrastar em qualquer lugar da arena.
+- **Arceus no Perigo Digital:** a primeira vez que o medidor enche (só numa corrida dominante depois dos 10 min) agora chama **Arceus**, não os seis reforços. Uma cutscene de 4,2 s congela a Torre com aviso de «JULGAMENTO IMINENTE»; ele entra com 8× a vida de um chefe periódico, 2× o dano, velocidade 80, ameaça digital (bloqueia cura) e aura dourada na mesa/barra. É uma vez por corrida: depois de derrotado, novos enchimentos voltam a chamar os reforços digitais. A cutscene esconde os controles universais e o overlay funciona sem sprite (◈).
+- **Feedback do jogador:** o código enviado foi lido até onde veio (está cortado em `element-t`): notas [diversão 5, dificuldade 1, clareza 1, justiça 3, replay 5], Gallade, 10:56, nível 56, 2.496 abates, 2 treinadores e 0 chefes. É exatamente o perfil de corrida dominante que o Arceus passa a punir; a clareza deve melhorar com a faxina dos controles, mas o código completo (com stats/artefatos finais) ainda ajudaria a investigar o resto.
+- 🔶 Typecheck, 65 arquivos / 713 testes do Survival, suíte completa (344 arquivos / 3432 testes), build e os 14 testes de layout passaram. Conferi no navegador a cutscene e a ausência dos botões de foco; não testei em celular real, o modo canhoto em todas as proporções nem a luta completa contra o Arceus.
+
 ## Torre: um chefe periódico por vez (24/11/2026)
 
 - **O que a simulação mostrou:** no robô de balanceamento (40 corridas), a mediana era 439 s, só 10% de quem via um chefe derrotava algum, 100% morriam com chefe em campo e 50% levavam o golpe final do chefe. Os chefes periódicos nasciam a cada 60 s e **ficavam no campo** se não caíssem, então eles se acumulavam: em 20 minutos podiam coexistir vários, cada um com ataque-assinatura e perseguição.

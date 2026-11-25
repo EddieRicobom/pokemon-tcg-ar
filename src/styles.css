@@ -6427,46 +6427,6 @@ body.no-scroll .reward-toasts {
 }
 .survivor-stasis-overlay span { align-self: end; margin-bottom: 18%; padding: 4px 7px; border: 1px solid rgba(255,255,255,.24); border-radius: 999px; background: rgba(0,0,0,.32); }
 
-/* Foco fica na faixa inferior: longe da área de combate e com a mesma leitura das barras do HUD. */
-.survivor-focus-actions {
-  position: absolute;
-  z-index: 3;
-  left: calc(8px + env(safe-area-inset-left));
-  bottom: calc(10px + env(safe-area-inset-bottom));
-  display: flex;
-  gap: 6px;
-  width: calc(100% - 196px);
-  max-width: 300px;
-  pointer-events: auto;
-}
-/* Mesma linguagem do topo da HUD: papel creme, contorno de 2 px, cantos retos e sombra dura. */
-.survivor-focus-actions button {
-  display: grid;
-  flex: 1 1 0;
-  min-width: 0;
-  grid-template-columns: minmax(0, 1fr);
-  justify-items: center;
-  align-content: center;
-  gap: 1px;
-  min-height: 38px;
-  padding: 3px 4px;
-  border: 2px solid #555b58;
-  border-radius: 4px;
-  background: #f5f3dc;
-  color: #252d30;
-  box-shadow: 2px 2px 0 #303839;
-  font: inherit;
-  text-align: center;
-}
-.survivor-focus-actions button > span { font-size: .8rem; line-height: 1; }
-.survivor-focus-actions button.active {
-  background: #303c3d;
-  color: #ffe9a6;
-  box-shadow: 2px 2px 0 #303839, inset 3px 0 0 var(--gold);
-}
-.survivor-focus-actions button small { max-width: 100%; overflow: hidden; font-size: .5rem; font-weight: 800; text-overflow: ellipsis; white-space: nowrap; color: inherit; }
-.survivor-focus-actions button:active { transform: translate(1px, 1px); box-shadow: 1px 1px 0 #303839; }
-.survivor-focus-actions button:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
 @media (prefers-reduced-motion: reduce) { .survivor-canvas.survivor-time-stopped { filter: grayscale(1); } }
 
 .survivor-hud {
@@ -6719,11 +6679,12 @@ body.no-scroll .reward-toasts {
   --sv-gap: 10px;
   --sv-sp-b: 16px;
   --sv-ju-b: 22px;
+  --sv-lift: 0px;
 }
 .survivor-special-button {
   position: absolute;
   right: calc(var(--sv-edge) + env(safe-area-inset-right));
-  bottom: calc(var(--sv-sp-b) + env(safe-area-inset-bottom));
+  bottom: calc(var(--sv-sp-b) + var(--sv-lift) + env(safe-area-inset-bottom));
   z-index: 4;
   width: calc(var(--sv-sp) * var(--sv-s));
   height: calc(var(--sv-sp) * var(--sv-s));
@@ -6750,7 +6711,7 @@ body.no-scroll .reward-toasts {
 .survivor-charge-button {
   position: absolute;
   right: calc(var(--sv-edge) + env(safe-area-inset-right));
-  bottom: calc(var(--sv-sp-b) + var(--sv-sp) * var(--sv-s) + var(--sv-gap) + env(safe-area-inset-bottom));
+  bottom: calc(var(--sv-sp-b) + var(--sv-sp) * var(--sv-s) + var(--sv-gap) + var(--sv-lift) + env(safe-area-inset-bottom));
   z-index: 4;
   width: calc(var(--sv-sp) * var(--sv-s) * .82);
   height: calc(var(--sv-sp) * var(--sv-s) * .82);
@@ -6782,12 +6743,12 @@ body.no-scroll .reward-toasts {
 @media (prefers-reduced-motion: reduce) { .survivor-charge-button.is-rush { animation: none; } }
 /* Com o Pular empilhado acima do Especial, a carga sobe mais um degrau. */
 .survivor-stage.btn-pilha .survivor-charge-button {
-  bottom: calc(var(--sv-sp-b) + var(--sv-sp) * var(--sv-s) + var(--sv-ju) * var(--sv-s) + var(--sv-gap) * 2 + env(safe-area-inset-bottom));
+  bottom: calc(var(--sv-sp-b) + var(--sv-sp) * var(--sv-s) + var(--sv-ju) * var(--sv-s) + var(--sv-gap) * 2 + var(--sv-lift) + env(safe-area-inset-bottom));
 }
 .survivor-jump-button {
   position: absolute;
   right: calc(var(--sv-edge) + var(--sv-sp) * var(--sv-s) + var(--sv-gap) + env(safe-area-inset-right));
-  bottom: calc(var(--sv-ju-b) + env(safe-area-inset-bottom));
+  bottom: calc(var(--sv-ju-b) + var(--sv-lift) + env(safe-area-inset-bottom));
   z-index: 4;
   width: calc(var(--sv-ju) * var(--sv-s));
   height: calc(var(--sv-ju) * var(--sv-s));
@@ -6832,16 +6793,31 @@ body.no-scroll .reward-toasts {
 /* Empilhados: o Pular sobe para cima do Especial, os dois junto da borda. */
 .survivor-stage.btn-pilha .survivor-jump-button {
   right: calc(var(--sv-edge) + env(safe-area-inset-right));
-  bottom: calc(var(--sv-sp-b) + var(--sv-sp) * var(--sv-s) + var(--sv-gap) + env(safe-area-inset-bottom));
+  bottom: calc(var(--sv-sp-b) + var(--sv-sp) * var(--sv-s) + var(--sv-gap) + var(--sv-lift) + env(safe-area-inset-bottom));
 }
 /* Trocados: o Pular fica no canto e o Especial ao lado dele. */
 .survivor-stage.btn-troca .survivor-jump-button {
   right: calc(var(--sv-edge) + env(safe-area-inset-right));
-  bottom: calc(var(--sv-sp-b) + env(safe-area-inset-bottom));
+  bottom: calc(var(--sv-sp-b) + var(--sv-lift) + env(safe-area-inset-bottom));
 }
 .survivor-stage.btn-troca .survivor-special-button {
   right: calc(var(--sv-edge) + var(--sv-ju) * var(--sv-s) + var(--sv-gap) + env(safe-area-inset-right));
-  bottom: calc(var(--sv-ju-b) + env(safe-area-inset-bottom));
+  bottom: calc(var(--sv-ju-b) + var(--sv-lift) + env(safe-area-inset-bottom));
+}
+/* Canhoto: espelha as ações para a esquerda; o deslocamento vertical livra o D-pad universal em paisagem. */
+.survivor-stage { --sv-left: calc(var(--sv-edge) + env(safe-area-inset-left)); }
+.survivor-stage.hand-left .survivor-special-button,
+.survivor-stage.hand-left .survivor-charge-button,
+.survivor-stage.hand-left .survivor-auto-charge { right: auto; left: var(--sv-left); }
+.survivor-stage.hand-left .survivor-second-charge,
+.survivor-stage.hand-left .survivor-jump-button { right: auto; left: calc(var(--sv-left) + var(--sv-sp) * var(--sv-s) + var(--sv-gap)); }
+.survivor-stage.hand-left.btn-pilha .survivor-jump-button { left: var(--sv-left); bottom: calc(var(--sv-sp-b) + var(--sv-sp) * var(--sv-s) + var(--sv-gap) + var(--sv-lift) + env(safe-area-inset-bottom)); }
+.survivor-stage.hand-left.btn-troca .survivor-jump-button { left: var(--sv-left); bottom: calc(var(--sv-sp-b) + var(--sv-lift) + env(safe-area-inset-bottom)); }
+.survivor-stage.hand-left.btn-troca .survivor-special-button { left: calc(var(--sv-left) + var(--sv-ju) * var(--sv-s) + var(--sv-gap)); bottom: calc(var(--sv-ju-b) + var(--sv-lift) + env(safe-area-inset-bottom)); }
+.survivor-stage.hand-left .survivor-attack-switch { right: calc(8px + env(safe-area-inset-right)); left: auto; }
+/* Os controles universais só aparecem em paisagem baixa; sobe as ações para não ficarem atrás deles. */
+@media (orientation: landscape) and (max-height: 900px) {
+  .survivor-stage { --sv-lift: calc(var(--nav-height) + 14px + clamp(112px, 26vh, 148px) + 14px); }
 }
 /* Ajuda e botões na pausa. */
 .survivor-help { margin: 8px 0; text-align: left; }
@@ -6926,6 +6902,46 @@ body.no-scroll .reward-toasts {
 @keyframes shadow-boss-rise { from { opacity: 0; transform: translateY(-28px) scale(.55); } to { opacity: 1; transform: translateY(0) scale(1); } }
 @keyframes shadow-flame-ring { from { transform: rotate(-8deg) scale(.86); opacity: .48; } to { transform: rotate(10deg) scale(1.1); opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { .shadow-boss-arrival::before, .shadow-boss-arrival::after, .shadow-boss-arrival img { animation: none; } }
+/* Arceus: cutscene do Perigo Digital no limite — ouro, peso e aviso de julgamento. */
+.survivor-arceus-cutscene { z-index: 95; background: radial-gradient(circle at 50% 38%, #4c3d12f2, #070810fa 72%); }
+/* A cutscene é modal: os controles do aplicativo não podem ficar por cima dela. */
+body:has(.survivor-arceus-cutscene) .universal-controls,
+body:has(.survivor-shadow-cutscene) .universal-controls { opacity: 0; pointer-events: none; }
+.arceus-card { width: min(100%, 380px); padding: 16px 18px; border: 2px solid #ffe066; border-radius: 12px; background: #101521f2; box-shadow: 0 0 64px #ffd94a88, 2px 2px 0 #303839; text-align: center; animation: arceus-card-in 420ms cubic-bezier(.18,.82,.25,1) both; }
+.arceus-kicker { margin: 0 0 4px; color: #ffe066; font-size: .62rem; font-weight: 900; letter-spacing: .16em; }
+.arceus-portrait { position: relative; display: grid; min-height: 154px; place-items: center; isolation: isolate; }
+.arceus-portrait::before { position: absolute; z-index: -1; width: 138px; height: 138px; border: 3px solid #ffe066; border-radius: 50%; content: ''; box-shadow: 0 0 34px #ffd94aaa, inset 0 0 28px #ffd94a55; animation: arceus-halo 1.1s ease-in-out infinite alternate; }
+.arceus-portrait::after { position: absolute; z-index: -1; width: 178px; height: 178px; border: 2px dashed #ffb02e; border-radius: 50%; content: ''; animation: arceus-orbit 7s linear infinite; }
+.arceus-portrait img { height: 146px; max-width: 220px; object-fit: contain; image-rendering: var(--game-image-rendering, pixelated); filter: drop-shadow(0 0 18px #ffe066); animation: arceus-descend 900ms cubic-bezier(.18,.82,.25,1) both; }
+.arceus-portrait > span { color: #ffe066; font-size: 1.9rem; font-weight: 900; letter-spacing: .2em; }
+.arceus-card h2 { margin: 2px 0 6px; color: #fff7cc; font-size: 1.55rem; line-height: 1.05; letter-spacing: .03em; text-shadow: 0 2px 0 #4a2a08, 0 0 20px #ffd94a66; }
+.arceus-card p { margin: 0 0 9px; color: #f6efd5; font-size: .82rem; line-height: 1.35; }
+.arceus-warning { display: inline-flex; align-items: center; gap: 6px; margin: 2px 0 7px; padding: 6px 13px; border: 1px solid #ffb02e; border-radius: 999px; background: #3b1b0c; color: #ffd76a; font-size: .76rem; font-weight: 900; letter-spacing: .08em; animation: arceus-warning-pulse .62s ease-in-out infinite alternate; }
+.arceus-card > small { display: block; color: #cdbb8c; font-size: .7rem; }
+.survivor-arceus-cutscene.reduced-motion .arceus-card,
+.survivor-arceus-cutscene.reduced-motion .arceus-portrait::before,
+.survivor-arceus-cutscene.reduced-motion .arceus-portrait::after,
+.survivor-arceus-cutscene.reduced-motion .arceus-portrait img,
+.survivor-arceus-cutscene.reduced-motion .arceus-warning { animation: none; }
+@keyframes arceus-card-in { from { opacity: 0; transform: scale(.94); } }
+@keyframes arceus-descend { from { opacity: 0; transform: translateY(-42px) scale(.7); } }
+@keyframes arceus-halo { to { transform: scale(1.12); box-shadow: 0 0 48px #ffd94acc, inset 0 0 36px #ffd94a88; } }
+@keyframes arceus-orbit { to { transform: rotate(360deg); } }
+@keyframes arceus-warning-pulse { to { transform: scale(1.06); background: #5a270b; box-shadow: 0 0 18px #ff9b3a88; } }
+@media (prefers-reduced-motion: reduce) {
+  .arceus-card, .arceus-portrait::before, .arceus-portrait::after, .arceus-portrait img, .arceus-warning { animation: none; }
+}
+@media (orientation: landscape) and (max-height: 700px) {
+  .arceus-card { padding: 10px 14px; }
+  .arceus-portrait { min-height: 104px; }
+  .arceus-portrait img { height: 98px; }
+  .arceus-portrait::before { width: 96px; height: 96px; }
+  .arceus-portrait::after { width: 126px; height: 126px; }
+  .arceus-card h2 { font-size: 1.2rem; }
+  .arceus-card p { font-size: .74rem; margin-bottom: 5px; }
+  .arceus-warning { margin: 1px 0 4px; padding: 4px 10px; font-size: .68rem; }
+  .arceus-card > small { font-size: .64rem; }
+}
 
 .survivor-trainer-intro {
   position: absolute;
@@ -8457,10 +8473,8 @@ body.no-scroll .reward-toasts {
 .survivor-stats .survivor-action-dock { margin-left: auto; }
 .survivor-gameplay .survivor-xp-bar { height: 13px; }
 .survivor-gameplay .survivor-xp-bar span { font-size: .6rem; line-height: 9px; }
-.survivor-focus-actions button small { font-size: .62rem; }
 /* Os controles recebem a mesma moldura do HUD e mantêm destaque claro ao toque. */
-.survivor-gameplay .survivor-action-dock .chip:focus-visible,
-.survivor-gameplay .survivor-focus-actions button:focus-visible {
+.survivor-gameplay .survivor-action-dock .chip:focus-visible {
   outline: 3px solid #ffe08a;
   outline-offset: 2px;
 }
@@ -8519,13 +8533,13 @@ body.no-scroll .reward-toasts {
 
 .survivor-auto-charge {
   position: absolute; z-index: 4; right: calc(var(--sv-edge) + env(safe-area-inset-right));
-  bottom: calc(var(--sv-sp-b) + var(--sv-sp) * var(--sv-s) * 1.82 + var(--sv-gap) + 5px + env(safe-area-inset-bottom));
+  bottom: calc(var(--sv-sp-b) + var(--sv-sp) * var(--sv-s) * 1.82 + var(--sv-gap) + 5px + var(--sv-lift) + env(safe-area-inset-bottom));
   min-width: 56px; min-height: 32px; border: 2px solid #555b58; border-radius: 12px;
   background: #f5f3dc; color: #252d30; font-weight: bold; touch-action: manipulation;
 }
 .survivor-auto-charge.is-on { background: #b4e589; }
 .survivor-stage.btn-pilha .survivor-auto-charge {
-  bottom: calc(var(--sv-sp-b) + var(--sv-sp) * var(--sv-s) * 1.82 + var(--sv-ju) * var(--sv-s) + var(--sv-gap) * 2 + 5px + env(safe-area-inset-bottom));
+  bottom: calc(var(--sv-sp-b) + var(--sv-sp) * var(--sv-s) * 1.82 + var(--sv-ju) * var(--sv-s) + var(--sv-gap) * 2 + 5px + var(--sv-lift) + env(safe-area-inset-bottom));
 }
 
 /* Fabricar: cada ingrediente com ícone e quantidade, verde quando tem, dourado quando dá para fabricar o que falta. */
@@ -8841,7 +8855,7 @@ body.no-scroll .reward-toasts {
 /* Troca de golpe e ação independente para o segundo golpe simultâneo. */
 .survivor-attack-switch {
   position: absolute; z-index: 4; left: calc(8px + env(safe-area-inset-left));
-  bottom: calc(56px + env(safe-area-inset-bottom)); max-width: 165px; min-height: 40px;
+  bottom: calc(56px + var(--sv-lift) + env(safe-area-inset-bottom)); max-width: 165px; min-height: 40px;
   display: grid; padding: 4px 8px; border: 2px solid var(--move); border-radius: 5px;
   background: #303c3d; color: #fff; box-shadow: 2px 2px 0 #171d1d; touch-action: manipulation;
 }
@@ -8877,6 +8891,8 @@ body.no-scroll .reward-toasts {
 .survivor-boss-bar i b { display: block; height: 100%; background: linear-gradient(90deg, #dc4556, #ffb04a); }
 .survivor-boss-bar.shadow { border-color: #8a55c0; }
 .survivor-boss-bar.shadow i b { background: linear-gradient(90deg, #7d35ca, #d68cff); }
+.survivor-boss-bar.arceus { border-color: #ffe066; box-shadow: 2px 2px 0 #303839, 0 0 14px #ffd94a66; }
+.survivor-boss-bar.arceus i b { background: linear-gradient(90deg, #ffe066, #ff9b3a); }
 .survivor-boss-bar.low i b { animation: survivor-boss-low .7s ease-in-out infinite alternate; }
 @keyframes survivor-boss-low { to { filter: brightness(1.5); } }
 

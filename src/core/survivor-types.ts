@@ -235,6 +235,9 @@ export const DIGITAL_DANGER_MAX = 100;
 /** Depois da convocação, há quatro minutos para a corrida respirar. */
 export const DIGITAL_DANGER_COOLDOWN_MS = 240_000;
 export const DIGITAL_DANGER_VISIBLE_RADIUS = 520;
+/** Arceus é o superboss do Perigo Digital: entra uma vez por corrida, com cutscene longa e stats próprios. */
+export const SURVIVOR_ARCEUS_DEX = 493;
+export const SURVIVOR_ARCEUS_CUTSCENE_MS = 4200;
 
 /** Grau do inimigo: `comum` (os de sempre), `elite` (do treinador do minuto 5+) e `chefao` (do 20º minuto e do infinito). */
 export type SurvivorEnemyGrade = 'comum' | 'elite' | 'chefao';
@@ -245,6 +248,8 @@ export interface SurvivorEnemy {
   /** Caiu pelo Golpe Supremo: não recarrega o medidor. */
   supremeHit?: boolean;
   digitalThreat?: boolean;
+  /** Arceus do Perigo Digital: boss único, com aura própria e cutscene de chegada. */
+  arceus?: boolean;
   /** Próximo pulso da Trilha neste inimigo, no relógio da corrida. */
   trailNextHitMs?: number;
   alternateTrailNextHitMs?: number;
@@ -568,6 +573,11 @@ export interface SurvivorState {
   digitalDanger: number;
   /** Recarga após uma convocação automática de treinador. */
   digitalDangerCooldownMs: number;
+  /** Arceus: a primeira vez que o medidor enche vira este encontro; depois, os reforços digitais normais. */
+  arceusEncounter: {
+    phase: 'idle' | 'arrival' | 'battle' | 'defeated';
+    arrivalMs: number;
+  };
   /** Encontro opcional a partir dos 13 min: a cutscene pausa a Torre antes do lendário entrar. */
   shadowEncounter: {
     phase: 'idle' | 'available' | 'arrival' | 'battle';
@@ -854,6 +864,8 @@ export type SurvivorEvent =
   | { type: 'shadowBallSpawn'; dexId: number; name: string }
   | { type: 'shadowBossArrival'; dexId: number; name: string }
   | { type: 'shadowBossDefeated'; dexId: number; name: string; trustStones: number }
+  | { type: 'arceusArrival'; dexId: number; name: string }
+  | { type: 'arceusDefeated'; dexId: number; name: string }
   | { type: 'fieldEventSpawn'; kind: SurvivorFieldEventKind; x: number; y: number; remainingMs: number }
   | { type: 'fieldEventStarted'; kind: SurvivorFieldEventKind }
   | { type: 'fieldEventComplete'; kind: SurvivorFieldEventKind }

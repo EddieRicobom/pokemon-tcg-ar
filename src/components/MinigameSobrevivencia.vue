@@ -706,25 +706,20 @@ let bonkFacing: -1 | 1 = 1;
 const guardian = computed(() => state.value ? SPECIAL_GUARDIANS[state.value.special.type] : null);
 const chosenSpecial = computed(() => state.value?.special.selected ? SURVIVOR_SPECIALS[state.value.special.selected] : null);
 const timeStopped = computed(() => state.value?.special.selected === 'stasis' && (state.value.special.activeMs ?? 0) > 0);
-const targetPriority = computed(() => state.value?.player.targetPriority ?? null);
-const TARGET_FOCUS = [
-  { id: 'boss', icon: '👑', label: 'Chefões', short: 'Chefe', description: 'Prioriza chefões e Pokémon de treinadores.' },
-  { id: 'healer', icon: '♥', label: 'Curadores', short: 'Cura', description: 'Prioriza suportes que curam aliados.' },
-  { id: 'lowest-hp', icon: '▾', label: 'Menor vida', short: 'Fraco', description: 'Prioriza o inimigo com menor porcentagem de vida.' },
-] as const;
-function setTargetPriority(priority: typeof TARGET_FOCUS[number]['id']): void {
-  const s = state.value;
-  if (!s) return;
-  s.player.targetPriority = s.player.targetPriority === priority ? undefined : priority;
-  triggerRef(state);
-  const selected = TARGET_FOCUS.find((option) => option.id === s.player.targetPriority);
-  say(selected ? `🎯 Foco: ${selected.label}.` : '🎯 Foco automático: inimigo mais próximo.', 1800);
-}
 const specialModalOpen = computed(() => {
   const phase = state.value?.special.phase;
   return phase === 'arrival' || phase === 'choice' || phase === 'branch-arrival' || phase === 'branch-choice';
 });
 const shadowCutsceneOpen = computed(() => state.value?.shadowEncounter.phase === 'arrival');
+const arceusCutsceneOpen = computed(() => state.value?.arceusEncounter.phase === 'arrival');
+/** Qualquer cutscene que congela a Torre: sombrio ou Arceus. */
+const cutsceneOpen = computed(() => shadowCutsceneOpen.value || arceusCutsceneOpen.value);
+watch(arceusCutsceneOpen, (open, wasOpen) => {
+  if (!wasOpen || open) return;
+  playSound('survivor-boss');
+  cinemaBeat(CINEMA_BEATS.bossEntrance);
+  say('⚡ ARCEUS DESCEU. O Julgamento começou — ele não vai recuar.', 6200);
+});
 /** Pontos do gráfico do resumo: derrotas (ou nível) contra o tempo, na área de 20..290 × 18..90. */
 function timelinePoints(sum: SurvivorSummary, key: 'kills' | 'level', area = false): string {
   const line = sum.timeline ?? [];
@@ -766,9 +761,11 @@ const thiefHud = computed(() => {
   return `🐾 Ladrão ${direction} · ${Math.ceil((s.thief?.leftMs ?? 0) / 1000)}s`;
 });
 const specialBranchOptions = computed(() => state.value?.special.selected ? SURVIVOR_SPECIAL_BRANCHES[state.value.special.selected] : []);
-const specialBlocked = computed(() => !state.value || state.value.over || paused.value || shadowCutsceneOpen.value || !!pendingUpgrade.value || !!blackChestOffer.value || !!evolving.value || state.value.special.phase !== 'ready');
+const specialBlocked = computed(() => !state.value || state.value.over || paused.value || cutsceneOpen.value || !!pendingUpgrade.value || !!blackChestOffer.value || !!evolving.value || state.value.special.phase !== 'ready');
 const guardianSprite = ref<string | null>(null);
 const shadowBossSprite = ref<string | null>(null);
+/** Retrato do Arceus na cutscene do Perigo Digital. */
+const arceusSprite = ref<string | null>(null);
 let specialQueued = false;
 /** Botão de carga (Foco e Teleporte) apertado agora; o motor lê se está segurado a cada passo. */
 const chargeHeld = ref(false);
@@ -899,13 +896,15 @@ const bossBar = computed(() => {
   if (!s) return null;
   const bosses = s.enemies.filter((enemy) => enemy.hp > 0 && (enemy.boss || enemy.grade === 'chefao' || enemy.shadowBoss));
   if (!bosses.length) return null;
-  const target = bosses.reduce((best, enemy) => Math.hypot(enemy.x - s.player.x, enemy.y - s.player.y) < Math.hypot(best.x - s.player.x, best.y - s.player.y) ? enemy : best, bosses[0]!);
+  const arceus = bosses.find((enemy) => enemy.arceus);
+  const target = arceus ?? bosses.reduce((best, enemy) => Math.hypot(enemy.x - s.player.x, enemy.y - s.player.y) < Math.hypot(best.x - s.player.x, best.y - s.player.y) ? enemy : best, bosses[0]!);
   return {
     name: target.dexId ? speciesName(target.dexId) : 'Chefe',
     pct: Math.max(0, Math.min(100, (target.hp / Math.max(1, target.maxHp)) * 100)),
     hp: Math.max(0, Math.ceil(target.hp)),
     maxHp: Math.ceil(target.maxHp),
     shadow: target.shadowBoss === true,
+    arceus: target.arceus === true,
   };
 });
 /** Aviso curto do ataque-assinatura do chefe; o desenho no chão mostra a área exata. */
@@ -929,7 +928,7 @@ function cinemaBeat(beat: CinemaBeat): void {
 }
 let supremeQueued = false;
 const supremeDef = computed(() => (state.value ? SURVIVOR_SUPREMES[survivorSupremeType(state.value)] : null));
-const supremeBlocked = computed(() => !state.value || state.value.over || paused.value || shadowCutsceneOpen.value || !!pendingUpgrade.value || !!blackChestOffer.value || !!evolving.value || specialModalOpen.value);
+const supremeBlocked = computed(() => !state.value || state.value.over || paused.value || cutsceneOpen.value || !!pendingUpgrade.value || !!blackChestOffer.value || !!evolving.value || specialModalOpen.value);
 function queueSupreme(): void {
   if (supremeBlocked.value || (state.value?.supreme.meter ?? 0) < 1) return;
   unlockSound();
@@ -977,26 +976,30 @@ const helpOpen = ref(false);
 /** Botões Pular e Especial: tamanho e arranjo ajustáveis para uso com dois polegares (ficam guardados no aparelho). */
 type ButtonSize = 'p' | 'm' | 'g';
 type ButtonLayout = 'lado' | 'pilha' | 'troca';
+type Handedness = 'right' | 'left';
 const BUTTONS_KEY = 'tcg-ar-survivor-buttons-v1';
 const BUTTON_SCALE: Record<ButtonSize, number> = { p: 0.85, m: 1, g: 1.2 };
 const BUTTON_SIZE_LABELS: Record<ButtonSize, string> = { p: 'Pequenos', m: 'Médios', g: 'Grandes' };
 const BUTTON_LAYOUT_LABELS: Record<ButtonLayout, string> = { lado: 'Lado a lado', pilha: 'Empilhados', troca: 'Trocados' };
-function readButtons(): { size: ButtonSize; layout: ButtonLayout } {
+const HAND_LABELS: Record<Handedness, string> = { right: 'Destro', left: 'Canhoto' };
+function readButtons(): { size: ButtonSize; layout: ButtonLayout; hand: Handedness } {
   try {
-    const raw = JSON.parse(localStorage.getItem(BUTTONS_KEY) ?? 'null') as { size?: string; layout?: string } | null;
+    const raw = JSON.parse(localStorage.getItem(BUTTONS_KEY) ?? 'null') as { size?: string; layout?: string; hand?: string } | null;
     return {
       size: raw?.size === 'p' || raw?.size === 'g' ? raw.size : 'm',
       layout: raw?.layout === 'pilha' || raw?.layout === 'troca' ? raw.layout : 'lado',
+      hand: raw?.hand === 'left' ? 'left' : 'right',
     };
   } catch {
-    return { size: 'm', layout: 'lado' };
+    return { size: 'm', layout: 'lado', hand: 'right' };
   }
 }
 const savedButtons = readButtons();
 const buttonSize = ref<ButtonSize>(savedButtons.size);
 const buttonLayout = ref<ButtonLayout>(savedButtons.layout);
-watch([buttonSize, buttonLayout], () => {
-  try { localStorage.setItem(BUTTONS_KEY, JSON.stringify({ size: buttonSize.value, layout: buttonLayout.value })); } catch { /* armazenamento indisponível */ }
+const handedness = ref<Handedness>(savedButtons.hand);
+watch([buttonSize, buttonLayout, handedness], () => {
+  try { localStorage.setItem(BUTTONS_KEY, JSON.stringify({ size: buttonSize.value, layout: buttonLayout.value, hand: handedness.value })); } catch { /* armazenamento indisponível */ }
 });
 function openHelp(): void {
   if (!paused.value) togglePause();
@@ -1510,7 +1513,7 @@ function onKey(e: KeyboardEvent): void {
 }
 
 function canUseGamepadInRun(): boolean {
-  return ready.value && !!state.value && !state.value.over && !paused.value && !shadowCutsceneOpen.value
+  return ready.value && !!state.value && !state.value.over && !paused.value && !cutsceneOpen.value
     && !summary.value && !pickOptions.value && !pendingUpgrade.value && !blackChestOffer.value && !evolving.value
     && !specialModalOpen.value && !leaveConfirm.value && !debugOpen.value && !activeSurvivorDialog();
 }
@@ -1581,7 +1584,7 @@ function onGamepadMenu(event: Event): void {
 
 function joyDown(e: PointerEvent): void {
   if (finishRunOutro()) return;
-  if (e.button !== 0 || joystick.active || paused.value || shadowCutsceneOpen.value || !ready.value || summary.value || pickOptions.value || specialModalOpen.value || upgradeDialogOpen.value) return;
+  if (e.button !== 0 || joystick.active || paused.value || cutsceneOpen.value || !ready.value || summary.value || pickOptions.value || specialModalOpen.value || upgradeDialogOpen.value) return;
   // Botões das cartas (escolha, upgrades, resumo) continuam sendo botões: o joystick não pega esse toque.
   if ((e.target as HTMLElement | null)?.closest?.('button, .card')) return;
   unlockSound();
@@ -2031,7 +2034,7 @@ function drawEnemy(e: SurvivorEnemy): void {
   }
   // Grau: elite com anel dourado, chefão (do treinador) com anel vermelho — ajuda a reconhecer na correria.
   if (e.grade !== 'comum') {
-    ctx.strokeStyle = e.digitalThreat ? '#d35cff' : e.grade === 'chefao' ? '#e8453c' : '#ffd84a';
+    ctx.strokeStyle = e.arceus ? '#ffe066' : e.digitalThreat ? '#d35cff' : e.grade === 'chefao' ? '#e8453c' : '#ffd84a';
     ctx.lineWidth = e.grade === 'chefao' ? 3 : 2;
     ctx.beginPath();
     ctx.arc(e.x, e.y, (e.grade === 'chefao' ? 22 : 18), 0, Math.PI * 2);
@@ -2208,7 +2211,7 @@ function drawBonkEnemy(e: SurvivorEnemy, x: number, y: number, scale: number): v
   if (e.shadowBoss) drawShadowFlames(x, y, 20 * size);
   if (e.grade !== 'comum') {
     ctx.save();
-    ctx.strokeStyle = e.digitalThreat ? '#d35cff' : e.grade === 'chefao' ? '#ff6e73' : '#ffd84a';
+    ctx.strokeStyle = e.arceus ? '#ffe066' : e.digitalThreat ? '#d35cff' : e.grade === 'chefao' ? '#ff6e73' : '#ffd84a';
     ctx.lineWidth = Math.max(1, scale * 1.8);
     ctx.beginPath();
     ctx.ellipse(x, y, 16 * size, 5 * size, 0, 0, Math.PI * 2);
@@ -3973,6 +3976,18 @@ function loop(ts: number): void {
         playSound('success');
         say(`💠 Pedra da Confiança assegurada (${ev.trustStones}/5). Conclua a corrida para guardá-la.`, 6500);
       }
+      else if (ev.type === 'arceusArrival') {
+        playSound('survivor-boss');
+        heldKeys.clear(); joyUp(); cancelCharge(); specialQueued = false; supremeQueued = false;
+        arceusSprite.value = null;
+        void loadSpriteOrNull(ev.dexId).then((sprite) => {
+          arceusSprite.value = firstSpriteFrame(sprite)?.toDataURL() ?? null;
+        }).catch(() => { /* a cutscene funciona sem o retrato */ });
+      }
+      else if (ev.type === 'arceusDefeated') {
+        playSound('success');
+        say('⚡ ARCEUS DERROTADO! O julgamento foi interrompido — a ameaça digital recua.', 7000);
+      }
       else if (ev.type === 'chargeRelease') {
         playSound(ev.style === 'rapido' ? 'survivor-level' : 'survivor-shot');
         if (ev.style === 'teleporte') say(ev.level >= 1 ? '» Onda total: inimigos afastados!' : '» Teleporte carregado!', 2200);
@@ -4167,7 +4182,7 @@ function reopenDeferredUpgrade(): boolean {
 }
 
 function togglePause(): void {
-  if (!state.value || state.value.over || summary.value || pendingUpgrade.value || evolving.value || trainerPresentation.value) return;
+  if (!state.value || state.value.over || summary.value || pendingUpgrade.value || evolving.value || trainerPresentation.value || cutsceneOpen.value) return;
   autoPaused.value = false;
   paused.value = !paused.value;
   if (paused.value) cancelCharge();
@@ -4264,7 +4279,7 @@ function requestBack(): void {
   if (hudExpanded.value) { toggleHudMenu(); return; }
   if (summary.value) { playAgain(); return; }
   // Escolhas que alteram a corrida não podem ser descartadas pelo botão Voltar.
-  if (pickOptions.value || noCompanion.value || pendingUpgrade.value || typeAffinityOffer.value || shadowCutsceneOpen.value || specialModalOpen.value) return;
+  if (pickOptions.value || noCompanion.value || pendingUpgrade.value || typeAffinityOffer.value || cutsceneOpen.value || specialModalOpen.value) return;
   if (paused.value) { togglePause(); return; }
   // Durante a corrida, Voltar abre a pausa; outro Voltar retoma.
   if (ready.value && state.value) togglePause();
@@ -4457,6 +4472,7 @@ async function beginRun(dexId: number, name: string, picked?: PokemonType, infin
     announcedRegion = survivorRegionLabel(0, state.value.runSeed);
     guardianSprite.value = null;
     shadowBossSprite.value = null;
+    arceusSprite.value = null;
     specialQueued = false;
     chargePointerId = null;
     chargeHeld.value = false;
@@ -4864,7 +4880,7 @@ onBeforeUnmount(() => {
       <div
         ref="stageEl"
         class="survivor-stage"
-        :class="[{ 'survivor-stage-picker': pickOptions }, `btn-${buttonLayout}`]"
+        :class="[{ 'survivor-stage-picker': pickOptions, 'hand-left': handedness === 'left' }, `btn-${buttonLayout}`]"
         :style="{ '--move': state?.player.move.color ?? '#ffd84a', '--sv-s': BUTTON_SCALE[buttonSize] }"
         @pointerdown="joyDown"
         @pointermove="joyMove"
@@ -4877,12 +4893,6 @@ onBeforeUnmount(() => {
         <div class="survivor-vignette" aria-hidden="true"></div>
         <div v-if="damageFeedback" class="survivor-damage-flash" aria-hidden="true"></div>
         <div v-if="timeStopped" class="survivor-stasis-overlay" aria-hidden="true"><span>⏸ TEMPO PARADO</span></div>
-
-        <div v-if="ready && state && !summary && !pendingUpgrade && !evolving && !leaveConfirm && !specialModalOpen" class="survivor-focus-actions" role="group" aria-label="Foco do ataque automático">
-          <button v-for="option in TARGET_FOCUS" :key="option.id" type="button" :class="{ active: targetPriority === option.id }" :aria-pressed="targetPriority === option.id" :aria-label="`Foco: ${option.label}. ${option.description}`" :title="option.description" @pointerdown.stop.prevent @click.stop="setTargetPriority(option.id)">
-            <span aria-hidden="true">{{ option.icon }}</span><small aria-hidden="true">{{ option.short }}</small>
-          </button>
-        </div>
 
         <button v-if="ready && state && playerAttacks && !playerAttacks.simultaneous && !summary && !pendingUpgrade && !evolving && !leaveConfirm && !specialModalOpen"
           type="button" class="survivor-attack-switch" :style="{ '--move': state.player.move.color }"
@@ -4947,7 +4957,7 @@ onBeforeUnmount(() => {
               <button type="button" class="chip survivor-menu-btn" :aria-label="hudExpanded ? 'Fechar menu da Torre e retomar' : 'Abrir menu da Torre: pausa, informações e opções'" :title="hudExpanded ? 'Fechar menu da Torre e retomar' : 'Abrir menu da Torre: pausa, informações e opções'" :aria-expanded="hudExpanded" aria-controls="survivor-info-panel" @pointerdown.stop @click.stop="toggleHudMenu">{{ hudExpanded ? '✕ Fechar' : '☰ Menu' }}</button>
             </span>
           </div>
-          <div v-if="bossBar" class="survivor-boss-bar" :class="{ shadow: bossBar.shadow, low: bossBar.pct < 25 }" role="status" aria-label="Vida do chefe">
+          <div v-if="bossBar" class="survivor-boss-bar" :class="{ shadow: bossBar.shadow, arceus: bossBar.arceus, low: bossBar.pct < 25 }" role="status" aria-label="Vida do chefe">
             <span><b>{{ bossBar.name }}</b><small>{{ bossBar.hp }}/{{ bossBar.maxHp }}</small></span>
             <i><b :style="{ width: `${bossBar.pct}%` }" /></i>
           </div>
@@ -5086,6 +5096,10 @@ onBeforeUnmount(() => {
               <div class="survivor-mode" role="group" aria-label="Posição dos botões">
                 <button v-for="layout in (['lado', 'pilha', 'troca'] as const)" :key="layout" type="button" :class="{ active: buttonLayout === layout }" :aria-pressed="buttonLayout === layout" @pointerdown.stop @click.stop="buttonLayout = layout">{{ BUTTON_LAYOUT_LABELS[layout] }}</button>
               </div>
+              <div class="survivor-mode" role="group" aria-label="Mão dos botões">
+                <button v-for="hand in (['right', 'left'] as const)" :key="hand" type="button" :class="{ active: handedness === hand }" :aria-pressed="handedness === hand" @pointerdown.stop @click.stop="handedness = hand">{{ HAND_LABELS[hand] }}</button>
+              </div>
+              <small>Destro deixa as ações à direita; Canhoto espelha os botões para a esquerda. Arraste em qualquer lugar da arena para andar.</small>
               <small>Empilhados deixa os dois mais perto da borda; Trocados põe o Pular no canto e o Especial ao lado.</small>
             </section>
             </div>
@@ -5389,6 +5403,20 @@ onBeforeUnmount(() => {
             <p class="guardian-title">LENDÁRIO SOMBRIO · sorteado nesta Pokébola</p>
             <h2>{{ state.shadowEncounter.name }} atravessa a fenda</h2>
             <p role="status">A arena está congelada por um instante. Derrote-o para assegurar uma Pedra da Confiança; ela entra no inventário ao concluir a corrida.</p>
+          </div>
+        </div>
+
+        <div v-if="ready && state && arceusCutsceneOpen && !leaveConfirm" class="survivor-overlay survivor-arceus-cutscene" :class="{ 'reduced-motion': !detailedSpecialEffects }" role="dialog" aria-modal="true" aria-label="Arceus desperta: julgamento iminente" @pointerdown.stop>
+          <div class="arceus-card">
+            <p class="arceus-kicker">MEDIDOR DE AMEAÇA DIGITAL NO LIMITE</p>
+            <div class="arceus-portrait" aria-hidden="true">
+              <img v-if="arceusSprite" :src="arceusSprite" alt="" />
+              <span v-else>◈</span>
+            </div>
+            <h2>ARCEUS DESPERTOU</h2>
+            <p>O Pokémon Alfa desceu sobre a Torre. O ar ficou pesado e o chão, dourado.</p>
+            <div class="arceus-warning" role="status"><span aria-hidden="true">⚡</span> JULGAMENTO IMINENTE</div>
+            <small>Não há fuga. Derrote-o para interromper a ameaça digital.</small>
           </div>
         </div>
 
