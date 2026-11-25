@@ -48,7 +48,7 @@ import {
   ADAPTIVE_START, adaptiveTarget, applyLevelBonus, damageRanking, damageTakenRanking, emptyRunStats, LEVEL_BONUS_TEXT, recordDamage, recordDamageTaken, sampleTimeline, stepAdaptive,
   SURVIVOR_THIEF_DEX, SURVIVOR_THIEF_EVERY_MS, SURVIVOR_THIEF_FIRST_MS, SURVIVOR_THIEF_LIFE_MS, SURVIVOR_THIEF_SPEED, thiefFleeTarget, thiefReward,
 } from './survivor-extras';
-import { ARENA_H, ARENA_W, DIGITAL_DANGER_COOLDOWN_MS, DIGITAL_DANGER_MAX, DIGITAL_DANGER_UNLOCK_MS, DIGITAL_DANGER_VISIBLE_RADIUS, MAGNET_PICKUP_RADIUS_CAP, MAX_DIGITAL_POKEBALLS_PER_RUN, MAX_SURVIVOR_SUPPORTS, PICKUP_RADIUS, PLAYER_RADIUS, SPAWN_MARGIN, SURVIVOR_ARCEUS_CUTSCENE_MS, SURVIVOR_ARCEUS_DEX, SURVIVOR_FIELD_EVENT_BEACON_MS, SURVIVOR_FIELD_EVENT_EVERY_MS, SURVIVOR_FIELD_EVENT_FIRST_MS, SURVIVOR_FIELD_EVENT_HUNT_MS, SURVIVOR_FIELD_EVENT_REACH_RADIUS, SURVIVOR_LOVE_CANDY_MS, SURVIVOR_OMEGA_SHARD_MS, SURVIVOR_SHADOW_BALL_EVERY_MS, SURVIVOR_SHADOW_BALL_FIRST_MS, SURVIVOR_SHADOW_BALL_MAX_PER_RUN, SURVIVOR_SHADOW_CUTSCENE_MS, SURVIVOR_SPAWN_DISTANCE, SURVIVOR_SUPPORT_EVOLUTION_OFFER_CHANCE, SURVIVOR_SUPPORT_RARE_OFFER_CHANCE, SURVIVOR_TRUST_STONE_MS, SURVIVOR_UPGRADE_RARITIES, SURVIVOR_FAST_TRAINER_COIN_SCALE, survivorMilestoneMs } from './survivor-types';
+import { ARENA_H, ARENA_W, DIGITAL_DANGER_COOLDOWN_MS, DIGITAL_DANGER_MAX, DIGITAL_DANGER_UNLOCK_MS, DIGITAL_DANGER_VISIBLE_RADIUS, MAGNET_PICKUP_RADIUS_CAP, MAX_DIGITAL_POKEBALLS_PER_RUN, MAX_SURVIVOR_SUPPORTS, PICKUP_RADIUS, PLAYER_RADIUS, SPAWN_MARGIN, SURVIVOR_ARCEUS_CUTSCENE_MS, SURVIVOR_ARCEUS_DEX, SURVIVOR_GIRATINA_DEX, SURVIVOR_PALKIA_DEX, SURVIVOR_FIELD_EVENT_BEACON_MS, SURVIVOR_FIELD_EVENT_EVERY_MS, SURVIVOR_FIELD_EVENT_FIRST_MS, SURVIVOR_FIELD_EVENT_HUNT_MS, SURVIVOR_FIELD_EVENT_REACH_RADIUS, SURVIVOR_LOVE_CANDY_MS, SURVIVOR_OMEGA_SHARD_MS, SURVIVOR_SHADOW_BALL_EVERY_MS, SURVIVOR_SHADOW_BALL_FIRST_MS, SURVIVOR_SHADOW_BALL_MAX_PER_RUN, SURVIVOR_SHADOW_CUTSCENE_MS, SURVIVOR_SPAWN_DISTANCE, SURVIVOR_SUPPORT_EVOLUTION_OFFER_CHANCE, SURVIVOR_SUPPORT_RARE_OFFER_CHANCE, SURVIVOR_TRUST_STONE_MS, SURVIVOR_UPGRADE_RARITIES, SURVIVOR_FAST_TRAINER_COIN_SCALE, survivorMilestoneMs } from './survivor-types';
 import type { SurvivorSummary, SurvivorBossAttack, SurvivorBossAttackKind, SurvivorChest, SurvivorGravityWell, SurvivorHeldStrike, SurvivorTimeBubble, SurvivorFinalHit, SurvivorHitSource, SurvivorEnemy, SurvivorEnemyArchetype, SurvivorEnemyGrade, SurvivorEvent, SurvivorEvolutionOption, SurvivorInput, SurvivorPlayer, SurvivorProjectile, SurvivorState, SurvivorSupport, SurvivorSupportCandidate, SurvivorSupportRole, SurvivorTypeAffinity, SurvivorUpgrade, SurvivorUpgradeOption, SurvivorUpgradeRarity } from './survivor-types';
 import { cadenceCanImprove, CHARGE_FOCUS_RATE_ID, CHARGE_RUSH_LENGTH_ID, SURVIVOR_ATTACK_DAMAGE_CAP, SURVIVOR_UPGRADES, SURVIVOR_RARITY_ORDER, round1 } from './survivor-upgrades';
 import { cancelTeleportHold, createSurvivorCharge, distanceToSegment, FOCUS_CHARGE_PER_SEC, FOCUS_HIT_CHARGE, FOCUS_SHOT_PIERCE, FOCUS_SHOT_SIZE_MULTIPLIER, FOCUS_SHOT_SPEED_MULTIPLIER, FOCUS_SLOW_MULTIPLIER, focusBeam, TELEPORT_MAX_RANGE, RAPID_BURST_MIN_CYCLE_MS, RAPID_BURST_SHOT_INTERVAL_MS, RAPID_BURST_SHOTS, RAPID_BURST_SPREAD, RUSH_REFERENCE_SPEED, stepChargeMeter, teleportReach } from './survivor-charge';
@@ -356,6 +356,8 @@ export function createSurvivorState(seed: number, options: CreateSurvivorOptions
     digitalDangerCooldownMs: 0,
     arceusEncounter: { phase: 'idle', arrivalMs: 0 },
     arceusAttacks: 0,
+    arceusSpecial: null,
+    arceusSpecialUsed: false,
     shadowEncounter: { phase: 'idle', dexId: shadowGuardian.dexId, name: shadowGuardian.name, arrivalMs: 0 },
     nextShadowBallAtMs: survivorMilestoneMs(SURVIVOR_SHADOW_BALL_FIRST_MS, fast),
     shadowBallsSpawned: 0,
@@ -3236,16 +3238,20 @@ function applyHostileStatus(state: SurvivorState, effect: 'burn' | 'slow' | 'stu
   }
 }
 
-function damagePlayer(state: SurvivorState, damage: number, kind: SurvivorFinalHit['kind'], source: SurvivorHitSource): void {
+function damagePlayer(state: SurvivorState, damage: number, kind: SurvivorFinalHit['kind'], source: SurvivorHitSource, options?: { ignoreDefense?: boolean; minHp?: number }): void {
   const p = state.player;
   const reduction = survivorDefenseReduction(p, kind);
   const contactGuard = kind === 'projétil' ? 0 : (p.upgradeLevels['contact-guard'] ?? 0) * 0.12;
   const projectileGuard = kind === 'projétil' ? (p.upgradeLevels['projectile-guard'] ?? 0) * 0.12 : 0;
-  const effectiveDamage = damage > 0 ? Math.max(1, Math.ceil(damage * (1 - (reduction ?? 0)) * (1 - Math.min(0.5, contactGuard + projectileGuard)) * 1.2 ** (state.blackChestCurses ?? 0))) : 0;
+  const effectiveDamage = damage > 0
+    ? options?.ignoreDefense
+      ? Math.max(1, Math.ceil(damage))
+      : Math.max(1, Math.ceil(damage * (1 - (reduction ?? 0)) * (1 - Math.min(0.5, contactGuard + projectileGuard)) * 1.2 ** (state.blackChestCurses ?? 0)))
+    : 0;
   state.lastHit = { ...source, kind, damage: effectiveDamage, hpBefore: p.hp };
   state.lastDirectHitAtMs = state.elapsedMs;
   if (state.runStats) recordDamageTaken(state.runStats, kind, effectiveDamage);
-  p.hp = Math.max(0, p.hp - effectiveDamage);
+  p.hp = Math.max(options?.minHp ?? 0, p.hp - effectiveDamage);
   gainSupreme(state, (effectiveDamage / Math.max(1, p.maxHp)) * SUPREME_GAIN.damageTakenPerBar);
   if (effectiveDamage > 0 && source.digitalThreat) p.healBlockMs = 8000;
   const retaliation = p.upgradeLevels['retaliation-wave'] ?? 0;
@@ -3271,6 +3277,12 @@ const ARCEUS_LASER_TELEGRAPH_MS = 1500;
 const ARCEUS_LASER_ACTIVE_MS = 3600;
 const ARCEUS_LASER_BEAMS = 3;
 const ARCEUS_LASER_SPIN = 0.5;
+/** Especial único: Giratina persegue e Palkia/Dialga congelam a arena por alguns segundos. */
+const ARCEUS_SUMMON_MS = 1200;
+const ARCEUS_CHASE_MS = 5200;
+const ARCEUS_TIME_MS = 3200;
+const ARCEUS_GIRATINA_SPEED = 330;
+const ARCEUS_GIRATINA_RADIUS = 34;
 
 /** Água/gelo vira tsunami; pedra vira pedregulho; planta vira vinhas; o resto, onda de choque. */
 function bossAttackKindFor(dexId: number | undefined): SurvivorBossAttackKind {
@@ -3285,6 +3297,13 @@ function startBossAttack(state: SurvivorState, events: SurvivorEvent[], boss: Su
   const p = state.player;
   const angle = Math.atan2(p.y - boss.y, p.x - boss.x);
   const arceus = boss.arceus === true;
+  // Depois de mostrar os três ataques normais, o Arceus usa o especial uma única vez.
+  if (arceus && !state.arceusSpecialUsed && (state.arceusAttacks ?? 0) >= 3) {
+    state.arceusSpecialUsed = true;
+    state.arceusSpecial = { phase: 'summon', timerMs: ARCEUS_SUMMON_MS, x: boss.x, y: boss.y };
+    events.push({ type: 'arceusSpecial', phase: 'summon', dexId: SURVIVOR_GIRATINA_DEX, name: 'Giratina' });
+    return;
+  }
   const kind = arceus ? ARCEUS_ATTACKS[(state.arceusAttacks ?? 0) % ARCEUS_ATTACKS.length]! : bossAttackKindFor(boss.dexId);
   const telegraphMs = kind === 'lasers' ? ARCEUS_LASER_TELEGRAPH_MS : BOSS_ATTACK_TELEGRAPH_MS;
   const attack: SurvivorBossAttack = {
@@ -3353,7 +3372,7 @@ function insideBossAttack(attack: SurvivorBossAttack, p: SurvivorPlayer): boolea
 
 /** Avança o ataque do chefe: telegrafa, aplica o dano uma vez e some. */
 function stepBossAttack(state: SurvivorState, events: SurvivorEvent[], dtMs: number, airborne: boolean): void {
-  if (state.special.selected === 'stasis' && state.special.activeMs > 0) return;
+  if (state.arceusSpecial || (state.special.selected === 'stasis' && state.special.activeMs > 0)) return;
   const p = state.player;
   let attack = state.bossAttack ?? null;
   if (!attack) {
@@ -3414,6 +3433,60 @@ function stepBossAttack(state: SurvivorState, events: SurvivorEvent[], dtMs: num
       state.nextBossAttackAtMs = state.elapsedMs + BOSS_ATTACK_EVERY_MS;
     }
   }
+}
+
+/**
+ * Especial do Arceus: a sombra de Giratina sai do chão, persegue o jogador e, quando encosta, tira metade
+ * da vida. Palkia e Dialga aparecem e param tempo/espaço por alguns segundos: nada se move nem ataca.
+ * Devolve true quando a arena deve ficar congelada neste passo.
+ */
+function stepArceusSpecial(state: SurvivorState, dtMs: number, events: SurvivorEvent[]): boolean {
+  const special = state.arceusSpecial;
+  if (!special) return false;
+  const arceus = state.enemies.find((enemy) => enemy.hp > 0 && enemy.arceus);
+  const p = state.player;
+  if (!arceus && special.phase !== 'time') {
+    state.arceusSpecial = null;
+    events.push({ type: 'arceusSpecial', phase: 'end' });
+    return false;
+  }
+  if (special.phase === 'summon') {
+    special.timerMs -= dtMs;
+    if (special.timerMs > 0) return false;
+    special.phase = 'chase';
+    special.timerMs = ARCEUS_CHASE_MS;
+    const angle = Math.atan2(p.y - (arceus?.y ?? p.y), p.x - (arceus?.x ?? p.x)) + Math.PI;
+    special.x = clamp(p.x + Math.cos(angle) * 180, PLAYER_RADIUS, ARENA_W - PLAYER_RADIUS);
+    special.y = clamp(p.y + Math.sin(angle) * 180, PLAYER_RADIUS, ARENA_H - PLAYER_RADIUS);
+    events.push({ type: 'arceusSpecial', phase: 'chase', dexId: SURVIVOR_GIRATINA_DEX, name: 'Giratina' });
+    return false;
+  }
+  if (special.phase === 'chase') {
+    special.timerMs -= dtMs;
+    const dx = p.x - special.x;
+    const dy = p.y - special.y;
+    const distance = Math.hypot(dx, dy) || 1;
+    const step = ARCEUS_GIRATINA_SPEED * (dtMs / 1000);
+    const catchDistance = ARCEUS_GIRATINA_RADIUS + PLAYER_RADIUS;
+    const travel = Math.min(step, Math.max(0, distance - catchDistance));
+    special.x += (dx / distance) * travel;
+    special.y += (dy / distance) * travel;
+    const caught = Math.hypot(p.x - special.x, p.y - special.y) <= catchDistance + 0.01 || special.timerMs <= 0;
+    if (!caught) return false;
+    const half = Math.ceil(p.maxHp / 2);
+    const actual = Math.max(0, Math.min(half, p.hp - 1));
+    damagePlayer(state, actual, 'explosão', { dexId: SURVIVOR_GIRATINA_DEX, boss: true, grade: 'comum' }, { ignoreDefense: true, minHp: 1 });
+    special.phase = 'time';
+    special.timerMs = ARCEUS_TIME_MS;
+    events.push({ type: 'arceusSpecial', phase: 'time', dexId: SURVIVOR_PALKIA_DEX, name: 'Palkia · Dialga' });
+    return true;
+  }
+  special.timerMs -= dtMs;
+  if (special.timerMs > 0) return true;
+  state.arceusSpecial = null;
+  state.nextBossAttackAtMs = state.elapsedMs + 6000;
+  events.push({ type: 'arceusSpecial', phase: 'end' });
+  return false;
 }
 
 function spawnHostileProjectile(state: SurvivorState, enemy: SurvivorEnemy, target: SurvivorPlayer, damageMultiplier = 0.7): void {
@@ -3864,6 +3937,7 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
   if (state.adaptive) state.adaptive.value = stepAdaptive(state.adaptive.value, adaptiveTarget(state.player), dtMs);
   if (state.runStats) sampleTimeline(state.runStats, state.elapsedMs, state.kills, state.player.level);
   if (!state.debugLaboratory && advanceSpecialEncounter(state, 0)) return events;
+  if (!state.debugLaboratory && stepArceusSpecial(state, dtMs, events)) return events;
   const p = state.player;
   p.artifactSpeedMs = Math.max(0, p.artifactSpeedMs - dtMs);
   p.artifactPowerMs = Math.max(0, p.artifactPowerMs - dtMs);

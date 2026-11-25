@@ -6906,7 +6906,8 @@ body.no-scroll .reward-toasts {
 .survivor-arceus-cutscene { z-index: 95; background: radial-gradient(circle at 50% 38%, #4c3d12f2, #070810fa 72%); }
 /* A cutscene é modal: os controles do aplicativo não podem ficar por cima dela. */
 body:has(.survivor-arceus-cutscene) .universal-controls,
-body:has(.survivor-shadow-cutscene) .universal-controls { opacity: 0; pointer-events: none; }
+body:has(.survivor-shadow-cutscene) .universal-controls,
+body:has(.survivor-arceus-time) .universal-controls { opacity: 0; pointer-events: none; }
 .arceus-card { width: min(100%, 380px); padding: 16px 18px; border: 2px solid #ffe066; border-radius: 12px; background: #101521f2; box-shadow: 0 0 64px #ffd94a88, 2px 2px 0 #303839; text-align: center; animation: arceus-card-in 420ms cubic-bezier(.18,.82,.25,1) both; }
 .arceus-kicker { margin: 0 0 4px; color: #ffe066; font-size: .62rem; font-weight: 900; letter-spacing: .16em; }
 .arceus-portrait { position: relative; display: grid; min-height: 154px; place-items: center; isolation: isolate; }
@@ -6941,6 +6942,24 @@ body:has(.survivor-shadow-cutscene) .universal-controls { opacity: 0; pointer-ev
   .arceus-card p { font-size: .74rem; margin-bottom: 5px; }
   .arceus-warning { margin: 1px 0 4px; padding: 4px 10px; font-size: .68rem; }
   .arceus-card > small { font-size: .64rem; }
+}
+/* Palkia/Dialga: tempo e espaço parados, com a arena congelada e os controles desligados. */
+.survivor-arceus-time { z-index: 96; background: radial-gradient(circle at 50% 40%, #1d2c58f2, #070810fa 72%); }
+.arceus-time-card { position: relative; width: min(100%, 390px); padding: 16px 18px; overflow: hidden; border: 2px solid #8fd8ff; border-radius: 12px; background: #0d1526f2; box-shadow: 0 0 64px #4f9dff66, 2px 2px 0 #303839; text-align: center; animation: arceus-card-in 380ms cubic-bezier(.18,.82,.25,1) both; }
+.arceus-time-card::before { position: absolute; z-index: -1; inset: -40%; border: 2px dashed #8fd8ff55; border-radius: 50%; content: ''; animation: arceus-orbit 12s linear infinite; }
+.arceus-time-gods { display: flex; align-items: center; justify-content: center; gap: 10px; min-height: 118px; }
+.arceus-time-gods img { height: 112px; max-width: 42%; object-fit: contain; image-rendering: var(--game-image-rendering, pixelated); filter: drop-shadow(0 0 14px #8fd8ff); }
+.arceus-time-gods span { color: #bfe8ff; font-size: 1rem; font-weight: 900; letter-spacing: .08em; }
+.arceus-time-gods b { color: #ffe066; font-size: 1.4rem; }
+.arceus-time-card h2 { margin: 2px 0 6px; color: #e7f7ff; font-size: 1.4rem; letter-spacing: .04em; text-shadow: 0 2px 0 #173052, 0 0 18px #8fd8ff66; }
+.arceus-time-card p { margin: 0 0 9px; color: #e8f3ff; font-size: .82rem; line-height: 1.35; }
+.arceus-time-card .arceus-warning { border-color: #8fd8ff; background: #122c4d; color: #cfeeff; }
+@media (orientation: landscape) and (max-height: 700px) {
+  .arceus-time-card { padding: 10px 14px; }
+  .arceus-time-gods { min-height: 84px; }
+  .arceus-time-gods img { height: 78px; }
+  .arceus-time-card h2 { font-size: 1.15rem; }
+  .arceus-time-card p { font-size: .74rem; margin-bottom: 5px; }
 }
 
 .survivor-trainer-intro {

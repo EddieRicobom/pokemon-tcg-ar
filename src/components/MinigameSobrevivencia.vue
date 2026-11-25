@@ -38,6 +38,7 @@ import { cardCompanion, cardJourneyError, recordCardVictories } from '../app/car
 import type { CardCompanion } from '../core/card-evolution';
 import { survivalWinners } from '../core/card-evolution';
 import { effectiveVisual, maxVisualFps, visual } from '../app/visual-settings';
+import { SURVIVOR_DIALGA_DEX, SURVIVOR_GIRATINA_DEX, SURVIVOR_PALKIA_DEX } from '../core/survivor-types';
 import { isFrameDue } from '../core/frame-rate';
 import { cancelGameFrame, requestGameFrame } from '../app/frame-scheduler';
 import { combatMotion } from '../core/combat-motion';
@@ -712,8 +713,10 @@ const specialModalOpen = computed(() => {
 });
 const shadowCutsceneOpen = computed(() => state.value?.shadowEncounter.phase === 'arrival');
 const arceusCutsceneOpen = computed(() => state.value?.arceusEncounter.phase === 'arrival');
-/** Qualquer cutscene que congela a Torre: sombrio ou Arceus. */
-const cutsceneOpen = computed(() => shadowCutsceneOpen.value || arceusCutsceneOpen.value);
+const arceusSpecial = computed(() => state.value?.arceusSpecial ?? null);
+const arceusTimeFreeze = computed(() => arceusSpecial.value?.phase === 'time');
+/** Qualquer cutscene que congela a Torre: sombrio, Arceus ou o tempo parado de Palkia/Dialga. */
+const cutsceneOpen = computed(() => shadowCutsceneOpen.value || arceusCutsceneOpen.value || arceusTimeFreeze.value);
 watch(arceusCutsceneOpen, (open, wasOpen) => {
   if (!wasOpen || open) return;
   playSound('survivor-boss');
@@ -766,6 +769,9 @@ const guardianSprite = ref<string | null>(null);
 const shadowBossSprite = ref<string | null>(null);
 /** Retrato do Arceus na cutscene do Perigo Digital. */
 const arceusSprite = ref<string | null>(null);
+/** Palkia e Dialga na paralisia do especial do Arceus. */
+const palkiaSprite = ref<string | null>(null);
+const dialgaSprite = ref<string | null>(null);
 let specialQueued = false;
 /** Botão de carga (Foco e Teleporte) apertado agora; o motor lê se está segurado a cada passo. */
 const chargeHeld = ref(false);
@@ -2012,6 +2018,40 @@ function drawAlphaLabel(c: CanvasRenderingContext2D, x: number, y: number, scale
   c.restore();
 }
 
+/** Giratina do especial do Arceus: sombra roxa que persegue o jogador antes de Palkia/Dialga pararem o tempo. */
+function drawArceusGiratina(special: NonNullable<SurvivorState['arceusSpecial']>): void {
+  if (!ctx) return;
+  const x = special.x;
+  const y = special.y;
+  const pulse = 0.5 + 0.5 * Math.sin(animMs / 120);
+  ctx.save();
+  ctx.globalAlpha = 0.34 + pulse * 0.1;
+  ctx.fillStyle = '#14081f';
+  ctx.beginPath(); ctx.ellipse(x, y + 2, 44 + pulse * 5, 16 + pulse * 2, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.globalAlpha = 0.55;
+  ctx.strokeStyle = '#b64cff';
+  ctx.lineWidth = 2;
+  ctx.setLineDash([6, 5]);
+  ctx.beginPath(); ctx.arc(x, y, 34 + pulse * 4, 0, Math.PI * 2); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.globalAlpha = 0.85;
+  const sprite = enemySprites.get(SURVIVOR_GIRATINA_DEX) ?? null;
+  if (sprite) drawSprite(sprite, x, y, false, 1.35, 'down');
+  else {
+    ctx.fillStyle = '#271039';
+    ctx.beginPath(); ctx.ellipse(x, y - 18, 24, 26, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#ff5c8a';
+    ctx.beginPath(); ctx.arc(x - 8, y - 24, 2.6, 0, Math.PI * 2); ctx.arc(x + 8, y - 24, 2.6, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.globalAlpha = 0.95;
+  ctx.font = 'bold 11px system-ui';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#ffc2ff';
+  ctx.fillText('GIRATINA', x, y - 58);
+  ctx.restore();
+}
+
 function drawEnemy(e: SurvivorEnemy): void {
   if (!ctx) return;
   // Chefões dão um pequeno tranco quando o golpe conecta. O flash já existia; o deslocamento torna o impacto legível.
@@ -3066,6 +3106,7 @@ function draw(): void {
   for (const e of s.enemies) {
     if (e.x >= left && e.x <= right && e.y >= top && e.y <= bottom) drawEnemy(e);
   }
+  if (s.arceusSpecial && s.arceusSpecial.phase !== 'time') drawArceusGiratina(s.arceusSpecial);
   if (!effectiveVisual.value.rotomMode && s.enemies.some((e) => e.linkId !== undefined)) drawDestinyChains(ctx, destinyGroups(s), animMs, detailed);
   // Farpa Grudenta: o espinho fica no inimigo até explodir (1 s).
   if (!effectiveVisual.value.rotomMode) for (const mine of s.heldMines ?? []) drawStickyBarb(ctx, mine.x, mine.y - 10, 1 - mine.timerMs / 1000, animMs);
@@ -3988,6 +4029,27 @@ function loop(ts: number): void {
         playSound('success');
         say('⚡ ARCEUS DERROTADO! O julgamento foi interrompido — a ameaça digital recua.', 7000);
       }
+      else if (ev.type === 'arceusSpecial') {
+        if (ev.phase === 'summon') {
+          playSound('survivor-boss');
+          say('🌑 Uma sombra emerge do chão: Giratina foi invocado!', 4200);
+          void loadSpriteOrNull(SURVIVOR_GIRATINA_DEX).then((sprite) => {
+            enemySprites.set(SURVIVOR_GIRATINA_DEX, sprite);
+          }).catch(() => { enemySprites.set(SURVIVOR_GIRATINA_DEX, null); });
+        } else if (ev.phase === 'chase') {
+          playSound('survivor-boss');
+          say('GIRATINA está te perseguindo! Não deixe a sombra encostar.', 4200);
+        } else if (ev.phase === 'time') {
+          playSound('survivor-boss');
+          void loadSpriteOrNull(SURVIVOR_PALKIA_DEX).then((sprite) => { palkiaSprite.value = firstSpriteFrame(sprite)?.toDataURL() ?? null; }).catch(() => {});
+          void loadSpriteOrNull(SURVIVOR_DIALGA_DEX).then((sprite) => { dialgaSprite.value = firstSpriteFrame(sprite)?.toDataURL() ?? null; }).catch(() => {});
+          cinemaBeat(CINEMA_BEATS.bossEntrance);
+          say('PALKIA E DIALGA! Tempo e espaço pararam — você não pode se mover nem atacar.', 5000);
+        } else if (ev.phase === 'end') {
+          playSound('success');
+          say('O tempo voltou. A batalha continua.', 3200);
+        }
+      }
       else if (ev.type === 'chargeRelease') {
         playSound(ev.style === 'rapido' ? 'survivor-level' : 'survivor-shot');
         if (ev.style === 'teleporte') say(ev.level >= 1 ? '» Onda total: inimigos afastados!' : '» Teleporte carregado!', 2200);
@@ -4473,6 +4535,8 @@ async function beginRun(dexId: number, name: string, picked?: PokemonType, infin
     guardianSprite.value = null;
     shadowBossSprite.value = null;
     arceusSprite.value = null;
+    palkiaSprite.value = null;
+    dialgaSprite.value = null;
     specialQueued = false;
     chargePointerId = null;
     chargeHeld.value = false;
@@ -5420,6 +5484,21 @@ onBeforeUnmount(() => {
           </div>
         </div>
 
+        <div v-if="ready && state && arceusTimeFreeze && !leaveConfirm" class="survivor-overlay survivor-arceus-time" :class="{ 'reduced-motion': !detailedSpecialEffects }" role="dialog" aria-modal="true" aria-label="Palkia e Dialga pararam o tempo" @pointerdown.stop>
+          <div class="arceus-time-card">
+            <div class="arceus-time-gods" aria-hidden="true">
+              <img v-if="palkiaSprite" :src="palkiaSprite" alt="" />
+              <span v-else>PALKIA</span>
+              <b>×</b>
+              <img v-if="dialgaSprite" :src="dialgaSprite" alt="" />
+              <span v-else>DIALGA</span>
+            </div>
+            <p class="arceus-kicker">TEMPO E ESPAÇO PARADOS</p>
+            <h2>PALKIA · DIALGA</h2>
+            <p>Giratina cobriu você de sombras. Você não pode se mover nem atacar.</p>
+            <div class="arceus-warning" role="status"><span aria-hidden="true">⌛</span> O tempo volta em {{ Math.ceil((state.arceusSpecial?.timerMs ?? 0) / 1000) }}s</div>
+          </div>
+        </div>
         <div v-if="ready && state && guardian && !leaveConfirm && (state.special.phase === 'arrival' || state.special.phase === 'choice')" class="survivor-overlay survivor-guardian" :class="{ 'reduced-motion': !detailedSpecialEffects }" role="dialog" aria-modal="true" aria-label="Orbe elemental: escolha um especial" :style="{ '--special-color': state.player.move.color }" @pointerdown.stop>
           <div class="card survivor-upgrades">
             <div class="guardian-gift" :class="{ delivered: state.special.phase === 'choice' }" aria-hidden="true">

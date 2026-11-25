@@ -123,6 +123,29 @@ describe('ataques-assinatura dos chefes', () => {
     stepSurvivor(s, { dx: 0, dy: 0 }, 16);
     expect((s.bossAttack as SurvivorBossAttack | null)?.kind).toBe('stars');
     expect((s.bossAttack as SurvivorBossAttack | null)?.circles).toHaveLength(5);
+
+    // Quarto ataque: o especial único de Giratina/Palkia/Dialga.
+    s.player.hp = s.player.maxHp = 1000;
+    s.player.invulnMs = 1e9;
+    s.bossAttack = null; s.nextBossAttackAtMs = 0;
+    const special = stepSurvivor(s, { dx: 0, dy: 0 }, 16);
+    expect(special).toContainEqual(expect.objectContaining({ type: 'arceusSpecial', phase: 'summon' }));
+    expect(s.arceusSpecial?.phase).toBe('summon');
+    expect(s.arceusSpecialUsed).toBe(true);
+
+    stepSurvivor(s, { dx: 0, dy: 0 }, 1300);
+    expect(s.arceusSpecial?.phase).toBe('chase');
+    stepSurvivor(s, { dx: 0, dy: 0 }, 1000);
+    expect(s.arceusSpecial?.phase).toBe('time');
+    expect(s.player.hp).toBe(500);
+
+    const frozenX = s.player.x;
+    s.arceusSpecial!.timerMs = 3000;
+    stepSurvivor(s, { dx: 1, dy: 0 }, 500);
+    expect(s.player.x).toBe(frozenX);
+    expect(s.arceusSpecial?.phase).toBe('time');
+    stepSurvivor(s, { dx: 0, dy: 0 }, 2600);
+    expect(s.arceusSpecial).toBeNull();
   });
 
   it('o tsunami fere quem fica na faixa e erra quem sai dela', () => {
