@@ -5,6 +5,22 @@ O estado atual, as fases, as pendências e os riscos continuam no [plano](../IMP
 datadas (com o que foi e o que não foi validado em cada uma). A regra de validação do plano vale também para estas entradas:
 🔶 significa que **nada foi visto num celular real**.
 
+## Torre: ataques telegrafados por tipo nos chefes (25/11/2026)
+
+- Cada um dos 18 tipos agora tem a própria sequência de **três ataques telegrafados**, em vez de quatro famílias genéricas. O padrão mecânico pode repetir — o que muda é o nome, a cor e o motivo visual do tipo.
+- Exemplos: Fogo (Erupção → Pilares de fogo → Chuva de brasas), Água (Tsunami → Jatos cruzados → Bolhas pressurizadas), Elétrico (Descarga → Raios cruzados → Tempestade), Planta (Vinhas → Sementes → Chicote de folhas), Gelo (Maremoto gélido → Granizo → Estilhaços), Psíquico (Pulso psíquico → Cruz mental → Estrelas mentais), Fantasma (Maldição → Sombras → Almas penadas), Fada (Pó mágico → Estrelas → Luz), entre outros. A primeira entrada de cada tipo mantém o ataque-assinatura antigo.
+- **Mecânicas novas:** cruz de luz (quatro braços retos), raios (três faixas paralelas com atordoamento curto) e meteoros (seis círculos em duas órbitas com lentidão). Todas com 1,2 s de telegrafo e aviso no HUD com o nome do ataque.
+- **Visual por tipo:** a arte usa a cor do tipo, um glifo do elemento e pequenos motes com forma própria (chama, gota, faísca, folha, cristal, bolha, pedra, pena, anel, asa, losango, sombra, engrenagem, estrela…). O contador `bossAttacks` fica no save; Arceus mantém a sequência própria.
+- 🔶 Typecheck, 65 arquivos / 715 testes do Survival, suíte completa (344 arquivos / 3434 testes), build e os 14 testes de layout passaram. Não fiz a luta humana completa contra cada tipo.
+
+## Torre: especial de Giratina, Palkia e Dialga no Arceus (25/11/2026)
+
+- Depois de três ataques normais (lasers, onda e estrelas), o Arceus usa **uma vez por batalha** o especial: invoca a sombra de **Giratina**, que sai do chão e persegue o jogador a 330 px/s por até 5,2 s.
+- Se Giratina alcançar (ou o tempo da perseguição acabar), o jogador perde **metade da vida máxima** (a vida nunca cai abaixo de 1). O dano ignora defesa e é registrado como dano de Giratina.
+- **Palkia e Dialga** aparecem e param tempo e espaço por 3,2 s: a arena inteira congela, o jogador não anda nem ataca, e os controles de ação ficam desligados. Depois o tempo volta e a luta segue; o próximo ataque do Arceus espera mais 6 s.
+- A cutscene mostra Giratina na perseguição (sprite/sombra com aura roxa) e um cartão de Palkia × Dialga com contagem regressiva. O especial fica no save (`arceusSpecial`, `arceusSpecialUsed`) e não se repete na mesma batalha.
+- 🔶 Typecheck, 65 arquivos / 714 testes do Survival, suíte completa (344 arquivos / 3433 testes), build e os 14 testes de layout passaram. O teste cobre a sequência, a metade da vida, o congelamento sem movimento e o fim do especial. No navegador conferi o cartão Palkia × Dialga com a contagem e a arena congelada; não fiz a luta humana completa nem vi o Giratina em todas as distâncias de câmera.
+
 ## Torre: Arceus com lasers giratórios e estrelas (25/11/2026)
 
 - **Três ataques-assinatura alternados:** a cada ataque o Arceus reveza **lasers**, **onda dourada** e **chuva de estrelas** (o contador `arceusAttacks` fica no save).

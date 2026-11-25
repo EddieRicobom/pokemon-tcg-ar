@@ -238,6 +238,9 @@ export const DIGITAL_DANGER_VISIBLE_RADIUS = 520;
 /** Arceus é o superboss do Perigo Digital: entra uma vez por corrida, com cutscene longa e stats próprios. */
 export const SURVIVOR_ARCEUS_DEX = 493;
 export const SURVIVOR_ARCEUS_CUTSCENE_MS = 4200;
+export const SURVIVOR_GIRATINA_DEX = 487;
+export const SURVIVOR_PALKIA_DEX = 484;
+export const SURVIVOR_DIALGA_DEX = 483;
 
 /** Grau do inimigo: `comum` (os de sempre), `elite` (do treinador do minuto 5+) e `chefao` (do 20º minuto e do infinito). */
 export type SurvivorEnemyGrade = 'comum' | 'elite' | 'chefao';
@@ -342,11 +345,23 @@ export interface SurvivorFinalHit extends SurvivorHitSource {
 }
 
 /** Ataques-assinatura dos chefes: sempre telegrafados e com uma saída clara. */
-export type SurvivorBossAttackKind = 'tsunami' | 'boulders' | 'vines' | 'shockwave' | 'lasers' | 'stars';
+export type SurvivorBossAttackKind = 'tsunami' | 'boulders' | 'vines' | 'shockwave' | 'lasers' | 'stars' | 'cross' | 'thunder' | 'meteors';
+
+/** Especial único do Arceus: Giratina persegue e, ao alcançar, Palkia e Dialga param o tempo. */
+export interface SurvivorArceusSpecial {
+  phase: 'summon' | 'chase' | 'time';
+  timerMs: number;
+  x: number;
+  y: number;
+}
 
 export interface SurvivorBossAttackCircle { x: number; y: number; radius: number }
 
 export interface SurvivorBossAttack {
+  /** Tipo do chefe que assina o ataque; a arte usa a cor e o motivo do tipo. */
+  theme: PokemonType;
+  /** Nome do ataque para o aviso do HUD (ex.: «Pilares de fogo»). */
+  name: string;
   kind: SurvivorBossAttackKind;
   phase: 'telegraph' | 'active';
   /** Tempo restante da fase atual. */
@@ -361,6 +376,8 @@ export interface SurvivorBossAttack {
   halfWidth: number;
   radius: number;
   circles: SurvivorBossAttackCircle[];
+  /** Feixes retos (cruz e raios) com ângulo e deslocamento lateral em relação ao chefe. */
+  segments?: { angle: number; offset: number }[];
   /** Lasers do Arceus: quantidade de raios e giro acumulado em radianos. */
   beams?: number;
   rotation?: number;
@@ -585,6 +602,12 @@ export interface SurvivorState {
   };
   /** Quantos ataques o Arceus já iniciou, para alternar lasers, onda e estrelas. */
   arceusAttacks?: number;
+  /** Quantos ataques regulares os chefes já usaram, para revezar as variações telegrafadas. */
+  bossAttacks?: number;
+  /** Especial do Arceus: Giratina persegue e Palkia/Dialga paralisam o jogador. */
+  arceusSpecial?: SurvivorArceusSpecial | null;
+  /** O especial do Arceus só pode acontecer uma vez por batalha. */
+  arceusSpecialUsed?: boolean;
   /** Encontro opcional a partir dos 13 min: a cutscene pausa a Torre antes do lendário entrar. */
   shadowEncounter: {
     phase: 'idle' | 'available' | 'arrival' | 'battle';
@@ -873,6 +896,7 @@ export type SurvivorEvent =
   | { type: 'shadowBossDefeated'; dexId: number; name: string; trustStones: number }
   | { type: 'arceusArrival'; dexId: number; name: string }
   | { type: 'arceusDefeated'; dexId: number; name: string }
+  | { type: 'arceusSpecial'; phase: 'summon' | 'chase' | 'time' | 'end'; dexId?: number; name?: string }
   | { type: 'fieldEventSpawn'; kind: SurvivorFieldEventKind; x: number; y: number; remainingMs: number }
   | { type: 'fieldEventStarted'; kind: SurvivorFieldEventKind }
   | { type: 'fieldEventComplete'; kind: SurvivorFieldEventKind }
