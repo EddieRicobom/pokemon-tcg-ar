@@ -25,6 +25,8 @@ import {
   DIGITAL_DANGER_UNLOCK_MS,
   normalizeSurvivorXp,
   survivorDirectDamageMultiplier,
+  mitigateSurvivorEnemyDamage,
+  survivorEnemyDamageReduction,
   survivorProjectileOpacity,
   survivorRapidAttackDamageMultiplier,
   SURVIVOR_SHADOW_BALL_FIRST_MS,
@@ -1455,8 +1457,9 @@ describe('treinadores e chefão final', () => {
     const earlyAtFive = Math.max(0, Math.min(1, s.elapsedMs / BALANCE.earlyGameMs));
     const hpCurve = BALANCE.earlyEnemyHpMultiplier + (1 - BALANCE.earlyEnemyHpMultiplier) * earlyAtFive;
     const damageCurve = BALANCE.earlyEnemyDamageMultiplier + (1 - BALANCE.earlyEnemyDamageMultiplier) * earlyAtFive;
-    expect(elite?.maxHp).toBe(Math.round((BALANCE.enemyHpBase + Math.floor(300 / BALANCE.enemyHpEverySec) * BALANCE.enemyHpStep + s.wave * BALANCE.enemyHpPerWave) * hpCurve * 5 * BALANCE.trainerStatMultiplier * s.infiniteScale));
+    expect(elite?.maxHp).toBe(Math.round((BALANCE.enemyHpBase + Math.floor(300 / BALANCE.enemyHpEverySec) * BALANCE.enemyHpStep + s.wave * BALANCE.enemyHpPerWave) * hpCurve * 6.5 * BALANCE.trainerStatMultiplier * s.infiniteScale));
     expect(elite?.damage).toBe(Math.round((BALANCE.enemyDamageBase + Math.floor(tAtFive / BALANCE.enemyDamageEverySec) * BALANCE.enemyDamageStep) * damageCurve * 2 * BALANCE.trainerStatMultiplier * s.infiniteScale));
+    expect(elite?.damageReduction).toBe(BALANCE.eliteDamageReduction);
     // Pula para quase 20 min.
     s.elapsedMs = 1_200_000 - 200;
     const ev2 = stepSurvivor(s, { dx: 0, dy: 0 }, 400);
@@ -1474,6 +1477,15 @@ describe('treinadores e chefão final', () => {
     expect(over?.summary.infinite).toBe(false);
   });
 
+  it('armadura de chefe reduz dano direto, mas respeita o teto e ignora valores inválidos', () => {
+    expect(survivorEnemyDamageReduction({ damageReduction: 0.5 })).toBe(0.5);
+    expect(survivorEnemyDamageReduction({ damageReduction: 2 })).toBe(0.8);
+    expect(survivorEnemyDamageReduction({})).toBe(0);
+    expect(mitigateSurvivorEnemyDamage({ damageReduction: 0.5 }, 100)).toBe(50);
+    expect(mitigateSurvivorEnemyDamage({ damageReduction: 0.5 }, Number.NaN)).toBe(0);
+    expect(mitigateSurvivorEnemyDamage({ damageReduction: 0.5 }, -10)).toBe(0);
+  });
+
   it('repete os chefes periódicos a cada minuto e escala seus atributos', () => {
     const s = createSurvivorState(77, { kindCount: 2 });
     s.nextBossAtMs = BALANCE.firstBossMs;
@@ -1482,15 +1494,34 @@ describe('treinadores e chefão final', () => {
     const first = stepSurvivor(s, { dx: 0, dy: 0 }, 200);
     expect(first).toContainEqual({ type: 'bossSpawn' });
     const boss = s.enemies.find((enemy) => enemy.boss);
-    expect(boss?.maxHp).toBe(Math.round((BALANCE.bossHpBase + s.wave * BALANCE.bossHpPerWave) * s.infiniteScale));
+    const bossLate = 1 + Math.max(0, s.elapsedMs / 60_000 - BALANCE.bossHpLateFromMin) * BALANCE.bossHpLatePerMin;
+    expect(boss?.maxHp).toBe(Math.round((BALANCE.bossHpBase + s.wave * BALANCE.bossHpPerWave) * bossLate * s.infiniteScale));
     expect(boss?.damage).toBe(Math.round((BALANCE.bossDamageBase + s.wave * BALANCE.bossDamagePerWave) * s.infiniteScale));
     expect(boss?.speed).toBe(BALANCE.bossSpeed);
+    expect(boss?.damageReduction).toBe(BALANCE.bossDamageReduction);
 
     s.elapsedMs = BALANCE.firstBossMs + BALANCE.bossEveryMs - 100;
     s.enemies = s.enemies.filter((enemy) => !enemy.boss);
     const second = stepSurvivor(s, { dx: 0, dy: 0 }, 200);
     expect(second).toContainEqual({ type: 'bossSpawn' });
     expect(s.enemies.filter((enemy) => enemy.boss)).toHaveLength(1);
+  });
+
+  it('o chefe dos 15 min tem muito mais vida que o do primeiro minuto', () => {
+    const early = createSurvivorState(5, { kindCount: 2 });
+    early.nextBossAtMs = BALANCE.firstBossMs;
+    early.elapsedMs = BALANCE.firstBossMs - 100;
+    stepSurvivor(early, { dx: 0, dy: 0 }, 200);
+    const firstHp = early.enemies.find((enemy) => enemy.boss)?.maxHp ?? 0;
+
+    const late = createSurvivorState(5, { kindCount: 2 });
+    late.special.phase = 'ready';
+    late.nextBossAtMs = 900_000;
+    late.elapsedMs = 900_000 - 100;
+    stepSurvivor(late, { dx: 0, dy: 0 }, 200);
+    const lateHp = late.enemies.find((enemy) => enemy.boss)?.maxHp ?? 0;
+    expect(firstHp).toBeGreaterThan(0);
+    expect(lateHp).toBeGreaterThan(firstHp * 5);
   });
 
   it('modo infinito: derrotar o chefão não termina a corrida (segue até morrer)', () => {

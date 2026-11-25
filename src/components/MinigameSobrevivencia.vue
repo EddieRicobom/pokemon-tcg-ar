@@ -68,6 +68,7 @@ import {
   switchSurvivorAttack,
   survivorCoins,
   survivorDefenseReduction,
+  survivorEnemyDamageReduction,
   survivorScore,
   SURVIVOR_UPGRADE_RARITIES,
   SURVIVOR_UPGRADE_FAMILIES,
@@ -958,6 +959,7 @@ const bossBar = computed(() => {
     maxHp: Math.ceil(target.maxHp),
     shadow: target.shadowBoss === true,
     arceus: target.arceus === true,
+    reduction: Math.round(survivorEnemyDamageReduction(target) * 100),
   };
 });
 /** Aviso curto do ataque-assinatura do chefe; o desenho no chão mostra a área exata. */
@@ -5235,7 +5237,7 @@ onBeforeUnmount(() => {
             </span>
           </div>
           <div v-if="bossBar" class="survivor-boss-bar" :class="{ shadow: bossBar.shadow, arceus: bossBar.arceus, low: bossBar.pct < 25 }" role="status" aria-label="Vida do chefe">
-            <span><b>{{ bossBar.name }}</b><small>{{ bossBar.hp }}/{{ bossBar.maxHp }}</small></span>
+            <span><b>{{ bossBar.name }}</b><small>{{ bossBar.hp }}/{{ bossBar.maxHp }}<template v-if="bossBar.reduction > 0"> · 🛡 {{ bossBar.reduction }}%</template></small></span>
             <i><b :style="{ width: `${bossBar.pct}%` }" /></i>
           </div>
           <div v-if="bossAttackWarning" class="survivor-boss-warning" role="status" aria-live="assertive">{{ bossAttackWarning }} <small>{{ state?.bossAttack?.kind === 'lasers' ? 'ande no vão entre os raios' : state?.bossAttack?.kind === 'cross' ? 'saia das faixas da cruz' : state?.bossAttack?.kind === 'thunder' ? 'ande para o lado' : state?.bossAttack?.kind === 'meteors' ? 'saia das marcas no chão' : 'saia da área marcada' }}</small></div>
@@ -5368,7 +5370,7 @@ onBeforeUnmount(() => {
                 <li><b>🎚 Desafio N%:</b> força dos inimigos comuns em relação à Torre de sempre. Verde é mais fácil, vermelho acima de 120% é aperto.</li>
                 <li><b>⏱ tempo · ☠ abates:</b> tempo da corrida e inimigos derrotados.</li>
                 <li><b>☠ Pressão N:</b> densidade, velocidade e dano extras que a dificuldade acumulou.</li>
-                <li><b>Barras pequenas:</b> vida de elites, chefões e chefes; o glifo ao lado mostra o tipo.</li>
+                <li><b>Barras pequenas:</b> vida de elites, chefões e chefes; o glifo ao lado mostra o tipo e o 🛡 mostra a armadura (dano direto reduzido).</li>
                 <li><b>Aviso de ataque:</b> o nome, o glifo do tipo e a contagem até o impacto; ande para fora da área marcada.</li>
                 <li><b>XP:</b> até o nível 20 o custo sobe devagar; depois acelera de propósito para o late game não virar uma enxurrada de níveis.</li>
                 <li><b>BONK:</b> tem leitura própria; as setas de ameaça, o anel e as micro-barras são do modo normal.</li>
