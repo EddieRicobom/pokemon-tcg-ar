@@ -9,6 +9,9 @@ import type { SurvivorPlayer } from './survivor-types';
 
 export const BONK_GRAVITY = 1250;
 export const BONK_BASE_JUMP_POWER = 470;
+/** Perto do topo do salto a gravidade alivia: dá alguns quadros para mirar a queda em vez de cair como pedra. */
+export const BONK_APEX_WINDOW = 150;
+export const BONK_APEX_GRAVITY_FACTOR = 0.72;
 /** Câmera em terceira pessoa: mais distante, alta e com lente aberta para antecipar obstáculos e inimigos. */
 export const BONK_CAMERA = { distance: 340, height: 160, horizonRatio: 0.3, focalRatio: 0.78, minFocal: 250, near: 20 } as const;
 /** Giro da câmera por segundo com o analógico todo para o lado. */
@@ -336,7 +339,9 @@ export function stepBonkPhysics(
   }
 
   const wasAirborne = !physics.grounded;
-  physics.verticalVelocity -= BONK_GRAVITY * (player.bonkGravityFactor ?? 1) * dt;
+  // Janela do ápice: a gravidade alivia quando a velocidade vertical está perto de zero.
+  const apexFactor = Math.abs(physics.verticalVelocity) < BONK_APEX_WINDOW ? BONK_APEX_GRAVITY_FACTOR : 1;
+  physics.verticalVelocity -= BONK_GRAVITY * (player.bonkGravityFactor ?? 1) * apexFactor * dt;
   physics.z += physics.verticalVelocity * dt;
   physics.landingMs = Math.max(0, physics.landingMs - dtMs);
   if (physics.z <= 0) {

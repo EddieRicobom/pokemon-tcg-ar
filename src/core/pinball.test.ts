@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { activatePinballAbility, createPinballState, launchPinball, mergePinballDex, nudgePinball, pinballPartnerSkill, pinballReward, pinballStage, PINBALL_BOSS_CORE, PINBALL_BUMPERS, PINBALL_DEX_MAX, PINBALL_TARGETS, PINBALL_TIME_SCALE, stepPinball } from './pinball';
+import { activatePinballAbility, createPinballState, launchPinball, mergePinballDex, nudgePinball, pinballPartnerSkill, pinballReward, pinballStage, PINBALL_BOSS_CORE, PINBALL_BUMPERS, PINBALL_DEX_MAX, PINBALL_TARGETS, PINBALL_TIME_SCALE, PINBALL_TIMER_SCALE, stepPinball } from './pinball';
 import type { PinballState } from './pinball';
 
 function hitTarget(s: PinballState, index = 1): void {
@@ -141,6 +141,18 @@ describe('pinball da Vila', () => {
     expect(launchPinball(s)).toBe(false);
   });
 
+  it('janelas de jogo acompanham a velocidade da mesa; avisos ficam em tempo real', () => {
+    expect(PINBALL_TIMER_SCALE).toBeCloseTo(1 / PINBALL_TIME_SCALE, 6);
+    const s = createPinballState();
+    launchPinball(s);
+    expect(s.saverMs).toBeCloseTo(7000 * PINBALL_TIMER_SCALE, 6);
+    // Avisos não são janela de jogo: continuam em tempo real.
+    expect(s.messageMs).toBe(2400);
+    s.abilityUses = 1;
+    expect(activatePinballAbility(s, 'power')).toBe(true);
+    expect(s.abilityMs).toBeCloseTo(12_000 * PINBALL_TIMER_SCALE, 6);
+  });
+
   it('tempo esgotado permite tentar novamente a etapa atual', () => {
     const s = createPinballState();
     launchPinball(s);
@@ -211,7 +223,7 @@ describe('pinball da Vila', () => {
     hitBumper(baseline); hitBumper(powered);
     expect(powered.score).toBe(baseline.score * 2);
     stepPinball(powered, { left: false, right: false }, 50);
-    expect(powered.abilityMs).toBeLessThan(12_000);
+    expect(powered.abilityMs).toBeLessThan(12_000 * PINBALL_TIMER_SCALE);
   });
 
   it('deixa a bola cair pelo vão central com os dois flippers pressionados', () => {

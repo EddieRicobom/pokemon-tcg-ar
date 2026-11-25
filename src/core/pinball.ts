@@ -16,6 +16,13 @@ const SUBSTEP_MS = 4;
 export const PINBALL_TIME_SCALE = 0.6;
 const SPEED = PINBALL_TIME_SCALE;
 const ACCEL = SPEED * SPEED;
+/**
+ * Janelas de jogo (bola salva, habilidade, missão, bônus, combo, C-A-T) são medidas em tempo de jogo:
+ * com a mesa a 60%, elas duram 1/0,6 em tempo real para cobrir a mesma jogada. Avisos e recargas de spam
+ * continuam em tempo real.
+ */
+export const PINBALL_TIMER_SCALE = 1 / SPEED;
+const TIMER = PINBALL_TIMER_SCALE;
 const GRAVITY = 680 * ACCEL;
 const MAX_SPEED = 950 * SPEED;
 const ROLL_DRAG = 0.12 * SPEED;
@@ -237,7 +244,7 @@ export function createPinballState(best = 0): PinballState {
     bossPhase: 0, bossMask: 0, bossCooldownMs: 0, abilityUses: 1, abilityKind: null, abilityMs: 0,
     critters: [], captured: [],
     spin: 0, flipperAngle: [...FLIPPER_REST_ANGLE],
-    bonusSpot: 3, bonusSpotMs: 7000, bonusKind: null, bonusMs: 0, bonusAwards: 0, letterStep: 0, letterMs: 0,
+    bonusSpot: 3, bonusSpotMs: 7000 * TIMER, bonusKind: null, bonusMs: 0, bonusAwards: 0, letterStep: 0, letterMs: 0,
   };
   syncCritters(state);
   return state;
@@ -253,7 +260,7 @@ export function launchPinball(s: PinballState): boolean {
   if (s.phase !== 'ready' && s.phase !== 'between') return false;
   s.phase = 'playing';
   s.ball = { x: 316, y: 515, vx: -24 * SPEED, vy: -820 * SPEED };
-  s.saverMs = 7000;
+  s.saverMs = 7000 * TIMER;
   s.skillShot = true;
   s.abilityUses = 1;
   s.abilityKind = null;
@@ -271,10 +278,10 @@ export function activatePinballAbility(s: PinballState, ability: PinballAbility)
     s.ball.vy = -880 * SPEED;
   } else if (ability === 'guard') {
     s.kickback = true;
-    s.saverMs = Math.max(s.saverMs, 7000);
+    s.saverMs = Math.max(s.saverMs, 7000 * TIMER);
   } else {
     s.abilityKind = ability;
-    s.abilityMs = 12_000;
+    s.abilityMs = 12_000 * TIMER;
   }
   announce(s, `${ABILITIES[ability].label} ativado!`);
   return true;
@@ -410,12 +417,12 @@ function awardBonus(s: PinballState, events: PinballEvent[]): void {
   s.bonusAwards += 1;
   score(s, 2000);
   if (kind === 'shield') {
-    s.saverMs = Math.max(s.saverMs, 10_000);
+    s.saverMs = Math.max(s.saverMs, 10_000 * TIMER);
     s.kickback = true;
     announce(s, 'Bônus: Proteção! Resgate por 10 s.');
   } else {
     s.bonusKind = kind;
-    s.bonusMs = 10_000;
+    s.bonusMs = 10_000 * TIMER;
     announce(s, kind === 'fire' ? 'Bônus: bola em chamas! Pontos em dobro por 10 s.' : 'Bônus: bola elétrica! +300 por bumper por 10 s.');
   }
   events.push('reward');
@@ -430,7 +437,7 @@ function addExtraBall(s: PinballState): boolean {
 
 function enterMode(s: PinballState, mode: Exclude<PinballMode, 'normal'>, events: PinballEvent[]): void {
   s.mode = mode;
-  s.modeMs = mode === 'bonus' ? 100_000 : 60_000;
+  s.modeMs = (mode === 'bonus' ? 100_000 : 60_000) * TIMER;
   s.progress = 0;
   s.charge = 0;
   s.bossPhase = 0;
@@ -507,7 +514,7 @@ function completeMode(s: PinballState, events: PinballEvent[]): void {
   s.mode = 'normal'; s.modeMs = 0; s.progress = 0; s.charge = 0;
   if (s.stage === 2) s.ballLevel = 2;
   if (s.stage === 4) s.ballLevel = 3;
-  s.saverMs = Math.max(s.saverMs, 5000);
+  s.saverMs = Math.max(s.saverMs, 5000 * TIMER);
   const next = pinballStage(s.stage);
   announce(s, `Etapa ${s.stage + 1}: ${next.title}!${extraBall ? ' Bola extra!' : ''}`);
   events.push('reward');
@@ -520,7 +527,7 @@ function bossProgress(s: PinballState, amount: number, events: PinballEvent[]): 
   s.bossPhase++;
   s.progress = 0;
   score(s, 2500);
-  s.saverMs = Math.max(s.saverMs, 12_000);
+  s.saverMs = Math.max(s.saverMs, 12_000 * TIMER);
   announce(s, s.bossPhase === 1 ? 'Escudo quebrado! Acerte 2 selos diferentes.' : 'Selos abertos! Acerte o núcleo 2 vezes.');
   events.push('mode');
 }
@@ -536,7 +543,7 @@ function onTarget(s: PinballState, index: number, events: PinballEvent[]): void 
   // Letras C→A→T em ordem acendem um bônus; errar a ordem recomeça do C.
   if (index === s.letterStep) {
     s.letterStep += 1;
-    s.letterMs = 4000;
+    s.letterMs = 4000 * TIMER;
     if (s.letterStep >= 3) {
       s.letterStep = 0;
       s.letterMs = 0;
@@ -545,7 +552,7 @@ function onTarget(s: PinballState, index: number, events: PinballEvent[]): void 
     }
   } else {
     s.letterStep = index === 0 ? 1 : 0;
-    s.letterMs = index === 0 ? 4000 : 0;
+    s.letterMs = index === 0 ? 4000 * TIMER : 0;
   }
   if (s.mode === 'normal') {
     chargeChallenge(s, events);
@@ -598,7 +605,7 @@ export function stepPinball(s: PinballState, input: PinballInput, dtMs: number):
   s.laneCooldownMs = Math.max(0, s.laneCooldownMs - elapsed);
   s.bossCooldownMs = Math.max(0, s.bossCooldownMs - elapsed);
   s.bonusSpotMs = Math.max(0, s.bonusSpotMs - elapsed);
-  if (s.bonusSpotMs === 0) { s.bonusSpot = s.bonusSpot === 3 ? 4 : 3; s.bonusSpotMs = 7000; }
+  if (s.bonusSpotMs === 0) { s.bonusSpot = s.bonusSpot === 3 ? 4 : 3; s.bonusSpotMs = 7000 * TIMER; }
   if (s.bonusMs > 0) {
     s.bonusMs = Math.max(0, s.bonusMs - elapsed);
     if (s.bonusMs === 0) s.bonusKind = null;
@@ -657,7 +664,7 @@ export function stepPinball(s: PinballState, input: PinballInput, dtMs: number):
         s.hitCooldown[i] = 110;
         s.bumperHits += 1;
         s.combo = s.comboMs > 0 ? Math.min(5, s.combo + 1) : 1;
-        s.comboMs = 2200;
+        s.comboMs = 2200 * TIMER;
         let points = (i < 3 ? 150 : 90) * s.combo * (s.abilityKind === 'power' && s.abilityMs > 0 ? 2 : 1);
         if (s.bonusKind === 'fire') points *= 2;
         if (s.bonusKind === 'spark') points += 300;
@@ -666,7 +673,7 @@ export function stepPinball(s: PinballState, input: PinballInput, dtMs: number):
         if (i === s.bonusSpot) {
           awardBonus(s, events);
           s.bonusSpot = s.bonusSpot === 3 ? 4 : 3;
-          s.bonusSpotMs = 7000;
+          s.bonusSpotMs = 7000 * TIMER;
         }
         if (s.mode === 'evolution') {
           s.progress += 1;

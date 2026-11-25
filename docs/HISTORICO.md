@@ -5,6 +5,13 @@ O estado atual, as fases, as pendências e os riscos continuam no [plano](../IMP
 datadas (com o que foi e o que não foi validado em cada uma). A regra de validação do plano vale também para estas entradas:
 🔶 significa que **nada foi visto num celular real**.
 
+## BONK: ápice do salto mais leve; Pinball: janelas e estado visíveis (25/11/2026)
+
+- **BONK:** perto do ápice (`|velocidade vertical| < 150`) a gravidade cai para 72%, alongando o salto em ~6 quadros. A troca dá tempo de mirar a queda e de ler os obstáculos, sem mudar altura de pulo nem colisões.
+- **Pinball, janelas proporcionais:** bola salva, habilidade, missão, bônus, combo e a sequência C-A-T são medidas em tempo de jogo e agora duram `1/0,6` em tempo real, cobrindo a mesma jogada com a mesa a 60%. Avisos, recargas de spam e o tilt continuam em tempo real.
+- **Pinball, HUD:** chips de `🛟 BOLA SALVA` com contagem, `↩ RESGATE LATERAL PRONTO` e `🎯 TIRO DE HABILIDADE`; o combo ganhou uma barra fina de tempo restante.
+- 🔶 Typecheck, 347 arquivos / 3454 testes, build e 14/14 de layout passaram. O ápice do BONK e a duração das janelas ainda precisam de playtest no aparelho.
+
 ## Torre: armadura quebrável, matilha de elite e ofertas com sinergia (25/11/2026)
 
 - **Armadura quebrável:** crítico, Terastal e Supremo reduzem 35 pontos percentuais da armadura por 4 s (piso 0, teto 0,8). Queimadura, veneno e espinhos ignoram a guarda. O golpe que quebra já entra com a armadura reduzida, e a barra do chefe mostra `🛡 ARMADURA QUEBRADA`.

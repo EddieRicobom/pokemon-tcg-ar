@@ -42,6 +42,28 @@ describe('física do modo BONK', () => {
     expect(bonkJumpsRemaining(physics, p)).toBe(1);
   });
 
+  it('alivia a gravidade no ápice para dar tempo de mirar a queda', () => {
+    const p = player();
+    const physics = createBonkPhysics();
+    expect(tryBonkJump(physics, p)).toBe(true);
+    let rise = 0;
+    let fall = 0;
+    let atApex = false;
+    for (let frame = 0; frame < 240; frame += 1) {
+      stepBonkPhysics(physics, p, { x: p.x, y: p.y }, { dx: 0, dy: 0 }, 16);
+      if (!atApex) {
+        rise += 1;
+        if (physics.verticalVelocity <= 0) atApex = true;
+      } else {
+        fall += 1;
+        if (physics.grounded) break;
+      }
+    }
+    expect(atApex).toBe(true);
+    // Gravidade cheia daria ~47 quadros de 16 ms (2 × 470 / 1250). O alívio no ápice alonga o salto.
+    expect(rise + fall).toBeGreaterThan(50);
+  });
+
   it('libera um salto extra no ar com o buff', () => {
     const p = player();
     const physics = createBonkPhysics();

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef, triggerRef, watch } from 'vue';
-import { activatePinballAbility, createPinballState, launchPinball, mergePinballDex, nudgePinball, pinballMissionGoal, pinballPartnerSkill, pinballReward, pinballStage, PINBALL_BOSS_CORE, PINBALL_BOSS_PHASES, PINBALL_BUMPERS, PINBALL_DEX_MAX, PINBALL_FLIPPER_LENGTH, PINBALL_FLIPPERS, PINBALL_H, PINBALL_TARGETS, PINBALL_W, stepPinball } from '../core/pinball';
+import { activatePinballAbility, createPinballState, launchPinball, mergePinballDex, nudgePinball, pinballMissionGoal, pinballPartnerSkill, pinballReward, pinballStage, PINBALL_BOSS_CORE, PINBALL_BOSS_PHASES, PINBALL_BUMPERS, PINBALL_DEX_MAX, PINBALL_FLIPPER_LENGTH, PINBALL_FLIPPERS, PINBALL_H, PINBALL_TARGETS, PINBALL_TIMER_SCALE, PINBALL_W, stepPinball } from '../core/pinball';
 import type { PinballEvent, PinballState } from '../core/pinball';
 import { getLocalVillageSprite, getLocalVillageSpriteDirs } from '../app/services';
 import { contentBounds } from '../village/local-sprite';
@@ -495,7 +495,7 @@ onBeforeUnmount(() => {
         <span><small>PONTOS</small><b>{{ state.score.toLocaleString('pt-BR') }}</b></span>
         <span><small>RECORDE</small><b>{{ state.best.toLocaleString('pt-BR') }}</b></span>
         <span><small>BOLAS</small><b>{{ state.balls }}</b></span>
-        <span><small>COMBO</small><b>×{{ state.combo || 1 }}</b></span>
+        <span><small>COMBO</small><b>×{{ state.combo || 1 }}</b><i class="pinball-combo-meter" aria-hidden="true"><em :style="{ width: `${Math.min(100, state.comboMs / (22 * PINBALL_TIMER_SCALE))}%` }" /></i></span>
       </div>
       <button type="button" class="pinball-icon" :aria-expanded="menuOpen" aria-label="Menu do Pinball" @click="menuOpen = !menuOpen">☰</button>
       <button type="button" class="pinball-icon" aria-label="Sair do Pinball" @click="emit('close')">✕</button>
@@ -510,6 +510,11 @@ onBeforeUnmount(() => {
       <p v-else-if="state.phase === 'playing'">{{ state.charge }}/3 toques para abrir o desafio · alvos ou {{ stage?.species }}</p>
       <p v-else>{{ stage?.encounter }} · {{ stage?.objective }}</p>
       <p v-if="state.bonusKind" class="pinball-bonus" role="status">{{ state.bonusKind === 'fire' ? '🔥 BOLA EM CHAMAS · PONTOS EM DOBRO' : '⚡ BOLA ELÉTRICA · +300 POR BUMPER' }} · {{ Math.ceil(state.bonusMs / 1000) }}s</p>
+      <div v-if="state.phase === 'playing' && (state.saverMs > 0 || state.kickback || state.skillShot)" class="pinball-windows" role="status" aria-live="polite">
+        <span v-if="state.saverMs > 0" class="pinball-window save">🛟 BOLA SALVA · {{ Math.ceil(state.saverMs / 1000) }}s</span>
+        <span v-if="state.kickback" class="pinball-window kick">↩ RESGATE LATERAL PRONTO</span>
+        <span v-if="state.skillShot" class="pinball-window skill">🎯 TIRO DE HABILIDADE · acerte um alvo</span>
+      </div>
       <p class="pinball-endless">AVENTURA INFINITA · POKÉDEX {{ caughtDex.length }}/{{ PINBALL_DEX_MAX }}</p>
       <div v-if="state.captured.length" class="pinball-caught" role="status" :aria-label="`Capturados nesta aventura: ${state.captured.length}. Últimos: ${recentCaptures.slice(-6).map((entry) => entry.name).join(', ')}`">
         <small>CAPTURADOS</small>
@@ -581,6 +586,13 @@ onBeforeUnmount(() => {
 .pinball-icon{width:34px;height:34px;flex:none;padding:0;border:1px solid #d9b664;border-radius:10px;background:linear-gradient(#245646,#163c36);color:#fff8df;font:800 1rem system-ui;box-shadow:0 2px 0 #08251e}
 .pinball-stagebar{display:grid;gap:3px;padding:5px 9px;border:1px solid #a88d50;border-radius:11px;background:#082b29d9;text-align:left}.pinball-stage-line{display:flex;align-items:baseline;gap:7px;min-width:0}.pinball-stage-line small{flex:none;font-size:.55rem;letter-spacing:.1em;font-weight:800;color:var(--stage-tint)}.pinball-stage-line strong{overflow:hidden;font-size:.9rem;white-space:nowrap;text-overflow:ellipsis;color:#ffe39a}.pinball-stagebar p{margin:0;font-size:.7rem;line-height:1.3;color:#fff3cd}
 .pinball-bonus{color:#ffd36a!important;font-weight:800;letter-spacing:.02em}
+.pinball-windows{display:flex;flex-wrap:wrap;gap:4px}
+.pinball-window{padding:2px 7px;border:1px solid;border-radius:999px;font-size:.62rem;font-weight:800;letter-spacing:.03em;font-variant-numeric:tabular-nums}
+.pinball-window.save{color:#d6f7ff;border-color:#7bdcff;background:#102f42cc}
+.pinball-window.kick{color:#fff3b0;border-color:#ffe066;background:#3a3113cc}
+.pinball-window.skill{color:#ffd9f2;border-color:#ff9bd0;background:#421230cc}
+.pinball-combo-meter{display:block;height:2px;margin-top:1px;border-radius:2px;background:#ffffff26;overflow:hidden}
+.pinball-combo-meter em{display:block;height:100%;background:#ffd36a;transition:width .12s linear}
 .pinball-endless{color:#9fe8c5!important;font-size:.56rem!important;font-weight:800;letter-spacing:.08em}
 .pinball-stage-track{display:flex;gap:5px;max-width:300px}.pinball-stage-track span{height:5px;flex:1;border-radius:9px;background:#395851}.pinball-stage-track span.current{background:#f9c449}.pinball-stage-track span.done{background:#65dca6}
 .pinball-caught{display:flex;align-items:center;gap:6px;min-width:0}.pinball-caught>small{flex:none;font-size:.52rem;letter-spacing:.08em;font-weight:800;color:#9fe8c5}.pinball-caught ul{display:flex;gap:4px;margin:0;padding:0 1px 1px;overflow-x:auto;list-style:none;scrollbar-width:none}.pinball-caught ul::-webkit-scrollbar{display:none}.pinball-caught li{display:inline-flex;align-items:center;gap:3px;flex:none;max-width:92px;padding:1px 6px 1px 2px;border:1px solid #5f9276;border-radius:999px;background:#0b3a2ee6;color:#e9ffe9;font-size:.58rem;font-weight:800;white-space:nowrap}.pinball-caught li img{width:auto;height:22px;image-rendering:pixelated}.pinball-caught li b{display:grid;width:18px;height:18px;place-items:center;color:#ffd76a}.pinball-caught li span{overflow:hidden;text-overflow:ellipsis}
