@@ -48,7 +48,7 @@ import {
   ADAPTIVE_START, adaptiveTarget, applyLevelBonus, damageRanking, damageTakenRanking, emptyRunStats, LEVEL_BONUS_TEXT, recordDamage, recordDamageTaken, sampleTimeline, stepAdaptive,
   SURVIVOR_THIEF_DEX, SURVIVOR_THIEF_EVERY_MS, SURVIVOR_THIEF_FIRST_MS, SURVIVOR_THIEF_LIFE_MS, SURVIVOR_THIEF_SPEED, thiefFleeTarget, thiefReward,
 } from './survivor-extras';
-import { ARENA_H, ARENA_W, DIGITAL_DANGER_COOLDOWN_MS, DIGITAL_DANGER_MAX, DIGITAL_DANGER_UNLOCK_MS, DIGITAL_DANGER_VISIBLE_RADIUS, MAGNET_PICKUP_RADIUS_CAP, MAX_DIGITAL_POKEBALLS_PER_RUN, MAX_SURVIVOR_SUPPORTS, PICKUP_RADIUS, PLAYER_RADIUS, SPAWN_MARGIN, SURVIVOR_FIELD_EVENT_BEACON_MS, SURVIVOR_FIELD_EVENT_EVERY_MS, SURVIVOR_FIELD_EVENT_FIRST_MS, SURVIVOR_FIELD_EVENT_HUNT_MS, SURVIVOR_FIELD_EVENT_REACH_RADIUS, SURVIVOR_LOVE_CANDY_MS, SURVIVOR_OMEGA_SHARD_MS, SURVIVOR_SHADOW_BALL_EVERY_MS, SURVIVOR_SHADOW_BALL_FIRST_MS, SURVIVOR_SHADOW_BALL_MAX_PER_RUN, SURVIVOR_SHADOW_CUTSCENE_MS, SURVIVOR_SPAWN_DISTANCE, SURVIVOR_SUPPORT_EVOLUTION_OFFER_CHANCE, SURVIVOR_SUPPORT_RARE_OFFER_CHANCE, SURVIVOR_TRUST_STONE_MS, SURVIVOR_UPGRADE_RARITIES, SURVIVOR_FAST_TRAINER_COIN_SCALE, survivorMilestoneMs } from './survivor-types';
+import { ARENA_H, ARENA_W, DIGITAL_DANGER_COOLDOWN_MS, DIGITAL_DANGER_MAX, DIGITAL_DANGER_UNLOCK_MS, DIGITAL_DANGER_VISIBLE_RADIUS, MAGNET_PICKUP_RADIUS_CAP, MAX_DIGITAL_POKEBALLS_PER_RUN, MAX_SURVIVOR_SUPPORTS, PICKUP_RADIUS, PLAYER_RADIUS, SPAWN_MARGIN, SURVIVOR_ARCEUS_CUTSCENE_MS, SURVIVOR_ARCEUS_DEX, SURVIVOR_FIELD_EVENT_BEACON_MS, SURVIVOR_FIELD_EVENT_EVERY_MS, SURVIVOR_FIELD_EVENT_FIRST_MS, SURVIVOR_FIELD_EVENT_HUNT_MS, SURVIVOR_FIELD_EVENT_REACH_RADIUS, SURVIVOR_LOVE_CANDY_MS, SURVIVOR_OMEGA_SHARD_MS, SURVIVOR_SHADOW_BALL_EVERY_MS, SURVIVOR_SHADOW_BALL_FIRST_MS, SURVIVOR_SHADOW_BALL_MAX_PER_RUN, SURVIVOR_SHADOW_CUTSCENE_MS, SURVIVOR_SPAWN_DISTANCE, SURVIVOR_SUPPORT_EVOLUTION_OFFER_CHANCE, SURVIVOR_SUPPORT_RARE_OFFER_CHANCE, SURVIVOR_TRUST_STONE_MS, SURVIVOR_UPGRADE_RARITIES, SURVIVOR_FAST_TRAINER_COIN_SCALE, survivorMilestoneMs } from './survivor-types';
 import type { SurvivorSummary, SurvivorBossAttack, SurvivorBossAttackKind, SurvivorChest, SurvivorGravityWell, SurvivorHeldStrike, SurvivorTimeBubble, SurvivorFinalHit, SurvivorHitSource, SurvivorEnemy, SurvivorEnemyArchetype, SurvivorEnemyGrade, SurvivorEvent, SurvivorEvolutionOption, SurvivorInput, SurvivorPlayer, SurvivorProjectile, SurvivorState, SurvivorSupport, SurvivorSupportCandidate, SurvivorSupportRole, SurvivorTypeAffinity, SurvivorUpgrade, SurvivorUpgradeOption, SurvivorUpgradeRarity } from './survivor-types';
 import { cadenceCanImprove, CHARGE_FOCUS_RATE_ID, CHARGE_RUSH_LENGTH_ID, SURVIVOR_ATTACK_DAMAGE_CAP, SURVIVOR_UPGRADES, SURVIVOR_RARITY_ORDER, round1 } from './survivor-upgrades';
 import { cancelTeleportHold, createSurvivorCharge, distanceToSegment, FOCUS_CHARGE_PER_SEC, FOCUS_HIT_CHARGE, FOCUS_SHOT_PIERCE, FOCUS_SHOT_SIZE_MULTIPLIER, FOCUS_SHOT_SPEED_MULTIPLIER, FOCUS_SLOW_MULTIPLIER, focusBeam, TELEPORT_MAX_RANGE, RAPID_BURST_MIN_CYCLE_MS, RAPID_BURST_SHOT_INTERVAL_MS, RAPID_BURST_SHOTS, RAPID_BURST_SPREAD, RUSH_REFERENCE_SPEED, stepChargeMeter, teleportReach } from './survivor-charge';
@@ -100,6 +100,10 @@ export const BALANCE = {
   /** Chefes periódicos: ameaças raras, mas com vida suficiente para exigir reposicionamento e coleta sob pressão. */
   bossHpBase: 220,
   bossHpPerWave: 55,
+  /** Arceus: superboss do Perigo Digital, bem acima de um chefe periódico. */
+  arceusHpMultiplier: 8,
+  arceusDamageMultiplier: 2,
+  arceusSpeed: 80,
   bossSpeed: 72,
   bossDamageBase: 15,
   bossDamagePerWave: 1.5,
@@ -350,6 +354,7 @@ export function createSurvivorState(seed: number, options: CreateSurvivorOptions
     digitalPokeballs: 0,
     digitalDanger: 0,
     digitalDangerCooldownMs: 0,
+    arceusEncounter: { phase: 'idle', arrivalMs: 0 },
     shadowEncounter: { phase: 'idle', dexId: shadowGuardian.dexId, name: shadowGuardian.name, arrivalMs: 0 },
     nextShadowBallAtMs: survivorMilestoneMs(SURVIVOR_SHADOW_BALL_FIRST_MS, fast),
     shadowBallsSpawned: 0,
@@ -554,32 +559,35 @@ function spawnEnemy(
   boss: boolean,
   grade: SurvivorEnemyGrade = 'comum',
   trainerId?: number,
-  options?: { shadowBoss?: boolean; dexId?: number },
+  options?: { shadowBoss?: boolean; dexId?: number; arceus?: boolean },
 ): number | null {
   if (state.enemies.length >= ENEMY_BEHAVIOR_LIMITS.maxEnemies && !boss && grade === 'comum') return null;
   const { x, y } = spawnPoint(state.rng, state.player, boss);
   const t = state.elapsedMs / 1000;
   if (boss) {
     const shadow = options?.shadowBoss === true;
-    const hp = Math.round((BALANCE.bossHpBase + state.wave * BALANCE.bossHpPerWave) * state.infiniteScale * (shadow ? BALANCE.shadowBossHpMultiplier : 1));
+    const arceus = options?.arceus === true;
+    const hpMultiplier = arceus ? BALANCE.arceusHpMultiplier : shadow ? BALANCE.shadowBossHpMultiplier : 1;
+    const hp = Math.round((BALANCE.bossHpBase + state.wave * BALANCE.bossHpPerWave) * state.infiniteScale * hpMultiplier);
     const id = state.nextId++;
     addEnemy(state, events, {
       id,
       kind: state.kindCount,
       boss: true,
       ...(shadow ? { shadowBoss: true } : {}),
+      ...(arceus ? { arceus: true, digitalThreat: true } : {}),
       grade: 'comum',
       x,
       y,
       hp,
       maxHp: hp,
-      speed: shadow ? BALANCE.shadowBossSpeed : BALANCE.bossSpeed,
-      damage: Math.round((BALANCE.bossDamageBase + state.wave * BALANCE.bossDamagePerWave) * state.infiniteScale * (shadow ? BALANCE.shadowBossDamageMultiplier : 1)),
-      radius: shadow ? 36 : 28,
+      speed: arceus ? BALANCE.arceusSpeed : shadow ? BALANCE.shadowBossSpeed : BALANCE.bossSpeed,
+      damage: Math.round((BALANCE.bossDamageBase + state.wave * BALANCE.bossDamagePerWave) * state.infiniteScale * (arceus ? BALANCE.arceusDamageMultiplier : shadow ? BALANCE.shadowBossDamageMultiplier : 1)),
+      radius: arceus ? 36 : shadow ? 36 : 28,
       hitFlashMs: 0,
         archetype: resolveEnemyArchetype(state, state.kindCount, true, 'comum', id),
-      specialTimerMs: shadow ? 1200 : 1800,
-      ...(options?.dexId !== undefined ? { dexId: options.dexId } : {}),
+      specialTimerMs: arceus ? 1400 : shadow ? 1200 : 1800,
+      ...(arceus ? { dexId: SURVIVOR_ARCEUS_DEX } : options?.dexId !== undefined ? { dexId: options.dexId } : {}),
     });
     state.nextBossAttackAtMs = Math.max(state.nextBossAttackAtMs ?? 0, state.elapsedMs + BOSS_ATTACK_FIRST_MS);
     return id;
@@ -3563,7 +3571,7 @@ function updateDigitalDanger(state: SurvivorState, input: SurvivorInput, dtMs: n
     state.digitalDanger = 0;
     return;
   }
-  if (state.digitalDangerCooldownMs > 0 || trainerSpawnedThisStep || state.enemies.some((enemy) => enemy.hp > 0 && enemy.trainerId !== undefined)) {
+  if (state.digitalDangerCooldownMs > 0 || trainerSpawnedThisStep || state.arceusEncounter.phase === 'battle' || state.enemies.some((enemy) => enemy.hp > 0 && enemy.trainerId !== undefined)) {
     state.digitalDanger = Math.max(0, state.digitalDanger - (dtMs / 1000) * 4);
     return;
   }
@@ -3576,7 +3584,25 @@ function updateDigitalDanger(state: SurvivorState, input: SurvivorInput, dtMs: n
 
   state.digitalDanger = 0;
   state.digitalDangerCooldownMs = DIGITAL_DANGER_COOLDOWN_MS;
-  spawnTrainer(state, 6, false, events, 'digital-danger');
+  if (state.arceusEncounter.phase === 'idle') {
+    // A primeira vez que o medidor enche é o Arceus: a cutscene congela a Torre antes do superboss entrar.
+    state.arceusEncounter.phase = 'arrival';
+    state.arceusEncounter.arrivalMs = 0;
+    events.push({ type: 'arceusArrival', dexId: SURVIVOR_ARCEUS_DEX, name: 'Arceus' });
+  } else if (state.arceusEncounter.phase === 'defeated') {
+    spawnTrainer(state, 6, false, events, 'digital-danger');
+  }
+}
+
+/** A cutscene do Arceus congela a Torre: o superboss só entra depois que a ameaça fica legível. */
+function advanceArceusEncounter(state: SurvivorState, dtMs: number, events: SurvivorEvent[]): boolean {
+  const encounter = state.arceusEncounter;
+  if (encounter.phase !== 'arrival') return false;
+  encounter.arrivalMs = Math.min(SURVIVOR_ARCEUS_CUTSCENE_MS, encounter.arrivalMs + dtMs);
+  if (encounter.arrivalMs < SURVIVOR_ARCEUS_CUTSCENE_MS) return true;
+  encounter.phase = 'battle';
+  spawnEnemy(state, events, true, 'comum', undefined, { arceus: true });
+  return false;
 }
 
 function shadowBallPoint(state: SurvivorState): { x: number; y: number } {
@@ -3757,6 +3783,7 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
   if (!Number.isFinite(dtMs) || dtMs <= 0) return events;
   if (!state.debugLaboratory && advanceSpecialEncounter(state, dtMs)) return events;
   if (!state.debugLaboratory && advanceShadowEncounter(state, dtMs, events)) return events;
+  if (!state.debugLaboratory && advanceArceusEncounter(state, dtMs, events)) return events;
   const dt = dtMs / 1000;
   const healBlockBeforeStep = state.player.healBlockMs ?? 0;
   const previousElapsedMs = state.elapsedMs;
@@ -4172,6 +4199,12 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
         state.shadowEncounter.arrivalMs = 0;
         state.nextShadowBallAtMs = state.elapsedMs + SURVIVOR_SHADOW_BALL_EVERY_MS;
         events.push({ type: 'shadowBossDefeated', dexId: state.shadowEncounter.dexId, name: state.shadowEncounter.name, trustStones: state.shadowTrustStones });
+      }
+      if (e.arceus) {
+        state.arceusEncounter.phase = 'defeated';
+        state.arceusEncounter.arrivalMs = 0;
+        state.bossesBeaten += 1;
+        events.push({ type: 'arceusDefeated', dexId: SURVIVOR_ARCEUS_DEX, name: 'Arceus' });
       }
     }
     // Treinador derrotado: nenhum Pokémon dele continua em pé.
