@@ -151,7 +151,7 @@ describe('survival pvp: validação do fio', () => {
   it('aceita as mensagens bem formadas', () => {
     const msgs: WireMessage[] = [
       { t: 'sv-team', name: 'Ash', team: [mon('a'), mon('b')] }, { t: 'sv-progress', done: 2 }, { t: 'sv-start' }, { t: 'sv-go' },
-      { t: 'sv-ready', ok: false }, { t: 'sv-input', seq: 3, dx: 0.5, dy: -1, switchTo: 2 }, good(),
+      { t: 'sv-ready', ok: false }, { t: 'sv-input', seq: 3, dx: 0.5, dy: -1, switchTo: 2 }, { t: 'sv-rematch' }, good(),
     ];
     for (const m of msgs) expect(parseMessage(encodeMessage(m))).toEqual(m);
   });

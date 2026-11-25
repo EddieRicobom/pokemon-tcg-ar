@@ -14,6 +14,8 @@ import { SURVIVOR_ALPHA_INCREASE_MS } from '../src/core/survivor-alpha';
 import { applyUpgrade, ARENA_H, ARENA_W, createSurvivorState, resolveBlackChest, stepSurvivor } from '../src/core/survivor';
 import { chooseSurvivorSpecial, chooseSurvivorSpecialBranch } from '../src/core/survivor-specials';
 import type { SurvivorInput, SurvivorState } from '../src/core/survivor';
+import type { SurvivorUpgradeOption } from '../src/core/survivor-types';
+import { speciesName } from '../src/core/survivor-evolution';
 
 /** Amostra e passo menores para diagnósticos locais; o padrão de avaliação continua em 200 corridas a 60 fps. */
 const DT = Math.max(16, Math.min(100, Number(process.env.SURVIVOR_SIM_DT ?? 16)));
@@ -75,9 +77,9 @@ interface Run {
   upgradeInterruptions: number;
 }
 
-function play(seed: number, pick: (s: SurvivorState, rng: Rng) => string, noBoss = false): Run {
+function play(seed: number, pick: (s: SurvivorState, rng: Rng) => string, noBoss = false, forcedDex?: number): Run {
   // Espalha as corridas pela Pokédex; cada uma usa os tipos e stats estáticos reais da espécie escolhida.
-  const dexId = ((seed * 73) % LAST_DEX) + 1;
+  const dexId = forcedDex ?? (((seed * 73) % LAST_DEX) + 1);
   const stats = statsOfDex(dexId);
   const types = typesOfDex(dexId);
   const move = moveFor(types, stats);
@@ -144,6 +146,32 @@ const randomPick = (s: SurvivorState, rng: Rng) => s.pendingUpgrade![Math.floor(
 const defensePick = (s: SurvivorState, rng: Rng) => {
   const preferred = ['guard-physical', 'guard-balanced', 'guard-special', 'second-wind', 'vigor'];
   return preferred.map((id) => s.pendingUpgrade?.find((card) => card.id === id)).find((card) => card !== undefined)?.id ?? randomPick(s, rng);
+};
+/**
+ * Política "competente": raridade primeiro, defesa quando a vida está baixa, evolução e segundo fôlego quase sempre,
+ * e nunca escolhe a carta que só aumenta a dificuldade ou paga moedas. Serve para medir o teto de uma pessoa que lê as
+ * cartas, em vez do piso do robô que sorteia.
+ */
+const RARITY_SCORE: Record<string, number> = { ancestral: 4, lendario: 3, raro: 2, normal: 1 };
+const smartPick = (s: SurvivorState, rng: Rng): string => {
+  const offer = s.pendingUpgrade ?? [];
+  const hpRatio = s.player.maxHp > 0 ? s.player.hp / s.player.maxHp : 1;
+  const lowHp = hpRatio < 0.5;
+  const early = s.player.level < 10;
+  const score = (o: SurvivorUpgradeOption): number => {
+    let value = RARITY_SCORE[o.rarity ?? 'normal'] ?? 1;
+    if (o.id === 'difficulty') value -= 8;
+    if (o.id.startsWith('coins-')) value -= 3;
+    if (o.id.startsWith('evolve:')) value += 3;
+    if (o.id === 'second-wind' || o.id === 'guard-balanced') value += 1.5;
+    if (o.id === 'heal-30' || o.id === 'vigor') value += lowHp ? 3.5 : 0.5;
+    if (o.family === 'defesa') value += lowHp ? 2.5 : 0.5;
+    if (o.family === 'ataque') value += lowHp ? 0.5 : 1.5;
+    if (o.family === 'progresso' && early) value += 1;
+    if (o.family === 'movimento' && lowHp) value += 1;
+    return value;
+  };
+  return offer.slice().sort((a, b) => score(b) - score(a))[0]?.id ?? randomPick(s, rng);
 };
 
 function pct(sorted: number[], q: number): number {
@@ -222,6 +250,37 @@ describe('balanceamento da Torre (robô)', () => {
     const runs = Array.from({ length: RUNS }, (_, i) => play(1000 + i, defensePick));
     report('defesa', runs);
   }, 600_000);
+
+  it('diagnóstico: as mesmas corridas com escolhas competentes (não sorteia)', () => {
+    const runs = Array.from({ length: RUNS }, (_, i) => play(1000 + i, smartPick));
+    report('competente', runs);
+  }, 600_000);
+
+  /**
+   * Uma amostra de espécies espalhadas pela Pokédex, várias corridas por espécie, com a política competente. Mostra
+   * quais espécies nunca saem do primeiro minuto e quais passam de 20. A amostra é pequena de propósito: serve para
+   * achar lanternas, não para provar equilíbrio. `SURVIVOR_SIM_SPECIES=0` desliga e `SURVIVOR_SIM_SPECIES_RUNS` muda
+   * as corridas por espécie.
+   */
+  it('amostra por espécie (lanternas e campeãs)', () => {
+    const sample = Math.max(0, Math.min(40, Number(process.env.SURVIVOR_SIM_SPECIES ?? 8)));
+    if (sample === 0) return;
+    const perSpecies = Math.max(1, Math.min(20, Number(process.env.SURVIVOR_SIM_SPECIES_RUNS ?? 4)));
+    const rows = Array.from({ length: sample }, (_, i) => {
+      const dexId = Math.max(1, Math.floor((LAST_DEX * (i + 0.5)) / sample));
+      const runs = Array.from({ length: perSpecies }, (_, r) => play(90_000 + i * 31 + r, smartPick, false, dexId));
+      const times = runs.map((run) => run.survivedMs / 1000).sort((a, b) => a - b);
+      return {
+        dexId,
+        nome: speciesName(dexId),
+        forma: runs[0]!.moveCategory,
+        medianaS: Math.round(pct(times, 0.5)),
+        chegouA5min: runs.filter((run) => run.survivedMs >= 5 * 60_000).length,
+        chegouA20min: runs.filter((run) => run.survivedMs >= 20 * 60_000).length,
+      };
+    }).sort((a, b) => a.medianaS - b.medianaS);
+    console.log(`SIM porEspécie ${JSON.stringify({ corridasPorEspecie: perSpecies, amostra: rows })}`);
+  }, 2_400_000);
 
   it('cobre os marcos do relógio e o infinito depois de 20 minutos', () => {
     for (const minutes of [1, 5, 10, 15, 20]) {

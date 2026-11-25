@@ -4,6 +4,14 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). 
 
 ## [Não lançado]
 
+### Torre: medição do PvP, revanche e acessibilidade (2026-11-25)
+
+- Novo simulador do PvP (`scripts/survivor-pvp-sim.eval.ts`): usa o motor real da arena com robôs simétricos e mede viés de lado, vitória pela nota da equipe, duração e desempenho por forma de golpe. Achado: nos espelhos o lado 0 venceu 85% com robôs ativos (73% das decididas sem passo lateral; 35% parado contra 5% do lado 1 e 60% de empates), indicando vantagem do lado 0, ainda não investigada.
+- Simulador solo ganhou a política de escolhas "competente" e uma amostra de espécies com mediana por espécie (`SURVIVOR_SIM_SPECIES`), para achar lanternas e campeãs.
+- PvP: **revanche** com as mesmas equipes (`sv-rematch`; cada lado pede e a luta recomeça quando os dois pedem) e a ida e volta do ping visível na arena.
+- Torre: **vibração** opcional (dano, telegrafo de chefe, nível, fim de corrida) com interruptor na pausa, e cartão de **boas-vindas** de três passos uma vez por save.
+- Preferências da Torre centralizadas em `src/app/survivor-preferences.ts`, com testes e as mesmas chaves antigas.
+
 ### Lapidação geral (2026-11-05)
 
 - Arena: duelo por turnos como primeira opção, com golpes sugeridos, histórico, os efeitos dos jogos (proteger, dois turnos, recarga, dano fixo, clima, telas e outros) e animação por golpe.

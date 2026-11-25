@@ -27,6 +27,13 @@ import { fetchSprite } from '../ar/sprite-source';
 import { pokemonSpriteUrl } from '../ar/sprite-url';
 import { recordEvent } from '../app/trainer-store';
 import { clearSurvivorCheckpoint, readSurvivorCheckpoint, writeSurvivorCheckpoint, type SurvivorCheckpoint, type SurvivorCheckpointOptions } from '../app/survivor-checkpoint';
+import {
+  readSurvivorAdaptive, readSurvivorButtons, readSurvivorCinema, readSurvivorHaptics, readSurvivorPure,
+  readSurvivorTips, readSurvivorTutorialSeen, writeSurvivorAdaptive, writeSurvivorButtons, writeSurvivorCinema,
+  writeSurvivorHaptics, writeSurvivorPure, writeSurvivorTips, writeSurvivorTutorialSeen,
+} from '../app/survivor-preferences';
+import type { SurvivorButtonLayout, SurvivorButtonSize, SurvivorHand } from '../app/survivor-preferences';
+import { vibrate } from '../app/haptics';
 import { recordSightings } from '../app/pokedex-store';
 import { addCoins, withVillage } from '../app/wallet';
 import { settleTowerRun, startTowerRun } from '../core/village/dojo';
@@ -224,16 +231,12 @@ const JOY_MAX = 42;
 const regionScenery = ref(true);
 const minimapEnabled = ref(true);
 const specialEffects = ref(true);
-const CINEMA_KEY = 'tcg-ar-torre-luz-v1';
-function readCinema(): boolean {
-  try { return localStorage.getItem(CINEMA_KEY) !== '0'; } catch { return true; }
-}
 /** Luz cinematográfica: escuridão, sombras e brilhos que crescem com a corrida. */
-const cinemaOn = ref(readCinema());
+const cinemaOn = ref(readSurvivorCinema());
 const cinemaSpriteShadows = computed(() => effectiveVisual.value.shadow && effectiveVisual.value.renderProfile === 'cinema' && !effectiveVisual.value.rotomMode);
 function toggleCinema(): void {
   cinemaOn.value = !cinemaOn.value;
-  try { localStorage.setItem(CINEMA_KEY, cinemaOn.value ? '1' : '0'); } catch { /* vale só nesta sessão */ }
+  writeSurvivorCinema(cinemaOn.value);
 }
 const hudExpanded = ref(false);
 // Preferência temporária: cada corrida começa com as escolhas manuais.
@@ -347,7 +350,6 @@ function say(text: string, ms = 3000): void {
 }
 
 /** Dicas contextuais: aparecem uma única vez na vida do save, no momento em que o conceito entra em jogo. */
-const TIPS_KEY = 'tcg-ar-torre-tips-v1';
 const TIP_TEXT: Record<string, string> = {
   telegraph: '⚠️ Ataque marcado: o nome, o tipo e os segundos estão na tela. Saia da área antes do 0s.',
   'black-chest': '🟣 Baú negro: dá um item forte e cobra uma penalidade permanente. Dá para ignorar e seguir.',
@@ -358,17 +360,14 @@ const TIP_TEXT: Record<string, string> = {
 let seenTips: Set<string> | null = null;
 function loadSeenTips(): Set<string> {
   if (seenTips) return seenTips;
-  try {
-    const raw = JSON.parse(localStorage.getItem(TIPS_KEY) ?? '[]') as unknown;
-    seenTips = new Set(Array.isArray(raw) ? raw.filter((id): id is string => typeof id === 'string') : []);
-  } catch { seenTips = new Set(); }
+  seenTips = new Set(readSurvivorTips());
   return seenTips;
 }
 function maybeTip(id: keyof typeof TIP_TEXT): boolean {
   const seen = loadSeenTips();
   if (seen.has(id) || !TIP_TEXT[id]) return false;
   seen.add(id);
-  try { localStorage.setItem(TIPS_KEY, JSON.stringify([...seen].slice(-20))); } catch { /* armazenamento indisponível */ }
+  writeSurvivorTips(seen);
   say(TIP_TEXT[id], 6500);
   return true;
 }
@@ -495,21 +494,12 @@ const selectedPreparation = ref<SurvivorPreparationId>('classica');
 // ----------------------------------------------------------------------------- Vila na corrida (Survival e BONK)
 // Dojô, sorte do Carteiro e marmita entram pelo mesmo `beginRun`, então valem nos dois modos. Nada é inventado: se a
 // Vila não puder ser lida, a corrida sai pura (PURE_LOADOUT).
-const ADAPTIVE_PREF_KEY = 'tcg-ar-survivor-adaptive-v1';
 /** Desafio que se adapta à força do Pokémon: ligado por padrão, a pessoa desliga na seleção. */
-const adaptiveWanted = ref((() => { try { return localStorage.getItem(ADAPTIVE_PREF_KEY) !== '0'; } catch { return true; } })());
-watch(adaptiveWanted, (value) => {
-  try { localStorage.setItem(ADAPTIVE_PREF_KEY, value ? '1' : '0'); } catch { /* armazenamento indisponível */ }
-});
-const PURE_PREF_KEY = 'tcg-ar-survivor-pure-v1';
-function readPurePref(): boolean {
-  try { return localStorage.getItem(PURE_PREF_KEY) === '1'; } catch { return false; }
-}
+const adaptiveWanted = ref(readSurvivorAdaptive());
+watch(adaptiveWanted, (value) => writeSurvivorAdaptive(value));
 /** "Corrida pura": sem Dojô, sorte nem marmita. Preferência leve do aparelho. */
-const pureWanted = ref(readPurePref());
-watch(pureWanted, (value) => {
-  try { localStorage.setItem(PURE_PREF_KEY, value ? '1' : '0'); } catch { /* armazenamento indisponível */ }
-});
+const pureWanted = ref(readSurvivorPure());
+watch(pureWanted, (value) => writeSurvivorPure(value));
 /** O que a Vila entregaria agora, só para mostrar na seleção (não consome a sorte nem a marmita). */
 const towerPreview = ref<string[]>([]);
 function refreshTowerPreview(): void {
@@ -733,6 +723,8 @@ const canvasEl = ref<HTMLCanvasElement | null>(null);
 /** Aviso breve de dano: fica fora do canvas para não acrescentar trabalho ao renderizador do jogo. */
 const damageFeedback = ref(false);
 let damageFeedbackTimer: ReturnType<typeof setTimeout> | null = null;
+/** Vibração de dano no máximo a cada 120 ms: contato constante não vira zumbido. */
+let lastDamageHapticAt = -Infinity;
 /** Números de dano não fazem parte do motor: são só uma leitura curta do que acabou de acontecer. */
 interface DamageNumber { id: number; x: number; y: number; amount: number; bornAt: number; boss: boolean; critical?: boolean }
 const damageNumbers = ref<DamageNumber[]>([]);
@@ -1065,33 +1057,38 @@ const paused = ref(false);
 const helpOpen = ref(false);
 
 /** Botões Pular e Especial: tamanho e arranjo ajustáveis para uso com dois polegares (ficam guardados no aparelho). */
-type ButtonSize = 'p' | 'm' | 'g';
-type ButtonLayout = 'lado' | 'pilha' | 'troca';
-type Handedness = 'right' | 'left';
-const BUTTONS_KEY = 'tcg-ar-survivor-buttons-v1';
+type ButtonSize = SurvivorButtonSize;
+type ButtonLayout = SurvivorButtonLayout;
+type Handedness = SurvivorHand;
 const BUTTON_SCALE: Record<ButtonSize, number> = { p: 0.85, m: 1, g: 1.2 };
 const BUTTON_SIZE_LABELS: Record<ButtonSize, string> = { p: 'Pequenos', m: 'Médios', g: 'Grandes' };
 const BUTTON_LAYOUT_LABELS: Record<ButtonLayout, string> = { lado: 'Lado a lado', pilha: 'Empilhados', troca: 'Trocados' };
 const HAND_LABELS: Record<Handedness, string> = { right: 'Destro', left: 'Canhoto' };
-function readButtons(): { size: ButtonSize; layout: ButtonLayout; hand: Handedness } {
-  try {
-    const raw = JSON.parse(localStorage.getItem(BUTTONS_KEY) ?? 'null') as { size?: string; layout?: string; hand?: string } | null;
-    return {
-      size: raw?.size === 'p' || raw?.size === 'g' ? raw.size : 'm',
-      layout: raw?.layout === 'pilha' || raw?.layout === 'troca' ? raw.layout : 'lado',
-      hand: raw?.hand === 'left' ? 'left' : 'right',
-    };
-  } catch {
-    return { size: 'm', layout: 'lado', hand: 'right' };
-  }
-}
-const savedButtons = readButtons();
+const savedButtons = readSurvivorButtons();
 const buttonSize = ref<ButtonSize>(savedButtons.size);
 const buttonLayout = ref<ButtonLayout>(savedButtons.layout);
 const handedness = ref<Handedness>(savedButtons.hand);
 watch([buttonSize, buttonLayout, handedness], () => {
-  try { localStorage.setItem(BUTTONS_KEY, JSON.stringify({ size: buttonSize.value, layout: buttonLayout.value, hand: handedness.value })); } catch { /* armazenamento indisponível */ }
+  writeSurvivorButtons({ size: buttonSize.value, layout: buttonLayout.value, hand: handedness.value });
 });
+/** Vibração: só onde o navegador deixa; preferência própria da Torre, com opção de desligar. */
+const hapticsOn = ref(readSurvivorHaptics());
+function toggleHaptics(): void {
+  hapticsOn.value = !hapticsOn.value;
+  writeSurvivorHaptics(hapticsOn.value);
+  if (hapticsOn.value) vibrate({ kind: 'bumper' });
+}
+/** Aviso de ataque do chefe: uma vibração curta quando o telegrafo abre (não a cada segundo do contador). */
+watch(() => bossAttackWarning.value !== null, (on) => {
+  if (on && hapticsOn.value && !paused.value) vibrate({ kind: 'bumper' });
+});
+/** Cartão curto de boas-vindas, uma vez por save; "Como jogar" na pausa reabre os controles completos. */
+const welcomeOpen = ref(!props.pvpRun && !readSurvivorTutorialSeen());
+function closeWelcome(): void {
+  welcomeOpen.value = false;
+  writeSurvivorTutorialSeen(true);
+  focusFirstSurvivorAction();
+}
 function openHelp(): void {
   if (!paused.value) togglePause();
   if (paused.value) helpOpen.value = true;
@@ -4206,6 +4203,14 @@ function loop(ts: number): void {
         lastDirectHitSeen = direct;
         playSound('survivor-hurt');
         showDamageFeedback();
+        if (hapticsOn.value) {
+          const now = performance.now();
+          if (now - lastDamageHapticAt >= 120) {
+            lastDamageHapticAt = now;
+            const lost = Math.max(0, hpBefore - s.player.hp);
+            vibrate({ kind: 'hit', strength: clamp(0.3 + (lost / Math.max(1, s.player.maxHp)) * 4, 0.3, 1) });
+          }
+        }
         const kind = s.lastHit?.kind;
         hurtBursts.push({ x: s.player.x, y: s.player.y, born: animMs, color: kind === 'explosão' ? '#ff8c3a' : kind === 'projétil' ? '#ffb36b' : '#ff6c64' });
         if (hurtBursts.length > 6) hurtBursts.splice(0, hurtBursts.length - 6);
@@ -4213,7 +4218,10 @@ function loop(ts: number): void {
     }
     for (const ev of events) {
       recordRareDiscovery(ev);
-      if (ev.type === 'levelup') playSound('survivor-level');
+      if (ev.type === 'levelup') {
+        playSound('survivor-level');
+        if (hapticsOn.value) vibrate({ kind: 'bumper' });
+      }
       else if (ev.type === 'bossSpawn') {
         playSound('survivor-boss');
         cinemaBeat(CINEMA_BEATS.bossEntrance);
@@ -4355,6 +4363,7 @@ function loop(ts: number): void {
       }
       if (ev.type === 'gameover') {
         playSound('survivor-gameover');
+        if (hapticsOn.value) vibrate({ kind: ev.summary.finalBossBeaten ? 'win' : 'lose' });
         // Na run do PvP nada é gravado nem mostrado aqui: o resultado segue para a equipe (`checkPvpRun`).
         if (!props.pvpRun) {
           objectives.value = survivorObjectives(s);
@@ -5312,6 +5321,7 @@ onBeforeUnmount(() => {
               <button type="button" class="chip" :aria-pressed="cinemaOn" @click.stop="toggleCinema">Luz: {{ cinemaOn ? 'cinema' : 'simples' }}</button>
               <button type="button" class="chip" :aria-pressed="specialEffects" @click.stop="specialEffects = !specialEffects">Efeitos: {{ specialEffects ? 'completos' : 'leves' }}</button>
               <button type="button" class="chip" :aria-pressed="visual.impactFx" @click.stop="visual.impactFx = !visual.impactFx">Impacto: {{ visual.impactFx ? 'ligado' : 'desligado' }}</button>
+              <button type="button" class="chip" :aria-pressed="hapticsOn" @click.stop="toggleHaptics">Vibração: {{ hapticsOn ? 'ligada' : 'desligada' }}</button>
             </div>
             <div v-if="objectives.length" class="survivor-objectives" aria-label="Objetivos opcionais da corrida">
               <strong class="survivor-objectives-title">Objetivos</strong>
@@ -5669,7 +5679,20 @@ onBeforeUnmount(() => {
           </div>
         </div>
 
-        <div v-else-if="noCompanion" class="survivor-overlay" role="dialog" aria-modal="true" aria-label="Você precisa de um companheiro">
+        <div v-if="welcomeOpen && torre.runs === 0 && !noCompanion && !pvpRun" class="survivor-overlay survivor-welcome" role="dialog" aria-modal="true" aria-labelledby="survivor-welcome-title">
+          <div class="card survivor-welcome-card">
+            <h2 id="survivor-welcome-title">Como sobreviver na Torre</h2>
+            <ol>
+              <li><b>Ande:</b> arraste em qualquer lugar da tela. O ataque é automático no inimigo mais perto.</li>
+              <li><b>Suba de nível:</b> escolha uma melhoria. Cartas raras e as que combinam com a sua build rendem mais.</li>
+              <li><b>Aos 3 minutos:</b> escolha um Especial. Chefes marcam o ataque no chão: saia da área antes do 0s.</li>
+            </ol>
+            <p class="note">Pausa: botão ⏸ ou Start. Em «Como jogar · controles» estão o teclado, o controle e os botões da tela.</p>
+            <button type="button" class="primary" @click.stop="closeWelcome">Entendi, escolher Pokémon</button>
+          </div>
+        </div>
+
+        <div v-if="noCompanion" class="survivor-overlay" role="dialog" aria-modal="true" aria-label="Você precisa de um companheiro">
           <div class="card survivor-pick">
             <h2>Você precisa de um companheiro <button type="button" class="survivor-secret-star" aria-label="Estrela da Torre" @click="secretDebug">✦</button></h2>
             <p class="note">A Torre usa Pokémon da sua coleção ou Digital Pokémon da Vila. Escaneie uma carta ou conclua o questionário inicial da Vila para receber seu primeiro companheiro.</p>
@@ -6081,4 +6104,8 @@ onBeforeUnmount(() => {
 .sv-supreme:focus-visible { outline: 3px solid #fff; outline-offset: 3px; }
 @keyframes sv-supreme-pulse { to { transform: translateX(-50%) scale(1.06); } }
 @media (prefers-reduced-motion: reduce) { .sv-supreme.is-ready { animation: none; } }
+.survivor-welcome-card { display: grid; gap: 10px; max-width: 430px; width: 100%; }
+.survivor-welcome-card h2 { margin: 0; }
+.survivor-welcome-card ol { display: grid; gap: 8px; margin: 0; padding-left: 20px; line-height: 1.4; }
+.survivor-welcome-card li b { color: var(--gold); }
 </style>

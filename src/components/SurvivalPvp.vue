@@ -40,6 +40,13 @@ const missing = ref<number[]>([]);
 const closed = ref(false);
 const notice = ref('');
 const leaveArmed = ref(false);
+/** Revanche: cada lado pede; quando os dois pedem, a luta recomeça com as MESMAS equipes. `matchId` força a arena a montar do zero. */
+const rematchMine = ref(false);
+const rematchFriend = ref(false);
+const matchId = ref(0);
+/** Ida e volta medida pelo ping do fio; mostrada na arena para a pessoa saber a qualidade da conexão. */
+const rtt = ref(0);
+let rttTimer: ReturnType<typeof setInterval> | null = null;
 
 // Provocações e avisos de buff: pequenos, nos cantos, somem sozinhos e nunca pedem toque.
 const MUTE_KEY = 'tcg-ar-svpvp-mute-v1';
@@ -150,6 +157,8 @@ function onConnected(p: PvpPeer, r: 'host' | 'guest'): void {
     }
   };
   send({ t: 'sv-progress', done: 0 });
+  if (rttTimer) clearInterval(rttTimer);
+  rttTimer = setInterval(() => { rtt.value = peer ? Math.round(peer.rtt) : 0; }, 1500);
   openGate(0);
 }
 
@@ -200,6 +209,12 @@ function onMessage(msg: WireMessage): void {
       break;
     case 'sv-snap':
       if (link.value instanceof SurvivalGuestLink) link.value.receive(msg, performance.now());
+      break;
+    case 'sv-rematch':
+      // Só vale depois de uma luta terminada; pedido no meio da luta é ignorado.
+      if (phase.value !== 'arena' || closed.value || !link.value || link.value.state.winner === null) break;
+      rematchFriend.value = true;
+      maybeRematch();
       break;
     default:
       break;
@@ -333,6 +348,51 @@ function tryGo(): void {
   phase.value = 'arena';
 }
 
+/** Pede revanche depois do resultado. O pedido só conta com a luta já terminada e a conexão aberta. */
+function askRematch(): void {
+  if (rematchMine.value || closed.value || phase.value !== 'arena' || !link.value || link.value.state.winner === null) return;
+  rematchMine.value = true;
+  send({ t: 'sv-rematch' });
+  maybeRematch();
+}
+
+/** Os dois pediram: recomeça com as mesmas equipes, sem sortear nada e sem gravar nada. */
+function maybeRematch(): void {
+  if (!rematchMine.value || !rematchFriend.value || closed.value || phase.value !== 'arena') return;
+  rematchMine.value = false;
+  rematchFriend.value = false;
+  matchId.value++;
+  started = false;
+  guestReady = false;
+  myPreloadDone = false;
+  missing.value = [];
+  notices.value = [];
+  link.value = null;
+  void beginLoading();
+}
+
+/** Conexão caiu: volta ao lobby para criar/entrar em outra sala sem sair do PvP. */
+function backToLobby(): void {
+  detach();
+  team.value = [];
+  usedIds.value = [];
+  friend.value = { name: '', team: null, done: 0 };
+  runIndex.value = 0;
+  missing.value = [];
+  closed.value = false;
+  notice.value = '';
+  rematchMine.value = false;
+  rematchFriend.value = false;
+  started = false;
+  guestReady = false;
+  myPreloadDone = false;
+  friendGateIndex = -1;
+  goReceived = -1;
+  gate.value = { index: 0, countdown: null, friendHere: false };
+  link.value = null;
+  phase.value = 'lobby';
+}
+
 function leaveNow(): void {
   if (leaveTimer) clearTimeout(leaveTimer);
   detach();
@@ -358,6 +418,8 @@ function onGamepadBack(event: Event): void {
 
 function detach(): void {
   clearGateTimers();
+  if (rttTimer) clearInterval(rttTimer);
+  rttTimer = null;
   if (hostWait) clearTimeout(hostWait);
   hostWait = null;
   if (peer) {
@@ -385,6 +447,7 @@ onBeforeUnmount(() => {
     <template v-else>
       <header class="svpvp-strip">
         <span class="svpvp-progress" role="status">⚔ {{ progress }}</span>
+        <span v-if="phase === 'arena' && rtt > 0" class="svpvp-rtt" :title="`Ida e volta até ${friendName}: ${rtt} ms`">📶 {{ rtt }} ms</span>
         <button type="button" class="link svpvp-taunt-btn" :aria-expanded="fanOpen" aria-label="Provocações para o rival" @click="toggleFan">💬{{ tauntLeft > 0 ? ` ${tauntLeft}` : '' }}</button>
         <button type="button" class="link svpvp-leave" @click="askLeave">{{ leaveArmed ? 'Toque de novo para sair' : 'Sair do PvP' }} <small v-if="phase !== 'runs' || closed" class="gamepad-hint" aria-hidden="true">B</small></button>
       </header>
@@ -450,12 +513,12 @@ onBeforeUnmount(() => {
         <p class="hint svpvp-next" role="status"><strong>Quase lá:</strong> baixando os sprites das duas equipes e esperando {{ friendName }} ficar pronto. Você não precisa tocar em nada: a luta começa sozinha, nos dois celulares ao mesmo tempo.</p>
       </section>
 
-      <SurvivalPvpArena v-else-if="phase === 'arena' && link" :link="link" :friend-name="friendName" :friend-left="closed" @leave="leaveNow" />
+      <SurvivalPvpArena v-else-if="phase === 'arena' && link" :key="matchId" :link="link" :friend-name="friendName" :friend-left="closed" allow-rematch @leave="leaveNow" @rematch="askRematch" />
 
       <section v-if="closed && phase !== 'arena'" class="card svpvp-card" role="alert">
         <h3>{{ notice || 'A conexão caiu' }}</h3>
         <p class="hint">Nada foi gravado: as runs do PvP não contam para a Torre.</p>
-        <button type="button" class="primary" @click="leaveNow">Voltar</button>
+        <button type="button" class="primary" @click="backToLobby">Voltar ao lobby</button>
       </section>
       <p v-if="missing.length && phase === 'arena'" class="hint svpvp-missing" role="status">Sem sprite de {{ missing.length }} Pokémon: aparecem como círculos com a sigla.</p>
     </template>
@@ -485,6 +548,12 @@ onBeforeUnmount(() => {
 .svpvp-leave {
   min-height: 36px;
   color: inherit;
+}
+
+.svpvp-rtt {
+  color: var(--muted);
+  font-size: 0.75rem;
+  white-space: nowrap;
 }
 
 .svpvp-card {

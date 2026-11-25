@@ -364,6 +364,7 @@ export function parseMessage(raw: unknown): WireMessage | null {
     case 'sv-input':
     case 'sv-snap':
     case 'sv-buff':
+    case 'sv-rematch':
       return parseSurvivalMessage(v);
     case 'dd-ready':
     case 'dd-start':

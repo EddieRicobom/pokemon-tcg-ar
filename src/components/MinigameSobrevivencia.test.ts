@@ -29,6 +29,7 @@ describe('Torre de Sobrevivência', () => {
   // Sem rede: o componente pede `village-sprite-meta.json`; sem este estanque o happy-dom tentava abrir localhost:3000.
   beforeEach(() => {
     vi.stubGlobal('fetch', vi.fn(async () => ({ ok: false, json: async () => null })));
+    localStorage.clear();
   });
   afterEach(() => {
     app?.unmount();
@@ -49,6 +50,10 @@ describe('Torre de Sobrevivência', () => {
     await vi.waitFor(() => expect(pending).toHaveLength(1));
     release();
     await vi.waitFor(() => expect(host!.querySelector('.survivor-favorite')).not.toBeNull());
+    // Primeira abertura do save: o cartão de boas-vindas é modal e precisa ser dispensado antes da escolha.
+    await vi.waitFor(() => expect(host!.querySelector('.survivor-welcome .primary')).not.toBeNull());
+    host!.querySelector<HTMLButtonElement>('.survivor-welcome .primary')!.click();
+    await nextTick();
 
     const normal = host.querySelector<HTMLButtonElement>('[data-gamepad-default]')!;
     const bonk = host.querySelector<HTMLButtonElement>('.bonk-mode-button')!;
@@ -144,6 +149,11 @@ describe('Torre de Sobrevivência', () => {
     await vi.waitFor(() => expect(pending).toHaveLength(1));
     release();
     await vi.waitFor(() => expect(host!.querySelector('.survivor-favorite')).not.toBeNull());
+    const welcome = host!.querySelector<HTMLButtonElement>('.survivor-welcome .primary');
+    if (welcome) {
+      welcome.click();
+      await nextTick();
+    }
     host.querySelector('.survivor-favorite')!.parentElement!.click();
     await nextTick();
     host.querySelector<HTMLButtonElement>('.survivor-attack-option')!.click();

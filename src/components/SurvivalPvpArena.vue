@@ -41,8 +41,8 @@ import type { ArenaView } from '../pvp/survival-link';
  * desenha o que recebe; as duas telas usam os mesmos controles: arrastar para andar e tocar num dos Pokémon de baixo para
  * trocar. Quem tem dois ataques ganha o botão de troca. Os avisos são curtos, ficam por cima da arena e nunca bloqueiam o toque.
  */
-const props = withDefaults(defineProps<{ link: SurvivalHostLink | SurvivalGuestLink; friendName: string; friendLeft: boolean; leaveLabel?: string }>(), { leaveLabel: 'Sair do PvP' });
-const emit = defineEmits<{ leave: []; finished: [winner: ArenaWinner, hpLeft: number[], recap: { durationMs: number; highlights: ArenaHighlight[]; mySide: ArenaSide }] }>();
+const props = withDefaults(defineProps<{ link: SurvivalHostLink | SurvivalGuestLink; friendName: string; friendLeft: boolean; leaveLabel?: string; allowRematch?: boolean }>(), { leaveLabel: 'Sair do PvP', allowRematch: false });
+const emit = defineEmits<{ leave: []; rematch: []; finished: [winner: ArenaWinner, hpLeft: number[], recap: { durationMs: number; highlights: ArenaHighlight[]; mySide: ArenaSide }] }>();
 
 const hostLink = props.link instanceof SurvivalHostLink ? props.link : null;
 const guestLink = props.link instanceof SurvivalGuestLink ? props.link : null;
@@ -367,6 +367,13 @@ const hurt = ref(false);
 const stale = ref(false);
 const toasts = ref<{ id: number; text: string; tone: 'good' | 'bad' | 'info' }[]>([]);
 const result = ref<{ title: string; detail: string } | null>(null);
+/** Revanche já pedida neste resultado: o botão trava e espera o amigo (nada é reenviado). */
+const rematchAsked = ref(false);
+function askRematch(): void {
+  if (rematchAsked.value || !result.value) return;
+  rematchAsked.value = true;
+  emit('rematch');
+}
 /** Placar de cada Pokémon seu no fim (só onde a luta rodou; o convidado do PvP não recebe esses números). */
 const scoreboard = ref<{ name: string; dexId: number; shiny: boolean; dealt: number; kos: number; mvp: boolean; fainted: boolean }[]>([]);
 const arenaEl = ref<HTMLElement | null>(null);
@@ -1678,6 +1685,9 @@ onBeforeUnmount(() => {
           </li>
         </ul>
         <slot v-if="result" name="result"></slot>
+        <button v-if="result && allowRematch && !friendLeft" type="button" class="primary svp-rematch" :disabled="rematchAsked" @click="askRematch">
+          {{ rematchAsked ? 'Revanche pedida… esperando o amigo' : 'Revanche · mesmas equipes' }}
+        </button>
         <button type="button" class="primary" @click="emit('leave')">{{ leaveLabel }}</button>
       </div>
     </div>

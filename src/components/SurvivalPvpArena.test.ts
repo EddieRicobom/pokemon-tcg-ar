@@ -19,10 +19,10 @@ describe('arena do PvP do Survival: montagem das duas telas', () => {
     vi.useRealTimers();
   });
 
-  function mount(link: SurvivalHostLink | SurvivalGuestLink, friendLeft = false): HTMLElement {
+  function mount(link: SurvivalHostLink | SurvivalGuestLink, friendLeft = false, extra: Record<string, unknown> = {}): HTMLElement {
     const el = document.createElement('div');
     document.body.append(el);
-    const app = createApp({ render: () => h(SurvivalPvpArena, { link, friendName: 'Beto', friendLeft }) });
+    const app = createApp({ render: () => h(SurvivalPvpArena, { link, friendName: 'Beto', friendLeft, ...extra }) });
     app.mount(el);
     apps.push(app);
     return el;
@@ -146,8 +146,37 @@ describe('arena do PvP do Survival: montagem das duas telas', () => {
     expect(el.querySelector('.svp-summary')?.textContent).toMatch(/\d:\d\d/);
   });
 
-  it('o amigo que sai mostra o aviso final com a saída', async () => {
+  it('no fim, a Revanche só aparece quando o PvP permite e só pede uma vez', async () => {
     vi.useFakeTimers();
+    const host = new SurvivalHostLink({ send: () => true }, [mon('a', 'Pikachu')], [mon('x', 'Eevee')]);
+    let asked = 0;
+    const el = mount(host, false, { allowRematch: true, onRematch: () => asked++ });
+    await vi.advanceTimersByTimeAsync(4000);
+    host.state.winner = 0;
+    await vi.advanceTimersByTimeAsync(1600);
+    await nextTick();
+    const button = el.querySelector('.svp-rematch') as HTMLButtonElement | null;
+    expect(button).not.toBeNull();
+    expect(button!.disabled).toBe(false);
+    button!.click();
+    await nextTick();
+    expect(asked).toBe(1);
+    expect(button!.disabled).toBe(true);
+    expect(button!.textContent).toContain('esperando o amigo');
+    button!.click();
+    await nextTick();
+    expect(asked).toBe(1);
+
+    const plain = new SurvivalHostLink({ send: () => true }, [mon('a', 'Pikachu')], [mon('x', 'Eevee')]);
+    const el2 = mount(plain);
+    await vi.advanceTimersByTimeAsync(4000);
+    plain.state.winner = 0;
+    await vi.advanceTimersByTimeAsync(1600);
+    await nextTick();
+    expect(el2.querySelector('.svp-rematch')).toBeNull();
+  });
+
+  it('o amigo que sai mostra o aviso final com a saída', async () => {    vi.useFakeTimers();
     const host = new SurvivalHostLink({ send: () => true }, [mon('a', 'Pikachu')], [mon('x', 'Eevee')]);
     const el = mount(host, true);
     await nextTick();

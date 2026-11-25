@@ -31,7 +31,12 @@ export type SurvivalWireMessage =
   /** Anfitrião → convidado: o estado da arena e o que aconteceu desde o último. */
   | { t: 'sv-snap'; snap: ArenaSnapshot; events: ArenaEvent[] }
   /** Peguei uma carta de melhoria na run: id e raridade das regras reais, nome só para mostrar. */
-  | { t: 'sv-buff'; id: string; name: string; rarity: SurvivorUpgradeRarity };
+  | { t: 'sv-buff'; id: string; name: string; rarity: SurvivorUpgradeRarity }
+  /**
+   * Pedido de revanche depois do fim da luta. Cada lado manda o seu; quando os dois pedem, a arena recomeça com as
+   * MESMAS equipes (nada novo é sorteado e nada é gravado).
+   */
+  | { t: 'sv-rematch' };
 
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 const isNum = (v: unknown, lo: number, hi: number): v is number => typeof v === 'number' && Number.isFinite(v) && v >= lo && v <= hi;
@@ -236,6 +241,8 @@ export function parseSurvivalMessage(v: Record<string, unknown>): SurvivalWireMe
       return isStr(v.id, 80) && v.id.length > 0 && isStr(v.name, 40) && v.name.length > 0 && isBuffRarity(v.rarity)
         ? { t: 'sv-buff', id: v.id, name: v.name, rarity: v.rarity }
         : null;
+    case 'sv-rematch':
+      return { t: 'sv-rematch' };
     default:
       return null;
   }
