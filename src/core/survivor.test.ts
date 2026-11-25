@@ -535,9 +535,15 @@ describe('stepSurvivor', () => {
     expect(s.enemies.filter((e) => e.boss && !e.shadowBoss)).toHaveLength(1);
   });
 
-  it('xpForLevel cresce com o nível (upgrades ficam mais caros)', () => {
+  it('xpForLevel cresce com o nível e acelera no late game', () => {
     expect(xpForLevel(2)).toBeGreaterThan(xpForLevel(1));
     expect(xpForLevel(10)).toBeGreaterThan(xpForLevel(5));
+    // Até o 20 a curva é linear; depois o termo quadrático segura a enxurrada de níveis.
+    expect(xpForLevel(20)).toBe(172);
+    expect(xpForLevel(30)).toBe(342);
+    expect(xpForLevel(50)).toBe(1222);
+    expect(xpForLevel(60)).toBe(1932);
+    expect(xpForLevel(60)).toBeGreaterThan(xpForLevel(50) * 1.5);
   });
 
   it('rollUpgrades nunca repete upgrade na mesma leva e usa só ids do catálogo', () => {

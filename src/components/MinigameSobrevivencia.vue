@@ -5370,6 +5370,7 @@ onBeforeUnmount(() => {
                 <li><b>☠ Pressão N:</b> densidade, velocidade e dano extras que a dificuldade acumulou.</li>
                 <li><b>Barras pequenas:</b> vida de elites, chefões e chefes; o glifo ao lado mostra o tipo.</li>
                 <li><b>Aviso de ataque:</b> o nome, o glifo do tipo e a contagem até o impacto; ande para fora da área marcada.</li>
+                <li><b>XP:</b> até o nível 20 o custo sobe devagar; depois acelera de propósito para o late game não virar uma enxurrada de níveis.</li>
                 <li><b>BONK:</b> tem leitura própria; as setas de ameaça, o anel e as micro-barras são do modo normal.</li>
               </ul>
             </details>
