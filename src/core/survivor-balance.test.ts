@@ -36,9 +36,10 @@ describe('regressão de dificuldade do Survival', { timeout: 30_000 }, () => {
     }
     const values = [...averages.values()];
     // A primeira migração triplica a horda dos 105 aos 135 segundos; os ataques por tipo mudaram a amostra.
-    expect(Math.min(...values)).toBeGreaterThanOrEqual(138_000);
+    // O corte de 11% no dano do jogador (25/11/2026) puxou a faixa inteira para baixo e abriu um pouco o leque.
+    expect(Math.min(...values)).toBeGreaterThanOrEqual(133_000);
     expect(Math.max(...values)).toBeLessThanOrEqual(190_000);
-    expect(Math.max(...values) - Math.min(...values)).toBeLessThanOrEqual(38_000);
+    expect(Math.max(...values) - Math.min(...values)).toBeLessThanOrEqual(46_000);
     expect(averages.get('bug')).toBeGreaterThanOrEqual(142_000);
     // A variedade nova de ataques de chefe (cruz, raios e meteoros) muda um pouco o ritmo da amostra.
     // A sinergia garantida também desloca uma vaga por oferta: fighting cai ~0,8% e continua bem acima do piso geral.

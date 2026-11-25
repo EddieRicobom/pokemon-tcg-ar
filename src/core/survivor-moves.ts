@@ -272,6 +272,7 @@ export interface AttackProfile {
 export const AVERAGE_STAT = 75;
 const AVERAGE: BaseStats = { hp: AVERAGE_STAT, attack: AVERAGE_STAT, defense: AVERAGE_STAT, spAttack: AVERAGE_STAT, spDefense: AVERAGE_STAT, speed: AVERAGE_STAT };
 /** Ajuste de ritmo do modo: mantém as proporções dos stats reais sem deixar as ondas iniciais sufocarem os golpes mais fracos. */
+/** Fator de dano dos golpes. */
 export const SURVIVOR_DAMAGE_FACTOR = 1.2;
 /** Ataques automáticos normais causam metade do dano base; golpes de carga compensam esse corte ao serem liberados. */
 export const BASIC_ATTACK_DAMAGE_FACTOR = 0.5;

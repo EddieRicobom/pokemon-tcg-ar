@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createSurvivorState, stepSurvivor, survivorDefenseReduction, survivorPlayerAttacks, switchSurvivorAttack } from './survivor';
+import { createSurvivorState, stepSurvivor, SURVIVOR_START_DAMAGE_SCALE, survivorDefenseReduction, survivorPlayerAttacks, switchSurvivorAttack } from './survivor';
 import { attackProfile, moveFor, moveWith } from './survivor-moves';
 import { statsOfDex } from './survivor-stats';
 import { typesOfDex } from './species-filter';
@@ -109,14 +109,16 @@ describe('Mega na corrida', () => {
       kindCount: 4, dexId: megaX.dexId, move, profile,
       secondAttack: { move: alternate, profile: alternateProfile }, mega: megaX,
     });
-    const damageByAttack = [move, alternate].map((attack) => attackProfile(attack, megaX.stats).damage);
-    expect(survivorPlayerAttacks(state)!.players.map((player) => player.attackDamage)).toEqual(damageByAttack);
+    const damageByAttack = [move, alternate].map((attack) => attackProfile(attack, megaX.stats).damage * SURVIVOR_START_DAMAGE_SCALE);
+    survivorPlayerAttacks(state)!.players.forEach((player, index) => {
+      expect(player.attackDamage).toBeCloseTo(damageByAttack[index]!, 0);
+    });
     expect(switchSurvivorAttack(state)).toBe(true);
-    expect(state.player.attackDamage).toBe(damageByAttack[1]);
+    expect(state.player.attackDamage).toBeCloseTo(damageByAttack[1]!, 0);
     expect(endSurvivorMega(state)).toBe(true);
     const [first, second] = survivorPlayerAttacks(state)!.players;
-    expect(first.attackDamage).toBeCloseTo(profile.damage, 0);
-    expect(second.attackDamage).toBeCloseTo(alternateProfile.damage, 0);
+    expect(first.attackDamage).toBeCloseTo(profile.damage * SURVIVOR_START_DAMAGE_SCALE, 0);
+    expect(second.attackDamage).toBeCloseTo(alternateProfile.damage * SURVIVOR_START_DAMAGE_SCALE, 0);
     expect(first.projectileSize).toBe(profile.projectileSize);
     expect(second.projectileSize).toBe(alternateProfile.projectileSize);
   });
