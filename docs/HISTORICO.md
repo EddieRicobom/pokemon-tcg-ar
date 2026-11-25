@@ -5,6 +5,12 @@ O estado atual, as fases, as pendências e os riscos continuam no [plano](../IMP
 datadas (com o que foi e o que não foi validado em cada uma). A regra de validação do plano vale também para estas entradas:
 🔶 significa que **nada foi visto num celular real**.
 
+## Torre: jogador sem círculos e robustez dos recordes (25/11/2026)
+
+- **Sem círculos no jogador:** removidos o anel duplo, o halo escuro e os anéis de Terastal/Mega em volta do sprite, além do aro colorido da sombra. O status (queimado/lento/atordoado) continua acima do personagem, o glifo do Terastal fica no canto e os chips do HUD seguem mostrando Terastal e Mega.
+- **Recordes:** a normalização do save agora rejeita `Infinity`/`NaN`; as dicas contextuais esperam um aviso crítico terminar antes de aparecer; o teto de 18 números de dano preserva o dano de chefe; o combo de XP respeita o teto de 1,5.
+- 🔶 Typecheck, 68 arquivos / 725 testes do Survival, suíte completa (347 arquivos / 3444 testes), build e os 14 testes de layout passaram. Não testado em celular real.
+
 ## Torre: sinergias, recordes por Pokémon e leitura da arena (25/11/2026)
 
 - **Sinergias:** quatro cartas de combo («Ritmo de impacto», «Muralha completa», «Coleta em cadeia» e «Passo constante») só entram na oferta quando as duas peças indicadas já estão na build e aparecem com o selo «🔗 Sinergia ativa». Na Torre, famílias já repetidas perdem peso aos poucos, então a oferta abre espaço para defesa, progresso e movimento; a Arena mantém o sorteio antigo.

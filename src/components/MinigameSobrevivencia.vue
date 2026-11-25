@@ -370,6 +370,8 @@ function maybeTip(id: keyof typeof TIP_TEXT): boolean {
   return true;
 }
 function maybeContextualTips(s: SurvivorState): void {
+  // Um toast já na tela costuma ser aviso crítico (treinador, chefe, item): a dica espera a vez.
+  if (toast.value) return;
   if (s.bossAttack && maybeTip('telegraph')) return;
   if (s.chests?.some((chest) => chest.kind === 'black') && maybeTip('black-chest')) return;
   if (s.enemies.some((enemy) => enemy.boss) && maybeTip('boss')) return;
@@ -1385,7 +1387,17 @@ function showEnemyDamage(hits: readonly DamageNumber[]): void {
     if (previous) previous.amount += hit.amount;
     else merged.push({ ...hit });
   }
-  damageNumbers.value = merged.slice(-18);
+  let kept = merged.slice(-18);
+  if (kept.length < merged.length) {
+    // O teto nunca descarta o dano de chefe mais antigo para abrir espaço a números comuns.
+    const dropped = merged.slice(0, merged.length - kept.length);
+    for (const hit of dropped.filter((entry) => entry.boss)) {
+      const index = kept.findIndex((entry) => !entry.boss);
+      if (index >= 0) kept[index] = hit;
+    }
+    kept = kept.sort((a, b) => a.bornAt - b.bornAt);
+  }
+  damageNumbers.value = kept;
   if (animMs - lastHitStopAt >= 500) {
     hitStopMs = hits.some((hit) => hit.boss) ? 72 : 42;
     lastHitStopAt = animMs;
@@ -2147,40 +2159,20 @@ function drawArceusGiratina(special: NonNullable<SurvivorState['arceusSpecial']>
   ctx.restore();
 }
 
-/** Anel de alto contraste + status acima do jogador: ele não some no meio dos efeitos. */
-function drawPlayerStatusAndRing(s: SurvivorState): void {
+/** Status acima do jogador: informa sem desenhar círculos em volta do sprite. */
+function drawPlayerStatus(s: SurvivorState): void {
   if (!ctx) return;
   const p = s.player;
   ctx.save();
-  // Terastal e Mega ganham um anel externo na cor certa: o sprite muda, mas o estado também precisa ser lido de longe.
+  // Terastal só marca o canto com o glifo do tipo; o sprite e o chip do HUD já contam o resto.
   if (p.terastal) {
     ctx.globalAlpha = 0.85;
-    ctx.strokeStyle = moveFor([p.terastal.type], null).color;
-    ctx.lineWidth = 2.4;
-    ctx.beginPath(); ctx.arc(p.x, p.y, 27, 0, Math.PI * 2); ctx.stroke();
     ctx.font = 'bold 12px system-ui';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillStyle = moveFor([p.terastal.type], null).color;
     ctx.fillText(TYPE_GLYPHS[p.terastal.type], p.x + 21, p.y - 21);
   }
-  if (p.mega?.active) {
-    ctx.globalAlpha = 0.8;
-    ctx.strokeStyle = '#d68cff';
-    ctx.lineWidth = 1.8;
-    ctx.setLineDash([2, 5]);
-    ctx.beginPath(); ctx.arc(p.x, p.y, 30, 0, Math.PI * 2); ctx.stroke();
-    ctx.setLineDash([]);
-  }
-  ctx.globalAlpha = 0.9;
-  ctx.strokeStyle = '#07131b';
-  ctx.lineWidth = 4;
-  ctx.beginPath(); ctx.arc(p.x, p.y, 22, 0, Math.PI * 2); ctx.stroke();
-  ctx.strokeStyle = '#fff8dc';
-  ctx.lineWidth = 1.6;
-  ctx.setLineDash([4, 4]);
-  ctx.beginPath(); ctx.arc(p.x, p.y, 22, 0, Math.PI * 2); ctx.stroke();
-  ctx.setLineDash([]);
   const icons = [p.burnMs ? '🔥' : '', p.slowMs ? '🧊' : '', p.stunMs ? '⚡' : ''].filter(Boolean);
   if (icons.length) {
     const label = icons.join(' ');
@@ -3322,15 +3314,6 @@ function draw(): void {
     cinemaCasters.push(playerCaster);
     drawCastShadows(ctx, cinemaCasters, cinemaLights, cinema);
   }
-  // Halo escuro sob o jogador: reduz o ruído do cenário sem escurecer inimigos ou projéteis, que são desenhados depois.
-  const playerHalo = ctx.createRadialGradient(s.player.x, s.player.y, 10, s.player.x, s.player.y, 38);
-  playerHalo.addColorStop(0, 'rgba(4,10,14,0)');
-  playerHalo.addColorStop(0.7, 'rgba(4,10,14,0.16)');
-  playerHalo.addColorStop(1, 'rgba(4,10,14,0.3)');
-  ctx.save();
-  ctx.fillStyle = playerHalo;
-  ctx.beginPath(); ctx.arc(s.player.x, s.player.y, 38, 0, Math.PI * 2); ctx.fill();
-  ctx.restore();
   for (const e of s.enemies) {
     if (e.x >= left && e.x <= right && e.y >= top && e.y <= bottom) {
       drawEnemy(e);
@@ -3356,17 +3339,13 @@ function draw(): void {
   // Orbitais acima do Pokémon na tela passam por trás dele; os de baixo, pela frente.
   const orbiters = move.category === 'orbit' ? survivorOrbiters(s.player) : [];
   orbiters.forEach((orbiter, index) => { if (orbiter.y < s.player.y) drawElementOrbiter(ctx!, s.player, move.type, flat, index, animMs, detailed); });
-  // Sombra e aro na cor do golpe: acham você no meio da multidão, mesmo piscando depois de um golpe.
+  // Sombra no chão: acha o personagem sem desenhar aro ou círculo em volta dele.
   if (!effectiveVisual.value.rotomMode) {
     ctx.save();
     ctx.fillStyle = 'rgba(13, 23, 43, 0.3)';
     ctx.beginPath();
     ctx.ellipse(s.player.x, s.player.y, 15, 6, 0, 0, Math.PI * 2);
     ctx.fill();
-    ctx.globalAlpha = 0.55;
-    ctx.strokeStyle = move.color;
-    ctx.lineWidth = 1.5;
-    ctx.stroke();
     ctx.restore();
   }
   if (!blink) {
@@ -3388,7 +3367,7 @@ function draw(): void {
     drawSprite(playerSprite, motion.lunge * 18 * aimX, motion.lunge * 12 * aimY - hop, s.player.facing < 0, 1, survivorSpriteDirectionFromAngle(aimAngle, s.player.facing), playerAccessory, true, s.player.terastal?.type);
     ctx.restore();
   }
-  drawPlayerStatusAndRing(s);
+  drawPlayerStatus(s);
   orbiters.forEach((orbiter, index) => { if (orbiter.y >= s.player.y) drawElementOrbiter(ctx!, s.player, move.type, flat, index, animMs, detailed); });
   // Gemas dos itens segurados orbitam o Pokémon: cada cópia é uma gema da cor do item.
   if (!effectiveVisual.value.rotomMode) drawHeldGems(ctx, s.player.x, s.player.y, heldGems(s.player.held ?? {}).map((item) => ({ ...item, image: heldSpriteImage(item.id) })), animMs, detailed);

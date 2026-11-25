@@ -19,6 +19,8 @@ describe('recordes por Pokémon', () => {
     expect(dexRecordFor(base, Number.NaN)).toBeNull();
     expect(normalizeDexRecords({ '25': { ms: '200000', wave: -3, level: 15 }, 'x': { ms: 1 }, '26': { ms: 0, wave: 0, level: 0 } }))
       .toEqual({ '25': { ms: 200_000, wave: 0, level: 15 } });
+    expect(normalizeDexRecords({ '1': { ms: Number.POSITIVE_INFINITY, wave: Number.NEGATIVE_INFINITY, level: Number.NaN }, '2': { ms: 1e999, wave: 2, level: 3 } }))
+      .toEqual({ '2': { ms: 0, wave: 2, level: 3 } });
   });
 
   it('entrega medalhas de 3, 6 e 10 minutos', () => {
